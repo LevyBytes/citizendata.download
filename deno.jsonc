@@ -1,0 +1,25 @@
+// Deno is used here for its linter only (`npm run lint`). Nothing in this repository runs under Deno.
+{
+  "lint": {
+    "include": ["docs/scripts/", "extension/", "shared/", "scripts/", "tests/", "eslint.config.mjs"],
+    // The copies `npm run sync:schemas` writes are checked where they are written from.
+    "exclude": [
+      "extension/schema/",
+      "docs/scripts/account-document.js",
+      "docs/scripts/organization-document.js",
+      "extension/shared/account-document.js",
+      "extension/shared/organization-document.js"
+    ],
+    "rules": {
+      "tags": ["recommended"],
+      "exclude": [
+        // Deno has no `window`. The dashboard and the extension's pages run in a browser, which has.
+        "no-window",
+        "no-window-prefix",
+        // This rule refuses `typeof value === expected`, where the wanted type is a value. ESLint's rule of the same
+        // name checks the same mistake and accepts that comparison.
+        "valid-typeof"
+      ]
+    }
+  }
+}

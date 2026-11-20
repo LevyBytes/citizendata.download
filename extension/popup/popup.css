@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Segoe UI", sans-serif;
+  background: #031014;
+  color: #e3f1f3;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+/* Chrome shows a popup at most 600 pixels tall. Past that the sections scroll under the header, inside the popup's
+   own width, so the page itself never needs a scrollbar in either direction. Every section keeps its full height
+   while they scroll: without that, the approval card, which hides its own overflow, is the one row squeezed. */
+body { display: flex; flex-direction: column; width: 330px; max-height: 600px; margin: 0; background: linear-gradient(145deg, #061d24, #02090c 70%); }
+header { flex: none; display: flex; align-items: center; gap: 11px; padding: 15px 17px; border-bottom: 1px solid #28515a; }
+header img { width: 38px; height: 38px; }
+header span { display: grid; gap: 1px; }
+header b { font-size: 18px; letter-spacing: .04em; }
+header small { color: #88a5aa; font-size: 12px; }
+main { display: grid; grid-auto-rows: max-content; gap: 11px; min-height: 0; padding: 15px 17px 45px; overflow: hidden auto; scrollbar-width: thin; scrollbar-color: #2e5963 transparent; }
+.state { display: grid; grid-template-columns: 10px 1fr; gap: 11px; padding: 12px; border: 1px solid #2e5963; background: rgba(49, 149, 166, .1); }
+.state-marker { width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #63ddeb; box-shadow: 0 0 0 4px rgba(99, 221, 235, .14); }
+h1 { margin: 0; font-size: 15px; }
+p { margin: 4px 0 0; color: #9bb1b5; font-size: 12px; line-height: 1.4; }
+button, .file-button, summary { font: inherit; }
+button, .file-button { min-height: 40px; padding: 8px 12px; border: 1px solid #2e5963; color: #cfe3e6; background: #071b20; cursor: pointer; font-weight: 700; text-align: center; }
+button:hover:not(:disabled), button:focus-visible, .file-button:hover, .file-button:focus-visible, summary:focus-visible { border-color: #63ddeb; outline: 2px solid transparent; box-shadow: 0 0 0 2px rgba(99, 221, 235, .25); }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.primary { min-height: 46px; border-color: #5ad8e7; color: #031014; background: linear-gradient(135deg, #8cecf4, #42c7d8); font-size: 15px; }
+details { border: 1px solid #24464e; background: rgba(3, 16, 20, .58); }
+summary { padding: 10px 12px; cursor: pointer; color: #adc3c7; font-size: 12px; font-weight: 700; }
+.details-body { display: grid; gap: 8px; padding: 0 10px 10px; }
+.details-body p { margin: 0 1px 2px; }
+input[type="file"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.danger:not(:disabled) { border-color: #6c4447; color: #e7b7b7; }
+.danger[aria-pressed="true"] { border-color: #f08b72; color: #fff; background: #40191b; box-shadow: 0 0 0 2px rgba(240, 139, 114, .25); }
+/* The result of an action stays at the bottom edge of the popup window, in view wherever the popup is scrolled.
+   The bottom padding of main keeps the room the line took at the end of the popup. */
+.notice { position: fixed; left: 0; bottom: 0; z-index: 6; box-sizing: border-box; width: 330px; margin: 0; padding: 8px 17px; border-top: 1px solid #28515a; background: #04141a; text-align: center; }
+.notice:empty { padding: 0; border: 0; background: none; }
+
+/* Build history: the switch, the number to keep, and the kept builds. */
+.toggle, .number-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 6px 10px; border: 1px solid #2e5963; color: #cfe3e6; background: #071b20; font-size: 13px; font-weight: 700; }
+.toggle { grid-template-columns: auto minmax(0, 1fr); cursor: pointer; }
+.toggle input { appearance: none; position: relative; width: 38px; height: 22px; margin: 0; border: 1px solid #4d7882; border-radius: 11px; background: #0a2a32; cursor: pointer; }
+.toggle input::before { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #9bb1b5; transition: transform .14s ease-out; }
+.toggle input:checked { border-color: #63ddeb; background: #1c6a78; }
+.toggle input:checked::before { background: #e3f1f3; transform: translateX(16px); }
+.toggle input:focus-visible, .number-field input:focus-visible { border-color: #63ddeb; outline: 2px solid transparent; box-shadow: 0 0 0 2px rgba(99, 221, 235, .25); }
+.number-field input { width: 64px; min-height: 28px; padding: 3px 6px; border: 1px solid #4d7882; color: #e3f1f3; background: #031014; font: inherit; text-align: right; }
+.number-field:has(input:disabled) { color: #88a5aa; }
+.number-field input:disabled { opacity: .55; cursor: not-allowed; }
+.history-question { display: grid; gap: 8px; padding: 9px; border: 1px solid #6c4447; background: rgba(64, 25, 27, .45); }
+.history-question p { margin: 0; color: #e3f1f3; }
+.history-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.history-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; border: 1px solid #24464e; }
+.history-list .history-when { display: grid; gap: 2px; color: #cfe3e6; font-size: 12px; font-weight: 700; }
+.history-list .history-when small { color: #9bb1b5; font-size: 11px; font-weight: 400; }
+.history-list button { min-height: 30px; padding: 4px 9px; font-size: 11px; }
+#historyProblem { color: #f0b9a8; }
+@media (prefers-reduced-motion: reduce) {
+  .toggle input::before { transition: none; }
+}
+
+/* Approval card. It borrows the dashboard hero: grid lines, slow rotating artwork, and drifting embers.
+   While it asks its question it is the only thing in the popup. */
+main[data-mode="approval"] > :not(.approval) { display: none; }
+.approval { position: relative; isolation: isolate; overflow: hidden; padding: 18px 16px 16px; border: 1px solid rgba(217, 184, 106, .55); background: linear-gradient(110deg, rgba(13, 55, 65, .96), rgba(5, 21, 27, .95) 62%, rgba(39, 32, 18, .78)); clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); box-shadow: 0 0 0 1px rgba(101, 231, 244, .08) inset; animation: approval-arrive .32s ease-out both; }
+.approval::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(90deg, rgba(101, 231, 244, .08) 1px, transparent 1px), linear-gradient(rgba(101, 231, 244, .05) 1px, transparent 1px); background-size: 26px 26px; mask-image: linear-gradient(90deg, transparent, #000 70%, transparent); }
+.approval::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 3; background: linear-gradient(90deg, transparent, #d9b86a 35%, #65e7f4 65%, transparent); background-size: 200% 100%; animation: approval-scan 3.2s linear infinite; }
+.approval-art { position: absolute; z-index: 0; right: 18px; top: 18px; width: 210px; height: 210px; transform: translate(50%, -50%); transform-origin: 50% 50%; pointer-events: none; opacity: .2; background: url("art/radar.svg") center / contain no-repeat; filter: invert(85%) sepia(47%) saturate(856%) hue-rotate(150deg) brightness(102%) contrast(93%) drop-shadow(0 0 16px rgba(101, 231, 244, .24)); }
+.approval-embers { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+.approval-body { position: relative; z-index: 2; display: grid; gap: 8px; }
+.approval .eyebrow { color: #d9b86a; font-size: 10px; font-weight: 700; letter-spacing: .18em; }
+.approval h1 { font-size: 18px; line-height: 1.25; letter-spacing: .01em; text-shadow: 0 0 18px rgba(101, 231, 244, .28); }
+.approval p { margin: 0; color: #b7cbcf; }
+.approval-path { padding: 8px 10px; color: #e3f1f3; border-left: 2px solid #65e7f4; background: rgba(2, 11, 14, .62); font: 11px/1.45 Consolas, "Cascadia Mono", monospace; overflow-wrap: anywhere; }
+.approval .approval-note { color: #93abb0; font-size: 11px; }
+.approval-actions { display: grid; gap: 7px; margin-top: 4px; }
+.approval-actions .primary { border-color: #e6c877; color: #1b1405; background: linear-gradient(135deg, #f3dc9c, #d9b86a); box-shadow: 0 0 18px rgba(217, 184, 106, .22); }
+.approval-actions .primary:hover:not(:disabled), .approval-actions .primary:focus-visible { border-color: #fff1c4; box-shadow: 0 0 0 2px rgba(217, 184, 106, .35), 0 0 22px rgba(217, 184, 106, .35); }
+.approval[data-state="allowed"] { border-color: rgba(117, 223, 173, .6); }
+.approval[data-state="allowed"] .eyebrow { color: #75dfad; }
+.approval[data-state="allowed"]::after { background: linear-gradient(90deg, transparent, #75dfad 50%, transparent); background-size: 200% 100%; }
+
+.local-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.local-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 6px 6px 8px; border: 1px solid #24464e; }
+.local-list span { color: #cfe3e6; font: 11px/1.4 Consolas, "Cascadia Mono", monospace; overflow-wrap: anywhere; }
+.local-list button { min-height: 30px; padding: 4px 9px; font-size: 11px; }
+
+@keyframes approval-arrive { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes approval-scan { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .approval, .approval::after { animation: none; }
+}

@@ -1,0 +1,2796 @@
+(() => {
+  "use strict";
+
+  const { DEFAULT_LIMITS: JSON_LIMITS, parseBoundedJson } = globalThis.CitizenDataSafeJson;
+  const Model = globalThis.CitizenDataDashboardModel;
+  const PAGE_SIZE = 25;
+  const INVENTORY_PAGE_SIZE = 100;
+  const BRIDGE_CHANNEL = "citizendata.dashboard.v1";
+  const PROTOCOL_VERSION = 1;
+  // Stamped into the documents this page itself assembles. Extension compatibility is decided by PROTOCOL_VERSION.
+  const DASHBOARD_VERSION = "0.42.1";
+  // Placeholder until the Chrome Web Store listing exists; replace with the listing URL.
+  const EXTENSION_STORE_URL = "https://chromewebstore.google.com/";
+  const HERO_NAMES = Object.freeze(["radar", "holo-render", "staff-pick", "customize"]);
+  const state = {
+    document: globalThis.CITIZENDATA_DEMO_DATA,
+    source: "demo",
+    fileName: "example.json",
+    activeInventory: "hangar",
+    activeGroup: "all",
+    activeRecordKey: null,
+    inventoryPage: 1,
+    referralPath: "current.prospects",
+    referralOrder: "newest",
+    referralPage: 1,
+    referralSearch: "",
+    organizationSid: "TEST",
+    organizationPage: 1,
+    organizationSearch: "",
+    organizationDocument: null,
+    organizationFileName: null,
+    savedOrganizationHashes: new Set(),
+    bridge: null,
+    bridgeReachable: false,
+    bridgeSeen: false,
+    extensionUpdateRequired: false,
+    extensionUpdateNotified: false,
+    localApprovalRequired: false,
+    connecting: false,
+    publicStatus: null,
+    bridgePending: new Map(),
+    savedBuildContentHashes: new Set(),
+    openedPartialRunIds: new Set(),
+    requestedPartialRunIds: new Set(),
+    requestedCompletedRunIds: new Set(),
+    acknowledgedRunIds: new Set(),
+    partialFailureNotifiedRunIds: new Set(),
+    dismissedCompletedRunIds: new Set(),
+    overlayDismissed: false,
+    skipRequestedRunId: null,
+    pendingOrganizationSids: [],
+    mediaPlan: [],
+    mediaPlanGeneration: 0,
+    mediaPlanAccount: null,
+    latestBuildRequested: false,
+    buildOffer: null,
+    organizationOffer: null,
+    handOverQueue: Promise.resolve(),
+    mediaPlanDocument: null,
+    mediaController: null,
+    pendingMediaPackage: null,
+    mediaOverlayActive: false,
+    mediaCompleted: 0,
+    mediaActiveRequests: 0,
+    mediaActivity: [],
+    loadedMediaPackage: null,
+    loadedMediaFileName: null,
+    mediaObjectUrls: new Map(),
+    mediaLoadPromises: new Map(),
+    mediaLoadStates: new Map(),
+    continuePartial: false,
+    statusPollTimer: null
+  };
+
+  const byId = (id) => document.getElementById(id);
+  const refs = {
+    fileInput: byId("jsonFileInput"),
+    loadButton: byId("loadButton"),
+    buildButton: byId("buildButton"),
+    messageDialog: byId("messageDialog"),
+    dialogEyebrow: byId("dialogEyebrow"),
+    dialogTitle: byId("dialogTitle"),
+    dialogMessage: byId("dialogMessage"),
+    toast: byId("statusToast"),
+    rows: byId("inventoryRows"),
+    emptyState: byId("emptyState"),
+    resultCount: byId("resultCount"),
+    caption: byId("inventoryCaption"),
+    search: byId("recordSearch"),
+    filterPanel: byId("filterPanel"),
+    filterButton: byId("filterButton"),
+    filterCount: byId("filterCount"),
+    tableShell: document.querySelector(".table-shell"),
+    inventoryPagination: byId("inventoryPagination"),
+    inventoryPageStatus: byId("inventoryPageStatus"),
+    inventoryPrevious: byId("inventoryPrevious"),
+    inventoryNext: byId("inventoryNext"),
+    inspectorAnnouncement: byId("inspectorAnnouncement"),
+    extensionNotice: byId("extensionNotice"),
+    installExtensionAction: byId("installExtensionAction"),
+    installExtensionTitle: byId("installExtensionTitle"),
+    installExtensionDetail: byId("installExtensionDetail"),
+    overlay: byId("parserOverlay"),
+    overlayOperation: byId("overlayOperation"),
+    identityHero: byId("identityHeroArt"),
+    avatarImage: byId("avatarImage"),
+    avatarInitials: byId("avatarInitials"),
+    dossierBadgeImage: byId("dossierBadgeImage"),
+    dossierBadgeFallback: byId("dossierBadgeFallback"),
+    organizationEmblemImage: byId("organizationEmblemImage"),
+    organizationEmblemFallback: byId("organizationEmblemFallback"),
+    collectionActivity: byId("collectionActivity"),
+    collectionActivityImage: byId("collectionActivityImage"),
+    collectionActivityProgress: byId("collectionActivityProgress"),
+    requestProgress: byId("requestProgress"),
+    requestProgressLabel: byId("requestProgressLabel"),
+    collectionRequestProgress: byId("collectionRequestProgress"),
+    requestProgressText: byId("requestProgressText"),
+    eventLog: byId("eventLog"),
+    collectionControls: byId("collectionControls"),
+    rebindCollection: byId("rebindCollection"),
+    pauseCollection: byId("pauseCollection"),
+    resumeCollection: byId("resumeCollection"),
+    cancelCollection: byId("cancelCollection"),
+    skipCollection: byId("skipCollection"),
+    organizationSearch: byId("organizationSearch"),
+    organizationSearchCount: byId("organizationSearchCount"),
+    referralSearchForm: byId("referralSearchForm"),
+    referralSearch: byId("referralSearch"),
+    referralSearchLabel: byId("referralSearchLabel"),
+    referralSearchCount: byId("referralSearchCount"),
+    orgFileInput: byId("orgFileInput"),
+    loadOrgButton: byId("loadOrgButton"),
+    buildOrgButton: byId("buildOrgButton"),
+    orgFileStatus: byId("orgFileStatus"),
+    orgBuildDialog: byId("orgBuildDialog"),
+    orgBuildForm: byId("orgBuildForm"),
+    orgRosterChecklist: byId("orgRosterChecklist"),
+    orgBuildAvailability: byId("orgBuildAvailability"),
+    orgBuildStart: byId("orgBuildStart"),
+    buildChoices: byId("buildChoices"),
+    buildAccountAction: byId("buildAccountAction"),
+    buildImagesAction: byId("buildImagesAction"),
+    mediaControls: byId("mediaControls"),
+    mediaCancelOverlay: byId("mediaCancelOverlay"),
+    mediaSaveOverlay: byId("mediaSaveOverlay"),
+    mediaStatus: byId("mediaStatus"),
+    mediaZipInput: byId("mediaZipInput"),
+    mediaZipLoadedState: byId("mediaZipLoadedState"),
+    loadMediaZipButton: byId("loadMediaZipButton"),
+    mediaGalleryDialog: byId("mediaGalleryDialog"),
+    mediaGalleryTitle: byId("mediaGalleryTitle"),
+    mediaGalleryStatus: byId("mediaGalleryStatus"),
+    mediaGalleryFull: byId("mediaGalleryFull"),
+    mediaGalleryImage: byId("mediaGalleryImage"),
+    mediaGalleryPlaceholder: byId("mediaGalleryPlaceholder"),
+    mediaGalleryThumbnails: byId("mediaGalleryThumbnails")
+  };
+
+  const inspector = {
+    panel: byId("recordInspector"),
+    icon: byId("inspectorIcon"),
+    image: byId("inspectorImage"),
+    galleryOpen: byId("inspectorGalleryOpen"),
+    galleryThumbnails: byId("inspectorGalleryThumbnails"),
+    media: byId("inspectorMedia"),
+    group: byId("inspectorGroup"),
+    title: byId("inspectorTitle"),
+    ccu: byId("inspectorCcu"),
+    subtitle: byId("inspectorSubtitle"),
+    wiki: byId("inspectorWiki"),
+    facts: byId("inspectorFacts"),
+    items: byId("inspectorItems"),
+    itemList: byId("inspectorItemList"),
+    itemRemainder: byId("inspectorItemRemainder"),
+    note: byId("inspectorNote"),
+    source: byId("inspectorSource"),
+    sourcePending: byId("inspectorSourcePending")
+  };
+  let inspectorMediaIndex = 0;
+  let mediaGalleryRecord = null;
+  let mediaGalleryIndex = 0;
+  let mediaGalleryOpener = null;
+  let mediaLoadGeneration = 0;
+  let mediaLoadSequence = 0;
+  let mediaLoadActive = 0;
+  let mediaLoadRefreshScheduled = false;
+  const mediaLoadQueue = [];
+  const mediaLoadTasks = new Map();
+
+  function text(id, value) {
+    byId(id).textContent = value ?? "—";
+  }
+
+  function element(tag, className, value) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (value !== undefined) node.textContent = value;
+    return node;
+  }
+
+  function formatInteger(value) {
+    return Model.formatExactNumber(value);
+  }
+
+  function formatMoney(balance) {
+    return Model.formatExactMoney(balance?.amount, balance?.unit ?? balance?.currency);
+  }
+
+  function showToast(message) {
+    refs.toast.textContent = message;
+    refs.toast.hidden = false;
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(() => { refs.toast.hidden = true; }, 3600);
+  }
+
+  function showDialog(eyebrow, title, message) {
+    refs.dialogEyebrow.textContent = eyebrow;
+    refs.dialogTitle.textContent = title;
+    refs.dialogMessage.textContent = message;
+    if (typeof refs.messageDialog.showModal === "function") refs.messageDialog.showModal();
+    else showToast(`${title}: ${message}`);
+  }
+
+  // A buy-back's own page is preferred to the list page it was found on.
+  function safeRsiLink(record) {
+    const links = Model.asArray(record?.sourceLinks).filter((link) => typeof link?.url === "string");
+    const candidate = (links.find((link) => link.kind === "detail") ?? links[0])?.url;
+    if (!candidate) return null;
+    try {
+      const url = new URL(candidate);
+      return url.protocol === "https:" && url.hostname === "robertsspaceindustries.com" ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderWikiLink(record) {
+    inspector.wiki.replaceChildren();
+    inspector.wiki.hidden = !record;
+    if (!record) return;
+    const article = state.source === "demo" ? globalThis.CITIZENDATA_DEMO_WIKI_ARTICLES?.[record.recordKey] : null;
+    const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : "Star Citizen";
+    const url = new URL("https://starcitizen.tools/Special:Search");
+    url.searchParams.set("search", title);
+    const link = element("a", "", article ? `About ${article.name}` : `Search wiki: ${title}`);
+    link.href = article ? `https://starcitizen.tools/${encodeURIComponent(article.title)}` : url.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    inspector.wiki.append(link);
+  }
+
+  function imageReference(entity, roles) {
+    return Model.asArray(entity?.images).find((candidate) => roles.includes(candidate?.role) && !Model.isPlaceholderImage(candidate)) ?? null;
+  }
+
+  function badgeTitleKey(value) {
+    return String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/[’‘]/gu, "'").replace(/\s+/gu, " ");
+  }
+
+  function badgeCatalogueEntry(title) {
+    const key = badgeTitleKey(title);
+    return Model.asArray(globalThis.CITIZENDATA_BADGE_CATALOG).find((entry) => badgeTitleKey(entry?.title) === key) ?? null;
+  }
+
+  function badgeWikiUrl(title) {
+    const pageTitle = globalThis.CITIZENDATA_BADGE_WIKI_PAGES?.[title];
+    if (typeof pageTitle !== "string" || !pageTitle.trim()) return "https://starcitizen.tools/Titles";
+    return `https://starcitizen.tools/${pageTitle.trim().split(" ").map(encodeURIComponent).join("_")}`;
+  }
+
+  function localMediaPath(reference) {
+    if (!reference?.imageKey) return null;
+    const runtimeUrl = state.mediaObjectUrls.get(reference.imageKey);
+    if (typeof runtimeUrl === "string" && runtimeUrl.startsWith("blob:")) return runtimeUrl;
+    const map = state.source === "demo" ? globalThis.CITIZENDATA_DEMO_MEDIA : globalThis.CITIZENDATA_OFFLINE_MEDIA;
+    const entry = map?.[reference.imageKey];
+    const relativePath = typeof entry === "string" ? entry : entry?.relativePath;
+    if (typeof relativePath !== "string" || relativePath.length > 260 || relativePath.startsWith("/") || relativePath.startsWith("\\") || relativePath.includes("\\") || relativePath.includes(":")) return null;
+    const segments = relativePath.split("/");
+    if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
+    return relativePath;
+  }
+
+  function scheduleMediaViewRefresh() {
+    if (mediaLoadRefreshScheduled) return;
+    mediaLoadRefreshScheduled = true;
+    queueMicrotask(() => {
+      mediaLoadRefreshScheduled = false;
+      renderIdentity();
+      renderBadges();
+      renderInventory();
+      renderMemberships();
+      renderMediaGallery();
+    });
+  }
+
+  // Where the open images come from, in words: an Images ZIP the user chose, or the images the extension keeps.
+  function imageSourcePhrase() {
+    return state.loadedMediaPackage?.fromExtension ? "the extension" : "the selected Images ZIP";
+  }
+
+  function mediaAssetForReference(reference) {
+    if (!state.loadedMediaPackage || !reference?.imageKey) return null;
+    return state.loadedMediaPackage.manifest.assets.find((candidate) => ["downloaded", "reused"].includes(candidate.status)
+      && candidate.relativePath
+      && (candidate.assetId === reference.imageKey
+        || Model.asArray(candidate.sourceImageKeys).includes(reference.imageKey)
+        || (typeof reference.url === "string" && candidate.sourceUrl === reference.url))) ?? null;
+  }
+
+  function mediaLoadProgress(entries) {
+    let ready = 0;
+    let loading = 0;
+    let unavailable = 0;
+    for (const entry of entries) {
+      if (localMediaPath(entry.reference)) {
+        ready += 1;
+        continue;
+      }
+      const status = state.mediaLoadStates.get(entry.reference?.imageKey)?.status;
+      if (status === "queued" || status === "loading") loading += 1;
+      else if (status === "error") unavailable += 1;
+    }
+    return { ready, loading, unavailable, total: entries.length };
+  }
+
+  function mediaErrorMessage(reference) {
+    return Model.mediaLoadError(state.mediaLoadStates.get(reference?.imageKey));
+  }
+
+  function sortMediaLoadQueue() {
+    mediaLoadQueue.sort((left, right) => right.priority - left.priority || right.sequence - left.sequence);
+  }
+
+  function pumpMediaLoadQueue() {
+    while (mediaLoadActive < 4 && mediaLoadQueue.length) {
+      const task = mediaLoadQueue.shift();
+      if (task.generation !== mediaLoadGeneration || mediaLoadTasks.get(task.imageKey) !== task) {
+        task.resolve(false);
+        continue;
+      }
+      mediaLoadActive += 1;
+      task.started = true;
+      state.mediaLoadStates.set(task.imageKey, { status: "loading", message: `Loading from ${imageSourcePhrase()}.` });
+      if (!task.quiet) scheduleMediaViewRefresh();
+      void (async () => {
+        const blob = await task.package.fileBlob(task.asset.relativePath, task.asset.mediaType);
+        if (task.generation !== mediaLoadGeneration) return false;
+        const knownKeys = new Set([task.imageKey, task.asset.assetId, ...Model.asArray(task.asset.sourceImageKeys)]);
+        const existingObjectUrl = [...knownKeys].map((key) => state.mediaObjectUrls.get(key)).find((value) => typeof value === "string" && value.startsWith("blob:"));
+        const objectUrl = existingObjectUrl ?? URL.createObjectURL(blob);
+        for (const key of knownKeys) state.mediaObjectUrls.set(key, objectUrl);
+        state.mediaLoadStates.set(task.imageKey, { status: "ready", message: "Image ready." });
+        return true;
+      })().catch((error) => {
+        if (task.generation !== mediaLoadGeneration) return false;
+        const message = `Image validation failed: ${error.message}`;
+        state.mediaLoadStates.set(task.imageKey, { status: "error", code: "ZIP_IMAGE_INVALID", message });
+        refs.mediaStatus.textContent = message;
+        return false;
+      }).then(task.resolve).finally(() => {
+        mediaLoadActive -= 1;
+        if (mediaLoadTasks.get(task.imageKey) === task) mediaLoadTasks.delete(task.imageKey);
+        if (state.mediaLoadPromises.get(task.imageKey) === task.promise) state.mediaLoadPromises.delete(task.imageKey);
+        if (!task.quiet) scheduleMediaViewRefresh();
+        pumpMediaLoadQueue();
+      });
+    }
+  }
+
+  // `quiet` is for a caller that places the loaded image itself: the whole view is not rendered again for it. A load
+  // that any other caller also waits for is not quiet.
+  function loadMediaReference(reference, priority = 10, quiet = false) {
+    const imageKey = reference?.imageKey;
+    if (!imageKey || !state.loadedMediaPackage) return Promise.resolve(false);
+    if (state.mediaObjectUrls.has(imageKey)) return Promise.resolve(true);
+    if (state.mediaLoadStates.get(imageKey)?.status === "error") return Promise.resolve(false);
+    const existing = mediaLoadTasks.get(imageKey);
+    if (existing) {
+      if (!quiet) existing.quiet = false;
+      if (!existing.started && priority > existing.priority) {
+        existing.priority = priority;
+        sortMediaLoadQueue();
+      }
+      return existing.promise;
+    }
+    const asset = mediaAssetForReference(reference);
+    if (!asset) {
+      const message = state.loadedMediaPackage.fromExtension ? "The extension does not keep this image yet. Build Images to add it." : "This image is not in the selected Images ZIP. Build Images to add it.";
+      state.mediaLoadStates.set(imageKey, { status: "error", code: "NOT_IN_ZIP", message });
+      if (!quiet) scheduleMediaViewRefresh();
+      return Promise.resolve(false);
+    }
+    let resolve;
+    const promise = new Promise((complete) => { resolve = complete; });
+    const task = { imageKey, asset, package: state.loadedMediaPackage, priority, quiet, sequence: mediaLoadSequence += 1, generation: mediaLoadGeneration, promise, resolve, started: false };
+    mediaLoadTasks.set(imageKey, task);
+    state.mediaLoadPromises.set(imageKey, promise);
+    state.mediaLoadStates.set(imageKey, { status: "queued", message: `Queued from ${imageSourcePhrase()}.` });
+    mediaLoadQueue.push(task);
+    sortMediaLoadQueue();
+    pumpMediaLoadQueue();
+    return promise;
+  }
+
+  function prioritizeMediaEntries(entries, priority) {
+    for (const [index, entry] of entries.entries()) void loadMediaReference(entry.reference, priority - index / 1000);
+  }
+
+  function renderLocalImage(image, fallback, reference, fallbackAlt, options = {}) {
+    image.hidden = true;
+    image.removeAttribute("src");
+    image.alt = "";
+    if (fallback) fallback.hidden = false;
+    const path = localMediaPath(reference);
+    if (!path) {
+      const priority = options.priority === null ? null : Number.isFinite(options.priority) ? options.priority : 10;
+      if (priority !== null && reference?.imageKey && state.loadedMediaPackage) void loadMediaReference(reference, priority);
+      return false;
+    }
+    image.src = path;
+    image.alt = reference?.altText ?? fallbackAlt;
+    image.onerror = () => {
+      image.hidden = true;
+      if (fallback) fallback.hidden = false;
+      if (reference?.imageKey) {
+        state.mediaObjectUrls.delete(reference.imageKey);
+        state.mediaLoadStates.set(reference.imageKey, { status: "error", code: "IMAGE_DECODE_FAILED", message: "The browser could not decode this image from the selected ZIP." });
+      }
+      refs.mediaStatus.textContent = "The browser could not decode an image from the selected ZIP.";
+      scheduleMediaViewRefresh();
+    };
+    image.hidden = false;
+    if (fallback) fallback.hidden = true;
+    return true;
+  }
+
+  function clearLoadedMediaPackage() {
+    mediaLoadGeneration += 1;
+    for (const task of mediaLoadQueue.splice(0)) task.resolve(false);
+    mediaLoadTasks.clear();
+    for (const objectUrl of new Set(state.mediaObjectUrls.values())) URL.revokeObjectURL(objectUrl);
+    state.mediaObjectUrls.clear();
+    state.mediaLoadPromises.clear();
+    state.mediaLoadStates.clear();
+    state.loadedMediaPackage = null;
+    state.loadedMediaFileName = null;
+  }
+
+  function rotateHero() {
+    const key = "citizendata.hero-rotation.v2";
+    let index = 0;
+    try {
+      const previous = Number.parseInt(sessionStorage.getItem(key) ?? "-1", 10);
+      index = Number.isInteger(previous) ? (previous + 1) % HERO_NAMES.length : 0;
+      sessionStorage.setItem(key, String(index));
+    } catch {
+      index = Math.floor(Math.random() * HERO_NAMES.length);
+    }
+    refs.identityHero.dataset.heroArt = HERO_NAMES[index];
+  }
+
+  function mainMembership() {
+    return Model.getMainMembership(state.document);
+  }
+
+  function renderIdentity() {
+    const data = state.document;
+    const handle = data.account?.handle ?? data.profile?.handle ?? "Unknown account";
+    const anomalyCount = Array.isArray(data.dataQuality?.anomalies) ? data.dataQuality.anomalies.length : 0;
+    const anomalySummary = `${formatInteger(anomalyCount)} raw data warning${anomalyCount === 1 ? "" : "s"}`;
+    const membership = mainMembership();
+    text("accountHandle", handle);
+    text("avatarInitials", Model.initials(data.profile?.displayName ?? handle));
+    const avatarVisible = renderLocalImage(refs.avatarImage, refs.avatarInitials, imageReference(data.profile, ["avatar", "profileAvatar"]), `${handle} account avatar`);
+    byId("avatar").setAttribute("aria-label", avatarVisible ? `${handle} account avatar` : `${handle} initials`);
+    text("citizenRecordNumber", data.account?.ueeCitizenRecord === null || data.account?.ueeCitizenRecord === undefined ? "record unavailable" : `#${data.account.ueeCitizenRecord}`);
+    text("enlistedOn", data.profile?.enlistedOnRaw ?? "Unavailable");
+    text("mainOrganization", membership?.name ?? data.profile?.mainOrganizationSid ?? "No main organization");
+    text("organizationRank", data.profile?.organizationRank ?? membership?.rank ?? "Unavailable");
+    const badgeTitle = data.profile?.dossierBadgeTitle ?? data.profile?.displayTitle ?? "Dossier badge unavailable";
+    text("displayTitle", badgeTitle);
+    let badgeVisible = renderLocalImage(refs.dossierBadgeImage, refs.dossierBadgeFallback, imageReference(data.profile, ["dossierBadge", "badge"]), badgeTitle);
+    const catalogueBadge = badgeCatalogueEntry(badgeTitle);
+    const cataloguePath = catalogueBadge?.images?.[0]?.assetPath;
+    if (!badgeVisible && typeof cataloguePath === "string" && /^assets\/badges\/[a-z0-9-]+\.(?:png|jpg|gif|webp)$/u.test(cataloguePath)) {
+      refs.dossierBadgeImage.src = cataloguePath;
+      refs.dossierBadgeImage.alt = badgeTitle;
+      refs.dossierBadgeImage.hidden = false;
+      refs.dossierBadgeFallback.hidden = true;
+      badgeVisible = true;
+    }
+    refs.dossierBadgeImage.parentElement.hidden = !badgeVisible;
+    const organizationLabel = membership?.name ?? data.profile?.mainOrganizationSid ?? "No main organization";
+    renderLocalImage(refs.organizationEmblemImage, refs.organizationEmblemFallback, imageReference(membership, ["emblem", "organizationEmblem"]), `${organizationLabel} organization emblem`);
+    text("railAccount", handle);
+    text("railExported", state.fileName);
+    const hangarLinkFile = state.source !== "demo" && globalThis.CitizenDataHangarLinkImport.isHangarLinkImport(state.document);
+    text("snapshotEyebrow", state.source === "demo" ? "EXAMPLE ACCOUNT" : hangarLinkFile ? "INCOMPLETE BUILD · HANGAR LINK JSON" : "LOADED ACCOUNT SNAPSHOT");
+    text("dataStateTitle", state.source === "demo" ? "Example preview loaded" : "Local account document loaded");
+    text("dataStateDetail", state.source === "demo" ? "Load an account JSON to review your data" : anomalyCount ? `Your file is open on this device · ${anomalySummary}` : "Your file is open on this device");
+    text("documentStatusTitle", state.source === "demo" ? "EXAMPLE DATA" : hangarLinkFile ? "HANGAR LINK JSON LOADED" : "LOCAL JSON LOADED");
+    text("documentStatusDetail", state.source === "demo" ? "No private account data · no upload" : anomalyCount ? `Browser memory only · ${anomalySummary}` : "Browser memory only · no upload");
+    renderFileStatus(anomalyCount);
+  }
+
+  // The example account's images are bundled with the dashboard. Its image figures read as those of an account whose
+  // Images ZIP is loaded: one image for each image key the example document names and the bundle holds.
+  const EXAMPLE_IMAGES_FILE = "example-images.zip";
+  function exampleImageCount() {
+    const bundled = globalThis.CITIZENDATA_DEMO_MEDIA ?? {};
+    const keys = new Set();
+    const visit = (value) => {
+      if (!value || typeof value !== "object") return;
+      if (typeof value.imageKey === "string" && Object.hasOwn(bundled, value.imageKey)) keys.add(value.imageKey);
+      for (const child of Array.isArray(value) ? value : Object.values(value)) visit(child);
+    };
+    visit(state.document);
+    return keys.size;
+  }
+
+  function renderFileStatus(anomalyCount) {
+    const outcomes = Object.values(state.document.sync?.sectionOutcomes ?? {}).filter((outcome) => outcome && typeof outcome === "object");
+    const completed = outcomes.filter((outcome) => outcome.status === "complete").length;
+    const imported = state.source !== "demo" && globalThis.CitizenDataHangarLinkImport.isHangarLinkImport(state.document);
+    const sections = outcomes.length ? `${formatInteger(completed)} of ${formatInteger(outcomes.length)} sections complete` : state.source === "demo" ? "Example records" : "No collection receipt in this file";
+    const collection = imported ? `Incomplete build · ${sections}` : sections;
+    text("healthSummaryTitle", state.source === "demo" ? "Example account" : state.fileName);
+    text("healthSummaryDetail", state.source === "demo" ? "Bundled sample data" : `${collection} · ${formatInteger(anomalyCount)} warning${anomalyCount === 1 ? "" : "s"}`);
+    text("healthSource", state.source === "demo" ? "Bundled example" : imported ? "Hangar Link JSON opened in this browser" : "Local JSON opened in this browser");
+    text("healthCompleteness", collection);
+    text("healthWarnings", anomalyCount ? `${formatInteger(anomalyCount)} retained for review` : "None");
+    text("healthAccountFile", state.source === "demo" ? "example.json" : state.fileName);
+    text("orgFileStatus", state.source === "demo" ? "Example roster data" : state.organizationFileName ?? "No Orgs JSON loaded");
+    const exampleImages = state.source === "demo" && !state.loadedMediaPackage && !state.pendingMediaPackage && !state.mediaController;
+    text("imageFileStatus", state.loadedMediaFileName ?? state.pendingMediaPackage?.fileName ?? (exampleImages ? EXAMPLE_IMAGES_FILE : "No Images ZIP loaded"));
+    refs.mediaZipLoadedState.hidden = !state.loadedMediaPackage && !exampleImages;
+    const packagedImages = state.loadedMediaPackage?.manifest?.summary;
+    text("healthMedia", exampleImages
+      ? `${formatInteger(exampleImageCount())} packaged images loaded`
+      : state.mediaController
+      ? "Image download in progress"
+      : packagedImages
+        ? `${formatInteger((packagedImages.downloaded ?? 0) + (packagedImages.reused ?? 0))} packaged images loaded${packagedImages.failed ? ` · ${formatInteger(packagedImages.failed)} failed` : ""}`
+        : state.pendingMediaPackage
+          ? "ZIP ready to save"
+          : state.document.materializationReceipt?.promoted === true ? "Included in this offline package" : "Available as an optional download");
+  }
+
+  function renderSummary() {
+    const data = state.document;
+    const storeCredit = Model.getBalance(data, "storeCredit");
+    const uec = Model.getBalance(data, "uec");
+    const rec = Model.getBalance(data, "rec");
+    const billingTotal = Model.getBillingTotal(data);
+    // The counts are what the account holds; a record RSI no longer lists is shown in its list but not counted here.
+    const heldPledges = heldRecords(data.pledges).length;
+    const heldBuybacks = heldRecords(data.buybacks).length;
+    text("hangarTotal", formatInteger(heldPledges));
+    text("buybackTotal", formatInteger(heldBuybacks));
+    text("hangarTabCount", formatInteger(heldPledges));
+    text("buybacksTabCount", formatInteger(heldBuybacks));
+    text("railHangarCount", `${formatInteger(heldPledges)} records`);
+    text("railBuybackCount", `${formatInteger(heldBuybacks)} records`);
+    text("storeCredit", formatMoney(storeCredit));
+    text("uecBalance", formatMoney(uec));
+    text("detailStoreCredit", `${formatMoney(storeCredit)} ${storeCredit?.unit === "USD" ? "USD" : ""}`.trim());
+    text("detailUec", formatMoney(uec));
+    text("detailRec", formatMoney(rec));
+    text("billingTotal", billingTotal ? formatMoney({ amount: billingTotal.amount, unit: billingTotal.currency }) : "—");
+    text("billingCurrency", billingTotal ? `${billingTotal.currency} total spent` : "Not included in this file");
+    renderSubscriptions();
+  }
+
+  function renderSubscriptions() {
+    const summary = globalThis.CitizenDataSubscriptions.summarize(state.document);
+    const tier = summary.tier === "imperator" ? "Imperator" : summary.tier === "centurion" ? "Centurion" : "";
+    for (const id of ["subscriptionSummary", "subscriptions"]) byId(id).dataset.tier = summary.tier ?? "";
+    for (const id of ["subscriptionSummaryIcon", "subscriptionStatusIcon"]) byId(id).hidden = !summary.tier;
+    text("subscriptionTier", tier);
+    for (const id of ["subscriptionSpent", "subscriptionDetailSpent"]) {
+      const target = byId(id);
+      target.replaceChildren();
+      for (const total of summary.totals) {
+        const suffix = id === "subscriptionDetailSpent" || summary.totals.length > 1 ? ` ${total.currency}` : "";
+        target.append(element("span", "subscription-amount", `${Model.formatExactMoney(total.amount, total.currency)}${suffix}`));
+      }
+    }
+    text("subscriptionMetricDetail", [tier, summary.totals.length === 1 ? `${summary.totals[0].currency} spent` : summary.totals.length > 1 ? "Total spent" : "", summary.note ? "Partial data" : ""].filter(Boolean).join(" · "));
+    text("subscriptionNote", summary.note);
+    byId("subscriptionNote").hidden = !summary.note;
+  }
+
+  function renderBadgeCard(badge, unlockable = false) {
+    const card = element("a", "badge-card");
+    card.href = badgeWikiUrl(badge.title);
+    card.target = "_blank";
+    card.rel = "noopener noreferrer";
+    card.setAttribute("aria-label", `${badge.title}. Open Star Citizen Wiki in a new tab.`);
+    const image = element("img");
+    // Badge grids sit inside closed disclosure panels; lazy loading defers their artwork until a panel is opened.
+    image.loading = "lazy";
+    image.decoding = "async";
+    if (Number.isSafeInteger(badge.id)) {
+      const badgeId = String(badge.id);
+      card.dataset.badgeId = badgeId;
+      image.dataset.badgeId = badgeId;
+    }
+    if (unlockable && typeof badge.section === "string" && badge.section.trim()) {
+      card.dataset.badgeSection = badge.section.trim();
+      image.dataset.badgeSection = badge.section.trim();
+    }
+    const fallback = element("span", "rsi-icon icon-citizen");
+    const reference = imageReference(badge, ["badge", "badge-favorite", "badge-featured"]);
+    const assetPath = badge.assetPath ?? badgeCatalogueEntry(badge.title)?.images?.[0]?.assetPath;
+    let visible = !unlockable && renderLocalImage(image, fallback, reference, badge.title);
+    if (!visible && typeof assetPath === "string" && /^assets\/badges\/[a-z0-9-]+\.(?:png|jpg|gif|webp)$/u.test(assetPath)) {
+      image.src = assetPath;
+      image.alt = badge.title;
+      image.hidden = false;
+      fallback.hidden = true;
+      visible = true;
+    }
+    if (!visible) image.hidden = true;
+    const copy = element("span");
+    copy.append(element("b", "", badge.title));
+    card.append(image, fallback, copy);
+    return card;
+  }
+
+  function renderBadges() {
+    const unique = new Map();
+    for (const badge of Model.asArray(state.document.profile?.unlockedBadges)) {
+      if (!Number.isSafeInteger(badge?.id) || typeof badge?.title !== "string" || !badge.title.trim()) continue;
+      unique.set(`${badge.id}|${badge.title}`, badge);
+    }
+    const unlocked = [...unique.values()].sort((left, right) => left.title.localeCompare(right.title, "en", { sensitivity: "base" }) || left.id - right.id);
+    const unlockedGrid = byId("unlockedBadgeGrid");
+    unlockedGrid.replaceChildren(...unlocked.map((badge) => renderBadgeCard(badge)));
+    byId("unlockedBadgeEmpty").hidden = unlocked.length > 0;
+    const collection = state.document.profile?.badgeCollection;
+    const populatedCount = Number.isSafeInteger(collection?.nonNullRows) ? collection.nonNullRows : unlocked.length;
+    const duplicateCount = Number.isSafeInteger(collection?.exactDuplicateRows) ? collection.exactDuplicateRows : Math.max(0, populatedCount - unlocked.length);
+    text("badgeSummaryCount", `${formatInteger(unlocked.length)} account badges`);
+    const unlockedNote = byId("unlockedBadgeNote");
+    unlockedNote.hidden = populatedCount === unlocked.length && duplicateCount === 0;
+    unlockedNote.textContent = unlockedNote.hidden
+      ? ""
+      : `RSI returned ${formatInteger(populatedCount)} populated account badge rows. ${formatInteger(unlocked.length)} unique badges are shown; ${formatInteger(duplicateCount)} exact duplicate ${duplicateCount === 1 ? "row was" : "rows were"} excluded.`;
+
+    const catalogue = Model.asArray(globalThis.CITIZENDATA_UNLOCKABLE_BADGES);
+    const unlockedTitles = new Set(unlocked.map((badge) => badgeTitleKey(badge.title)));
+    const unlockable = catalogue.filter((badge) => typeof badge?.title === "string" && !unlockedTitles.has(badgeTitleKey(badge.title)))
+      .map((badge) => ({ title: badge.title, id: null, section: badge.section, assetPath: badge.images?.[0]?.assetPath ?? null }));
+    const unlockableGrid = byId("unlockableBadgeGrid");
+    unlockableGrid.replaceChildren(...unlockable.map((badge) => renderBadgeCard(badge, true)));
+    byId("unlockableBadgeEmpty").hidden = unlockable.length > 0;
+    text("unlockableBadgeCount", catalogue.length ? `${formatInteger(unlockable.length)} available` : "Catalogue unavailable");
+  }
+
+  // A record RSI no longer lists, with no Hangar Log entry that accounts for it, stays in the backup with the state
+  // "not-reconcilable". Its row has its own wording and colour; the wording carries the meaning, so colour is never
+  // the only signal.
+  const REMOVED_LABEL = "POTENTIAL GHOST REMOVAL";
+
+  function isRemoved(record) {
+    return record?.state === "not-reconcilable";
+  }
+
+  function stateLabel(record) {
+    return isRemoved(record) ? REMOVED_LABEL : record?.state ?? "Unknown";
+  }
+
+  // The third column of the inventory table: what a hangar pledge melts for, or what a buy-back costs.
+  function inventoryValueHeading() {
+    return state.activeInventory === "buybacks" ? "Price" : "Melt Value";
+  }
+
+  // The amount shown in that column, worded as the inspector words it.
+  function inventoryValueText(record) {
+    const details = pledgeDetails(record);
+    if (state.activeInventory !== "buybacks") return priceText(details.meltValue);
+    return record.kind === "upgrade" && !details.buybackPrice ? "Varies, check on RSI" : priceText(details.buybackPrice);
+  }
+
+  // The records the account holds now: those RSI lists.
+  function heldRecords(records) {
+    return Model.asArray(records).filter((record) => !isRemoved(record));
+  }
+
+  // Removed records are shown first, so they are not left on the last page of a long list. The order is worked out
+  // once for each list of a loaded document.
+  const inventoryOrders = new WeakMap();
+  function inventoryRecords() {
+    const records = state.activeInventory === "hangar" ? state.document.pledges : state.document.buybacks;
+    if (!Array.isArray(records)) return [];
+    let ordered = inventoryOrders.get(records);
+    if (!ordered) {
+      ordered = records.some((record) => isRemoved(record)) ? [...records.filter((record) => isRemoved(record)), ...heldRecords(records)] : records;
+      inventoryOrders.set(records, ordered);
+    }
+    return ordered;
+  }
+
+  function recordDate(record) {
+    return record.createdDateRaw ?? record.reclaimDateRaw ?? "Unavailable";
+  }
+
+  function categoryLabel(category) {
+    const labels = { gamePackage: "Game package", standaloneShip: "Standalone ship", shipUpgrade: "Ship upgrade", reward: "Reward", hangarItem: "Hangar item", armor: "Armor", weapon: "Weapon", other: "Other", unknown: "Unknown" };
+    return Object.hasOwn(labels, category) ? labels[category] : "Unclassified";
+  }
+
+  function visibleInventory() {
+    const query = refs.search.value.trim().toLocaleLowerCase();
+    return inventoryRecords().filter((record) => {
+      const groupMatch = state.activeGroup === "all" || record.category === state.activeGroup;
+      const queryMatch = !query || Model.inventorySearchText(record).includes(query) || stateLabel(record).toLocaleLowerCase().includes(query);
+      return groupMatch && queryMatch;
+    });
+  }
+
+  function makeFact(label, value) {
+    const row = element("div");
+    row.append(element("dt", "", label), element("dd", "", value));
+    return row;
+  }
+
+  function renderInspectorItems(record, expanded = false) {
+    const items = Model.asArray(record?.items);
+    inspector.itemList.replaceChildren();
+    inspector.items.hidden = items.length === 0;
+    inspector.itemRemainder.textContent = "";
+    let toggle = byId("inspectorItemsToggle");
+    if (!toggle) {
+      toggle = element("button", "text-button");
+      toggle.id = "inspectorItemsToggle";
+      toggle.type = "button";
+      toggle.setAttribute("aria-controls", "inspectorItemList");
+      inspector.itemRemainder.after(toggle);
+    }
+    toggle.hidden = items.length <= 4;
+    toggle.textContent = expanded ? "Show fewer items" : `Show all ${formatInteger(items.length)} items`;
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.onclick = () => renderInspectorItems(record, !expanded);
+    for (const item of expanded ? items : items.slice(0, 4)) {
+      const card = element("div", "inspector-item");
+      const media = element("span", "inspector-item-media");
+      const image = element("img");
+      image.hidden = true;
+      const icon = element("span", `rsi-icon ${item.category === "gamePackage" ? "icon-game-package" : "icon-ship"}`);
+      icon.setAttribute("aria-hidden", "true");
+      renderLocalImage(image, icon, imageReference(item, ["thumbnail", "hero", "primary"]), item.name ?? "Contained item image");
+      media.append(image, icon);
+      const labels = element("span");
+      labels.append(element("b", "", item.customName ? `${item.name} - ${item.customName}` : item.name ?? "Unnamed contained item"), element("small", "", item.kind ?? categoryLabel(item.category)));
+      card.append(media, labels);
+      inspector.itemList.append(card);
+    }
+  }
+
+  // Example presentation fixtures remain isolated; loaded files use only accepted record fields.
+  function pledgeDetails(record) {
+    if (state.source === "demo") return globalThis.CITIZENDATA_DEMO_PLEDGE_DETAILS?.[record?.recordKey] ?? {};
+    if (!record || typeof record !== "object") return {};
+    return {
+      meltValue: record.meltValue ?? null,
+      buybackPrice: record.buybackPrice ?? null,
+      baseValue: record.baseValue ?? null,
+      ccuHistory: Model.asArray(record.ccuHistory)
+    };
+  }
+
+  // What each buy-back's own page showed, by buy-back number. The index is built once for a loaded document.
+  const buybackDetailIndexes = new WeakMap();
+  function buybackDetailFor(record) {
+    const loaded = state.document;
+    if (!loaded || typeof loaded !== "object" || !Number.isSafeInteger(record?.buybackId)) return null;
+    let index = buybackDetailIndexes.get(loaded);
+    if (!index) {
+      index = new Map(Model.asArray(loaded.buybackDetails).map((detail) => [detail?.buybackId, detail]));
+      buybackDetailIndexes.set(loaded, index);
+    }
+    return index.get(record.buybackId) ?? null;
+  }
+
+  // A buy-back as the inspector shows it: the list row, with the images, ships, and contents its own page showed.
+  // The buy-back list itself names no contents.
+  function withBuybackDetail(record) {
+    const detail = state.activeInventory === "buybacks" ? buybackDetailFor(record) : null;
+    if (!detail) return record;
+    const items = Model.asArray(record.items).length ? record.items : [
+      ...Model.asArray(detail.ships).map((ship) => ({ name: ship.name, kind: [ship.manufacturer, ship.focus].filter(Boolean).join(" · ") || "Ship", category: "standaloneShip", images: Model.asArray(ship.images) })),
+      ...Model.asArray(detail.alsoContains).map((name) => ({ name, kind: "Also contains", category: "other", images: [] }))
+    ];
+    return { ...record, images: [...Model.asArray(record.images), ...Model.asArray(detail.images)], items };
+  }
+
+  // What a new backup found missing since the earlier one, for the message shown when it is saved.
+  function removalSummary(saved) {
+    const tracking = saved?.sync?.removalTracking;
+    const found = (key) => ["pledges", "buybacks"].reduce((total, list) => total + (Number.isSafeInteger(tracking?.[list]?.[key]) ? tracking[list][key] : 0), 0);
+    const parts = [];
+    if (found("notReconcilable")) parts.push(`${formatInteger(found("notReconcilable"))} potential ghost removal${found("notReconcilable") === 1 ? "" : "s"}`);
+    return parts.length ? ` It found ${parts.join(" and ")}, shown first in the Hangar and Buybacks lists.` : "";
+  }
+
+  function capturedDateText(value) {
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? new Date(time).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "Unavailable";
+  }
+
+  function priceText(value) {
+    if (value?.amount === null || value?.amount === undefined || !value?.currency) return "—";
+    const amount = formatMoney(value);
+    return amount === "—" ? amount : amount + " " + value.currency;
+  }
+
+  let ccuOpener = null;
+  const ccuDialog = byId("ccuDialog");
+  ccuDialog.addEventListener("close", () => {
+    if (ccuOpener?.isConnected && !ccuOpener.hidden) ccuOpener.focus({ preventScroll: true });
+    ccuOpener = null;
+  });
+
+  function showCcuHistory(record, opener) {
+    const details = pledgeDetails(record);
+    const steps = Model.asArray(details.ccuHistory);
+    if (!steps.length) return;
+    text("ccuPledgeName", record.title ?? "Untitled pledge");
+    text("ccuBaseValue", priceText(details.baseValue));
+    const list = byId("ccuSteps");
+    list.replaceChildren();
+    for (const [index, step] of steps.entries()) {
+      const row = element("li", "ccu-step");
+      row.setAttribute("aria-label", "Upgrade " + (index + 1));
+      for (const [className, label, value] of [
+        ["ccu-from", "From", step.fromShip ?? "—"],
+        ["ccu-to", "To", step.toShip ?? "—"],
+        ["ccu-applied", "Applied", typeof step.appliedDateRaw === "string" && step.appliedDateRaw.trim() ? step.appliedDateRaw.trim() : "—"],
+        ["ccu-cost", "CCU cost", priceText(step.cost)],
+        ["ccu-total", "Running total", priceText(step.cumulativeValue)]
+      ]) {
+        const cell = element("div", className);
+        cell.append(element("span", "ccu-label", label), element("b", "ccu-value", value));
+        row.append(cell);
+      }
+      list.append(row);
+    }
+    ccuOpener = opener;
+    ccuDialog.showModal();
+  }
+
+  function makeCcuButton(record) {
+    const button = element("button", "ccu-history-button");
+    button.type = "button";
+    button.setAttribute("aria-label", "View CCU history for " + record.title);
+    button.setAttribute("aria-haspopup", "dialog");
+    button.setAttribute("aria-controls", "ccuDialog");
+    button.title = "CCU history";
+    const icon = element("span", "rsi-icon icon-computer");
+    icon.setAttribute("aria-hidden", "true");
+    button.append(icon);
+    button.addEventListener("click", () => showCcuHistory(record, button));
+    return button;
+  }
+
+  function mediaCountLabel(count) {
+    return `${count} image${count === 1 ? "" : "s"}`;
+  }
+
+  function mediaThumbnail(entry, index, active, onSelect) {
+    const button = element("button", "media-thumbnail");
+    button.type = "button";
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-label", `View image ${index + 1}: ${entry.label}`);
+    button.setAttribute("aria-pressed", String(active));
+    const path = localMediaPath(entry.reference);
+    const error = mediaErrorMessage(entry.reference);
+    button.classList.toggle("error", Boolean(error));
+    if (error) button.title = error;
+    if (path) {
+      const image = element("img");
+      image.src = path;
+      image.alt = "";
+      button.append(image);
+    } else {
+      button.append(element("span", "rsi-icon icon-media-pending"), element("small", "", error ? "!" : String(index + 1)));
+    }
+    button.addEventListener("click", onSelect);
+    return button;
+  }
+
+  function renderInspectorMedia(record) {
+    const entries = Model.inventoryMediaEntries(record);
+    inspector.image.hidden = true;
+    inspector.image.removeAttribute("src");
+    inspector.galleryOpen.hidden = true;
+    inspector.galleryOpen.onclick = null;
+    inspector.galleryThumbnails.replaceChildren();
+    inspector.galleryThumbnails.hidden = entries.length === 0;
+    inspector.icon.hidden = entries.length > 0;
+    if (!entries.length) {
+      inspector.media.textContent = "NO IMAGES";
+      return;
+    }
+    inspectorMediaIndex = Math.min(inspectorMediaIndex, entries.length - 1);
+    const active = entries[inspectorMediaIndex];
+    if (state.loadedMediaPackage) {
+      void loadMediaReference(active.reference, 1000);
+      prioritizeMediaEntries(entries.filter((entry) => entry !== active), 900);
+    }
+    const localImageVisible = renderLocalImage(inspector.image, null, active.reference, active.label, { priority: 1000 });
+    const progress = mediaLoadProgress(entries);
+    const activeError = mediaErrorMessage(active.reference);
+    inspector.galleryOpen.hidden = !localImageVisible;
+    inspector.galleryOpen.setAttribute("aria-label", `Open all ${mediaCountLabel(entries.length)} for ${record.title ?? "this record"}`);
+    inspector.galleryOpen.onclick = () => openMediaGallery(record, inspector.galleryOpen, inspectorMediaIndex);
+    inspector.media.textContent = !state.loadedMediaPackage
+      ? `${mediaCountLabel(entries.length).toUpperCase()} AVAILABLE`
+      : activeError
+        ? `${progress.ready} OF ${progress.total} READY${progress.unavailable ? ` · ${progress.unavailable} UNAVAILABLE` : ""}`
+        : localImageVisible && progress.loading === 0
+          ? `${progress.ready} OF ${progress.total} READY`
+          : `${progress.ready} OF ${progress.total} READY · ${progress.loading} LOADING`;
+    inspector.media.title = activeError ?? "";
+    inspector.galleryThumbnails.replaceChildren(...entries.map((entry, index) => mediaThumbnail(entry, index, index === inspectorMediaIndex, () => {
+      inspectorMediaIndex = index;
+      renderInspectorMedia(record);
+    })));
+  }
+
+  function renderMediaGallery() {
+    if (!mediaGalleryRecord || !refs.mediaGalleryDialog.open) return;
+    const entries = Model.inventoryMediaEntries(mediaGalleryRecord);
+    mediaGalleryIndex = Math.min(mediaGalleryIndex, Math.max(0, entries.length - 1));
+    const active = entries[mediaGalleryIndex];
+    if (state.loadedMediaPackage && active) {
+      void loadMediaReference(active.reference, 2000);
+      prioritizeMediaEntries(entries.filter((entry) => entry !== active), 1900);
+    }
+    const progress = mediaLoadProgress(entries);
+    refs.mediaGalleryTitle.textContent = mediaGalleryRecord.title ?? "Record images";
+    refs.mediaGalleryStatus.textContent = !entries.length
+      ? "No images are recorded for this item."
+      : !state.loadedMediaPackage
+        ? `${mediaCountLabel(entries.length)} related to this record and its contained items. Load the Images ZIP to view them.`
+        : `${progress.ready} of ${progress.total} ready${progress.loading ? ` · ${progress.loading} loading` : ""}${progress.unavailable ? ` · ${progress.unavailable} unavailable` : ""}.`;
+    refs.mediaGalleryThumbnails.replaceChildren(...entries.map((entry, index) => mediaThumbnail(entry, index, index === mediaGalleryIndex, () => {
+      mediaGalleryIndex = index;
+      renderMediaGallery();
+    })));
+    const path = active ? localMediaPath(active.reference) : null;
+    refs.mediaGalleryFull.hidden = !path;
+    refs.mediaGalleryImage.hidden = !path;
+    refs.mediaGalleryPlaceholder.hidden = Boolean(path);
+    if (path) {
+      refs.mediaGalleryFull.href = path;
+      refs.mediaGalleryFull.setAttribute("aria-label", `Open ${active.label} full size in a new tab`);
+      refs.mediaGalleryImage.src = path;
+      refs.mediaGalleryImage.alt = active.label;
+    } else {
+      refs.mediaGalleryFull.removeAttribute("href");
+      refs.mediaGalleryImage.removeAttribute("src");
+      refs.mediaGalleryImage.alt = "";
+      const error = active ? mediaErrorMessage(active.reference) : null;
+      refs.mediaGalleryPlaceholder.textContent = active
+        ? error ?? (state.loadedMediaPackage ? "Loading this image from the selected ZIP." : "Load the offline image ZIP to view this image.")
+        : "No images are recorded for this item.";
+    }
+  }
+
+  function openMediaGallery(record, opener, startIndex = 0) {
+    mediaGalleryRecord = record;
+    mediaGalleryIndex = Math.max(0, startIndex);
+    mediaGalleryOpener = opener;
+    if (!refs.mediaGalleryDialog.open) refs.mediaGalleryDialog.showModal();
+    renderMediaGallery();
+  }
+
+  function selectRecord(record, focusInspector = false, announce = false) {
+    if (state.activeRecordKey !== (record?.recordKey ?? null)) inspectorMediaIndex = record ? Model.inventoryLeadMediaIndex(record) : 0;
+    state.activeRecordKey = record?.recordKey ?? null;
+    // One short line replaces a live region over the whole inspector, which re-read every field on each selection.
+    if (announce && record) refs.inspectorAnnouncement.textContent = `Showing details for ${record.title ?? "untitled record"}.`;
+    renderWikiLink(record);
+    for (const row of refs.rows.querySelectorAll("tr")) row.classList.toggle("selected", row.dataset.recordKey === state.activeRecordKey);
+    inspector.ccu.hidden = !Model.asArray(pledgeDetails(record).ccuHistory).length;
+    inspector.ccu.onclick = record ? () => showCcuHistory(record, inspector.ccu) : null;
+    inspector.ccu.setAttribute("aria-label", "View CCU history for " + (record?.title ?? "pledge"));
+    if (!record) {
+      inspector.title.textContent = "No visible record selected";
+      inspector.subtitle.textContent = "Adjust the filters to restore records.";
+      inspector.group.textContent = "NO SELECTION";
+      inspector.facts.replaceChildren();
+      renderInspectorItems(null);
+      renderInspectorMedia(null);
+      inspector.source.hidden = true;
+      inspector.sourcePending.hidden = false;
+      return;
+    }
+    inspector.group.textContent = categoryLabel(record.category).toUpperCase();
+    inspector.title.textContent = record.title ?? "Untitled record";
+    inspector.subtitle.textContent = record.containsSummary ?? "No contained-item summary in the loaded document.";
+    const shown = withBuybackDetail(record);
+    const mediaEntries = Model.inventoryMediaEntries(shown);
+    renderInspectorMedia(shown);
+    inspector.facts.replaceChildren(
+      makeFact("State", stateLabel(record)),
+      makeFact("Date", recordDate(record)),
+      makeFact("Media", mediaEntries.length ? mediaCountLabel(mediaEntries.length) : "No images")
+    );
+    const details = pledgeDetails(record);
+    const isBuyback = state.activeInventory === "buybacks";
+    // A record that went missing shows when it was last listed, when it was first found missing, and what the
+    // Hangar Log says about it. One that is listed again keeps those facts.
+    const removal = record.removal && typeof record.removal === "object" ? record.removal : null;
+    if (removal) {
+      if (removal.lastSeenAt) inspector.facts.append(makeFact("Last Seen", capturedDateText(removal.lastSeenAt)));
+      if (removal.firstMissingAt) inspector.facts.append(makeFact("First Missing", capturedDateText(removal.firstMissingAt)));
+      if (removal.returnedAt) inspector.facts.append(makeFact("Listed Again", capturedDateText(removal.returnedAt)));
+      if (!removal.returnedAt) inspector.facts.append(makeFact("Hangar Log", `No entry names this ${isBuyback ? "buy-back" : "pledge"}`));
+    }
+    if (isBuyback) {
+      // A buy-back's price is the one its own page showed on the day it was read. An upgrade's price is not recorded.
+      const detail = buybackDetailFor(record);
+      if (detail?.price && detail.capturedAt) inspector.facts.append(makeFact("Price Read", capturedDateText(detail.capturedAt)));
+      if (detail?.originalPrice) inspector.facts.append(makeFact("Before Discount", priceText(detail.originalPrice)));
+      if (detail?.discountText) inspector.facts.append(makeFact("Discount", detail.discountText));
+      inspector.facts.append(makeFact("Buyback Price", inventoryValueText(record)));
+    } else inspector.facts.append(makeFact("Melt Value", priceText(details.meltValue)));
+    renderInspectorItems(shown);
+    inspector.note.textContent = state.source === "demo"
+      ? "An example record for exploring the dashboard."
+      : isRemoved(record)
+        ? "Your earlier backup listed this record. RSI no longer lists it, and no Hangar Log entry accounts for it. Keep your earlier backup files."
+        : "Details from your account file.";
+    const link = safeRsiLink(record);
+    inspector.source.hidden = !link;
+    inspector.sourcePending.hidden = Boolean(link);
+    if (link) {
+      inspector.source.href = link;
+      inspector.source.target = "_blank";
+      inspector.source.rel = "noreferrer noopener";
+    }
+    if (focusInspector) inspector.panel.focus({ preventScroll: true });
+  }
+
+  // Search and category filters run over the whole dataset first; only the matching records are paged.
+  function renderInventory() {
+    text("inventoryValueHeading", inventoryValueHeading());
+    const visible = visibleInventory();
+    const page = Model.paginate(visible, state.inventoryPage, INVENTORY_PAGE_SIZE);
+    state.inventoryPage = page.page;
+    refs.rows.replaceChildren();
+    for (const [rowIndex, record] of page.items.entries()) {
+      const row = element("tr");
+      row.dataset.recordKey = record.recordKey;
+      const removed = isRemoved(record);
+      if (removed) row.classList.add("record-ghost");
+      const recordCell = element("td");
+      const button = element("button", "record-button");
+      button.type = "button";
+      const icon = element("span", "row-icon");
+      const iconGlyph = element("span", `rsi-icon ${record.category === "gamePackage" ? "icon-game-package" : "icon-ship"}`);
+      iconGlyph.setAttribute("aria-hidden", "true");
+      const thumbnail = element("img", "row-thumbnail");
+      thumbnail.hidden = true;
+      // A CCU shows the ship it leads to.
+      const leadIndex = Model.inventoryLeadMediaIndex(record);
+      const thumbnailReference = leadIndex > 0 ? Model.inventoryMediaEntries(record)[leadIndex].reference : imageReference(record, ["upgrade-destination"]) ?? imageReference(record, ["thumbnail", "hero", "primary"]);
+      const thumbnailAlt = record.title ?? "Account record image";
+      const localThumbnailVisible = renderLocalImage(thumbnail, iconGlyph, thumbnailReference, thumbnailAlt, { priority: null });
+      icon.append(thumbnail, iconGlyph);
+      if (localThumbnailVisible) icon.classList.add("has-image");
+      // The thumbnails of the page shown are loaded from the open images, top row first and behind the selected
+      // record's own images. Each one is put into its row when it is ready.
+      else if (state.loadedMediaPackage && thumbnailReference?.imageKey) {
+        void loadMediaReference(thumbnailReference, 5 - rowIndex / 1000, true).then((ready) => {
+          if (ready && thumbnail.isConnected && renderLocalImage(thumbnail, iconGlyph, thumbnailReference, thumbnailAlt, { priority: null })) icon.classList.add("has-image");
+        });
+      }
+      const labels = element("span");
+      labels.append(element("b", "", record.title ?? "Untitled record"), element("small", "", record.containsSummary ?? categoryLabel(record.category)));
+      button.append(icon, labels);
+      button.addEventListener("click", () => selectRecord(record, matchMedia("(max-width: 980px)").matches, true));
+      const entry = element("div", "record-entry");
+      entry.append(button);
+      if (Model.asArray(pledgeDetails(record).ccuHistory).length) entry.append(makeCcuButton(record));
+      recordCell.append(entry);
+      const categoryCell = element("td", "", categoryLabel(record.category));
+      // A removed record keeps its label, above the amount.
+      const valueCell = element("td", "inventory-value");
+      if (removed) valueCell.append(element("span", "state-label state-removed", stateLabel(record)));
+      valueCell.append(element("span", "inventory-amount", inventoryValueText(record)));
+      const dateCell = element("td", "", recordDate(record));
+      const mediaCell = element("td");
+      const mediaEntries = Model.inventoryMediaEntries(record);
+      if (mediaEntries.length) {
+        const mediaButton = element("button", "media-label media-gallery-trigger", mediaCountLabel(mediaEntries.length));
+        mediaButton.type = "button";
+        mediaButton.setAttribute("aria-haspopup", "dialog");
+        mediaButton.setAttribute("aria-controls", "mediaGalleryDialog");
+        mediaButton.setAttribute("aria-label", `Open ${mediaCountLabel(mediaEntries.length)} for ${record.title ?? "this record"}`);
+        mediaButton.addEventListener("click", () => openMediaGallery(record, mediaButton, Model.inventoryLeadMediaIndex(record)));
+        mediaCell.append(mediaButton);
+      } else {
+        mediaCell.append(element("span", "media-label", "No images"));
+      }
+      row.append(recordCell, categoryCell, valueCell, dateCell, mediaCell);
+      row.setAttribute("role", "row");
+      for (const [index, cell] of [...row.children].entries()) {
+        cell.setAttribute("role", "cell");
+        if (index > 0) {
+          const label = element("span", "cell-label", ["Record", "Category", inventoryValueHeading(), "Date", "Media"][index]);
+          label.setAttribute("aria-hidden", "true");
+          cell.prepend(label);
+        }
+      }
+      refs.rows.append(row);
+    }
+    refs.emptyState.hidden = visible.length !== 0;
+    const total = inventoryRecords().length;
+    const paged = page.totalPages > 1;
+    const firstShown = (page.page - 1) * INVENTORY_PAGE_SIZE + 1;
+    refs.resultCount.textContent = paged
+      ? `${formatInteger(firstShown)} to ${formatInteger(firstShown + page.items.length - 1)} of ${formatInteger(visible.length)}${visible.length === total ? "" : ` matching, ${formatInteger(total)} total`}`
+      : `${formatInteger(visible.length)} shown of ${formatInteger(total)}`;
+    refs.caption.textContent = `${state.activeInventory === "hangar" ? "Current Hangar" : "Buyback"} records from the ${state.source === "demo" ? "example data" : "loaded local document"}.${paged ? ` Page ${page.page} of ${page.totalPages}.` : ""}`;
+    refs.inventoryPagination.hidden = !paged;
+    refs.inventoryPageStatus.textContent = `${formatInteger(visible.length)} ${visible.length === total ? "records" : `match${visible.length === 1 ? "" : "es"}`} · page ${page.page} of ${page.totalPages}`;
+    refs.inventoryPrevious.disabled = page.page <= 1;
+    refs.inventoryNext.disabled = page.page >= page.totalPages;
+    const selected = page.items.find((record) => record.recordKey === state.activeRecordKey) ?? page.items[0] ?? null;
+    selectRecord(selected);
+  }
+
+  function setInventoryPage(pageNumber) {
+    state.inventoryPage = pageNumber;
+    state.activeRecordKey = null;
+    renderInventory();
+    refs.tableShell.scrollTop = 0;
+  }
+
+  function setInventoryView(view, focus = false) {
+    state.activeInventory = view;
+    state.activeRecordKey = null;
+    state.inventoryPage = 1;
+    refs.search.value = "";
+    state.activeGroup = "all";
+    refs.filterCount.textContent = "0";
+    for (const button of document.querySelectorAll("[data-view]")) {
+      const selected = button.dataset.view === view;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      if (focus && selected) button.focus();
+    }
+    for (const chip of document.querySelectorAll(".filter-chip")) {
+      const selected = chip.dataset.group === "all";
+      chip.classList.toggle("active", selected);
+      chip.setAttribute("aria-pressed", String(selected));
+    }
+    renderInventory();
+  }
+
+  function referralRecords() {
+    const [source, kind] = state.referralPath.split(".");
+    return Model.asArray(state.document.referrals?.[source]?.[kind]);
+  }
+
+  function renderReferralCards() {
+    const container = byId("referralCards");
+    container.replaceChildren();
+    for (const source of ["current", "legacy"]) {
+      const card = element("section", "ladder-card");
+      card.append(element("h3", "", `${source === "current" ? "Current" : "Legacy"} ladder`));
+      const actions = element("div", "ladder-actions");
+      for (const kind of ["prospects", "recruits"]) {
+        const path = `${source}.${kind}`;
+        const button = element("button", path === state.referralPath ? "active" : "");
+        button.type = "button";
+        button.dataset.referralPath = path;
+        button.setAttribute("aria-pressed", String(path === state.referralPath));
+        button.append(element("span", "", kind === "prospects" ? "Prospects" : "Recruits"), element("b", "", formatInteger(state.document.referrals[source][kind].length)));
+        button.addEventListener("click", () => {
+          state.referralPath = path;
+          state.referralPage = 1;
+          renderReferrals();
+          [...container.querySelectorAll("button")].find((item) => item.dataset.referralPath === path)?.focus({ preventScroll: true });
+        });
+        actions.append(button);
+      }
+      card.append(actions);
+      container.append(card);
+    }
+  }
+
+  function labelCollectionRow(row, labels) {
+    row.setAttribute("role", "row");
+    [...row.cells].forEach((cell, index) => {
+      cell.setAttribute("role", "cell");
+      const label = element("span", "collection-cell-label", labels[index]);
+      label.setAttribute("aria-hidden", "true");
+      if (index >= 2) {
+        const value = element("span", "collection-cell-value");
+        value.append(...cell.childNodes);
+        cell.replaceChildren(value);
+      }
+      cell.prepend(label);
+    });
+  }
+
+  function personLabel(label, url, action) {
+    if (!url) return element("span", "", label);
+    const link = element("a", "person-link", label);
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("aria-label", `${label}: ${action} (opens in a new tab)`);
+    return link;
+  }
+
+  function personCell(record, redacted = false, links = Model.personLinks(record.handle, { redacted }), exampleProspect = false) {
+    const cell = element("td");
+    const person = element("div", "person-identity");
+    if (!redacted) {
+      const avatar = element("img", "person-avatar");
+      renderLocalImage(avatar, null, imageReference(record, ["avatar", "portrait", "thumbnail"]), `${record.displayName ?? record.handle ?? "Member"} avatar`);
+      person.append(avatar);
+    }
+    person.append(personLabel(redacted ? "Redacted Member" : record.displayName ?? "Unavailable", links?.monikerUrl, exampleProspect ? "Star Citizen signup, example link" : "message on Spectrum"));
+    cell.append(person);
+    return cell;
+  }
+
+  function usernameCell(record, redacted = false, links = Model.personLinks(record.handle, { redacted }), exampleProspect = false) {
+    const cell = element("td", "handle-cell");
+    cell.append(personLabel(!redacted && record.handle ? `@${record.handle}` : "—", links?.usernameUrl, exampleProspect ? "Star Citizen signup, example link" : "RSI dossier"));
+    return cell;
+  }
+
+  function renderReferrals() {
+    renderReferralCards();
+    const [source, kind] = state.referralPath.split(".");
+    const query = state.referralSearch.trim().toLocaleLowerCase();
+    const allRecords = referralRecords();
+    const filtered = allRecords.filter((record) => !query || Model.referralSearchText(record).includes(query));
+    const sorted = Model.sortReferralRecords(filtered, state.referralOrder);
+    const page = Model.paginate(sorted, state.referralPage, PAGE_SIZE);
+    state.referralPage = page.page;
+    const sourceLabel = source === "current" ? "Current" : "Legacy";
+    const kindLabel = kind === "prospects" ? "prospects" : "recruits";
+    text("referralListTitle", `${sourceLabel} ${kindLabel}`);
+    refs.referralSearchLabel.textContent = `Search ${sourceLabel.toLocaleLowerCase()} ${kindLabel} by moniker or username`;
+    refs.referralSearch.setAttribute("aria-label", refs.referralSearchLabel.textContent);
+    refs.referralSearchCount.textContent = query ? `${formatInteger(filtered.length)} match${filtered.length === 1 ? "" : "es"}` : "";
+    const section = `referrals.${source}.${kind}`;
+    const anomalyCount = state.source === "demo" ? 0 : Model.asArray(state.document.dataQuality?.anomalies).filter((entry) => entry?.section === section).length;
+    const baseOutcome = state.source === "demo" ? "Example data" : state.document.sync?.sectionOutcomes?.[section]?.status ?? "Status unavailable";
+    const referralOutcome = anomalyCount ? `${baseOutcome} · ${formatInteger(anomalyCount)} raw data warning${anomalyCount === 1 ? "" : "s"}` : baseOutcome;
+    text("referralOutcome", referralOutcome);
+    text("referralCaption", `${sourceLabel} ${kindLabel}, ${state.referralOrder} first.${query ? " Search filter applied." : ""} Collection outcome: ${referralOutcome}.`);
+    const rows = byId("referralRows");
+    rows.replaceChildren();
+    for (const record of page.items) {
+      const row = element("tr");
+      const exampleProspect = state.source === "demo" && kind === "prospects";
+      const links = Model.personLinks(record.handle, { exampleProspect });
+      row.append(personCell(record, false, links, exampleProspect), usernameCell(record, false, links, exampleProspect), element("td", "", record.dateRaw ?? "Unavailable"));
+      labelCollectionRow(row, ["Moniker", "Username", "Date"]);
+      rows.append(row);
+    }
+    if (!page.items.length) {
+      const row = element("tr");
+      const cell = element("td", "empty-table-cell", query ? "No referral matches this moniker or username." : "No records were loaded for this list.");
+      cell.colSpan = 3;
+      row.append(cell);
+      rows.append(row);
+    }
+    text("referralPageStatus", `${formatInteger(page.total)} ${query ? `match${page.total === 1 ? "" : "es"}` : "records"} · page ${page.page} of ${page.totalPages}`);
+    byId("referralPrevious").disabled = page.page <= 1;
+    byId("referralNext").disabled = page.page >= page.totalPages;
+    const sortButton = byId("referralSortButton");
+    sortButton.dataset.order = state.referralOrder;
+    sortButton.lastChild.textContent = state.referralOrder === "newest" ? "Newest first" : "Oldest first";
+    sortButton.setAttribute("aria-label", `Sort referral records ${state.referralOrder === "newest" ? "oldest" : "newest"} first`);
+    sortButton.classList.toggle("ascending", state.referralOrder === "oldest");
+    rows.closest(".collection-table-shell").scrollTop = 0;
+  }
+
+  function renderMemberships() {
+    const memberships = Model.asArray(state.document.organizations?.memberships);
+    if (!memberships.some((item) => item.sid === state.organizationSid)) state.organizationSid = mainMembership()?.sid ?? memberships[0]?.sid ?? "";
+    const container = byId("membershipList");
+    container.replaceChildren();
+    for (const membership of memberships) {
+      const selected = membership.sid === state.organizationSid;
+      const button = element("button", selected ? "active" : "");
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(selected));
+      button.dataset.organizationSid = membership.sid;
+      const emblem = element("img", "membership-emblem");
+      renderLocalImage(emblem, null, imageReference(membership, ["emblem", "organizationEmblem"]), `${membership.name ?? membership.sid} emblem`);
+      const copy = element("span", "membership-copy");
+      const count = membership.memberCount === null || membership.memberCount === undefined ? "Member count unavailable" : `${formatInteger(membership.memberCount)} members`;
+      copy.append(element("b", "", membership.name ?? membership.sid), element("span", "", `${membership.sid} · ${membership.membershipType ?? "membership"} · ${count}`));
+      button.append(emblem, copy);
+      button.addEventListener("click", () => {
+        state.organizationSid = membership.sid;
+        state.organizationPage = 1;
+        renderOrganizations();
+        const selector = byId("organizationSelector");
+        selector.open = false;
+        selector.querySelector(":scope > summary")?.focus({ preventScroll: true });
+      });
+      const item = element("div", "membership-card");
+      item.setAttribute("role", "listitem");
+      item.append(button);
+      container.append(item);
+    }
+  }
+
+  function renderOrganizations() {
+    renderMemberships();
+    const memberships = Model.asArray(state.document.organizations?.memberships);
+    const membership = memberships.find((item) => item.sid === state.organizationSid) ?? memberships[0] ?? null;
+    const allMembers = state.source === "demo"
+      ? Model.membersForOrganization(state.document, state.organizationSid)
+      : globalThis.CitizenDataOrganizationDocument.membersFor(state.organizationDocument, state.organizationSid);
+    const query = state.organizationSearch.trim().toLocaleLowerCase();
+    const members = allMembers.filter((member) => !query || `${member.displayName ?? ""}\n${member.handle ?? ""}`.toLocaleLowerCase().includes(query));
+    const page = Model.paginate(members, state.organizationPage, PAGE_SIZE);
+    state.organizationPage = page.page;
+    text("organizationSummaryName", mainMembership()?.name ?? "No organization membership");
+    text("organizationSummaryCount", `${formatInteger(memberships.length)} organization${memberships.length === 1 ? "" : "s"}`);
+    text("organizationListTitle", membership?.name ?? "No selected organization");
+    const rosterIndex = state.organizationDocument?.rosterIndex?.find((entry) => entry.organizationSid === state.organizationSid);
+    const organizationOutcome = state.source === "demo" ? "Example data" : rosterIndex?.status ?? "Not downloaded";
+    text("organizationCaption", `${membership?.name ?? "Organization"} members. Status: ${organizationOutcome}.`);
+    const rows = byId("organizationRows");
+    rows.replaceChildren();
+    for (const member of page.items) {
+      const row = element("tr");
+      const redacted = member.visibility === "restricted";
+      const roles = Model.asArray(member.roles).join(", ") || "—";
+      const rank = member.rank ? `${member.rank}${Number.isInteger(member.rankStars) ? ` · ${member.rankStars} star${member.rankStars === 1 ? "" : "s"}` : ""}` : "—";
+      row.append(
+        personCell(member, redacted),
+        usernameCell(member, redacted),
+        element("td", "", rank),
+        element("td", "", roles),
+        element("td", "", member.membershipType === "main" ? "Main" : member.membershipType === "affiliate" ? "Affiliate" : member.membershipType ?? "—")
+      );
+      labelCollectionRow(row, ["Moniker", "Username", "Rank", "Role", "Membership"]);
+      rows.append(row);
+    }
+    if (!page.items.length) {
+      const row = element("tr");
+      const cell = element("td", "empty-table-cell", query ? "No member matches this moniker or username." : "No members in the loaded Orgs JSON. Organization downloads are optional.");
+      cell.colSpan = 5;
+      row.append(cell);
+      rows.append(row);
+    }
+    const total = Number.isInteger(membership?.memberCount) ? ` of ${formatInteger(membership.memberCount)}` : "";
+    text("organizationPageStatus", `${formatInteger(page.total)}${total} members in this file · page ${page.page} of ${page.totalPages}`);
+    text("organizationSearchCount", query ? `${formatInteger(page.total)} matches` : "");
+    renderFileStatus(Array.isArray(state.document.dataQuality?.anomalies) ? state.document.dataQuality.anomalies.length : 0);
+    updateOrganizationActionAvailability();
+    rows.closest(".collection-table-shell").scrollTop = 0;
+    byId("organizationPrevious").disabled = page.page <= 1;
+    byId("organizationNext").disabled = page.page >= page.totalPages;
+  }
+
+  function renderAll() {
+    renderIdentity();
+    renderSummary();
+    renderBadges();
+    setInventoryView(state.activeInventory);
+    renderReferrals();
+    renderOrganizations();
+  }
+
+  function documentForSelectedExports() {
+    if (!state.organizationDocument || state.source === "demo") return state.document;
+    const combined = structuredClone(state.document);
+    combined.organizations.members = structuredClone(state.organizationDocument.members);
+    return combined;
+  }
+
+  function updateBuildAction() {
+    text("buildButtonLabel", "Build");
+    refs.buildButton.disabled = false;
+  }
+
+  function accountOperationActive() {
+    const jobStatus = state.publicStatus?.activeJob?.status;
+    return state.connecting || state.publicStatus?.hasActiveJob === true || state.publicStatus?.requiresRebind === true || state.continuePartial || ["running", "paused"].includes(jobStatus);
+  }
+
+  function activeOperationNotice() {
+    if (state.mediaController) return "An Images job is running in Build Status. Finish or cancel it before starting Organization Data.";
+    if (accountOperationActive()) {
+      return state.publicStatus?.activeJob?.jobKind === "organizationData"
+        ? "An Organization Data job is already running in Build Status. Finish or cancel it before starting another job."
+        : "An Account Data job is running in Build Status. Finish or cancel it before starting Organization Data.";
+    }
+    return "";
+  }
+
+  function updateOrganizationActionAvailability() {
+    const notice = activeOperationNotice()
+      || (state.extensionUpdateRequired ? "Update the CitizenData extension, then reload this page, before starting Organization Data." : "")
+      || (!state.bridge ? "Connect the CitizenData extension before starting Organization Data." : "");
+    const hasMemberships = Model.asArray(state.document.organizations?.memberships).length > 0;
+    refs.buildOrgButton.disabled = !hasMemberships || state.source === "demo" || !state.bridge || state.extensionUpdateRequired;
+    refs.orgBuildAvailability.textContent = notice;
+    refs.orgBuildAvailability.hidden = !notice;
+    const selected = refs.orgRosterChecklist.querySelectorAll('input[type="checkbox"]:checked').length;
+    refs.orgBuildStart.disabled = Boolean(notice) || selected === 0;
+  }
+
+  // Shown in place of the account card while no extension can be reached, so the Build panel always offers a next step.
+  function refreshExtensionNotice(accountActive) {
+    const needsExtension = !accountActive && !state.bridge;
+    const localCopy = location.protocol === "file:";
+    refs.extensionNotice.hidden = !needsExtension;
+    refs.buildAccountAction.hidden = needsExtension;
+    // An installed extension that only awaits approval needs no store link.
+    refs.installExtensionAction.hidden = !needsExtension || (state.localApprovalRequired && !state.extensionUpdateRequired);
+    if (!needsExtension) return;
+    refs.installExtensionAction.href = EXTENSION_STORE_URL;
+    if (state.extensionUpdateRequired) {
+      text("extensionNoticeTitle", "CitizenData extension needs an update");
+      text("extensionNoticeDetail", "The installed extension and this page use different connection versions. Update the extension, then reload this page.");
+      text("installExtensionTitle", "Update the CitizenData extension");
+      text("installExtensionDetail", "Opens the Chrome Web Store in a new tab. Reload this page after updating.");
+      return;
+    }
+    if (state.localApprovalRequired) {
+      text("extensionNoticeTitle", "Allow this local copy");
+      text("extensionNoticeDetail", "The CitizenData extension is installed and is waiting for your approval. Click the CitizenData icon in the Chrome toolbar, then choose Allow this local dashboard.");
+      return;
+    }
+    text("extensionNoticeTitle", "CitizenData extension not detected");
+    text("extensionNoticeDetail", localCopy
+      ? "This page cannot read an RSI account on its own. For a downloaded copy: install the extension and turn on \u201cAllow access to file URLs\u201d in its Chrome details page. Once the extension is on, reload this page, then approve this copy from the CitizenData toolbar icon."
+      : "This page cannot read an RSI account on its own. The extension does that in your browser. Install the extension. Once the extension is on, reload this page.");
+    text("installExtensionTitle", "Get the CitizenData extension");
+    text("installExtensionDetail", "Opens the Chrome Web Store in a new tab. Reload this page after installing.");
+  }
+
+  function refreshBuildChoices() {
+    const accountActive = accountOperationActive();
+    const mediaActive = Boolean(state.mediaController);
+    const mediaReady = Boolean(state.pendingMediaPackage || state.loadedMediaPackage);
+    refreshExtensionNotice(accountActive);
+    text("buildAccountActionTitle", accountActive ? "View account backup" : state.source === "demo" ? "Build account backup" : "Update account backup");
+    text("buildAccountActionDetail", accountActive ? "Return to the active account collection status." : state.bridge ? "Read your RSI account and update the open document." : "Connect the CitizenData extension to build account data.");
+    refs.buildAccountAction.disabled = mediaActive || (!accountActive && (!state.bridge || state.extensionUpdateRequired));
+    text("buildImagesActionTitle", mediaActive ? "View image download" : state.pendingMediaPackage ? "Review offline image ZIP" : state.loadedMediaPackage ? "Update offline images" : "Download offline images");
+    text("buildImagesActionDetail", mediaActive ? "Return to image progress and controls." : state.pendingMediaPackage ? "Return to the completed image package or save it again." : state.loadedMediaPackage ? `${state.loadedMediaFileName ?? "The loaded Images ZIP"} is open. Download only the current image delta.` : state.mediaPlan.length ? `Download ${formatInteger(state.mediaPlan.length)} unique images from the open account document.` : "Load an account document and wait for its image plan.");
+    refs.buildImagesAction.disabled = (!mediaActive && accountActive) || (!mediaActive && !mediaReady && (state.source === "demo" || state.mediaPlan.length === 0));
+    if (!refs.buildChoices.hidden && !accountActive && !mediaActive) describeBuildChoices();
+  }
+
+  // The line above the choices says what can be chosen now. A choice that cannot be made is not offered in it; it
+  // says what that choice needs instead.
+  function describeBuildChoices() {
+    const dataOffered = !refs.buildAccountAction.hidden && !refs.buildAccountAction.disabled;
+    const imagesOffered = !refs.buildImagesAction.disabled;
+    const dataNeeds = state.extensionUpdateRequired
+      ? "Data needs an update of the CitizenData extension."
+      : state.localApprovalRequired
+        ? "Data needs your approval of this copy in the CitizenData extension."
+        : "Data needs the CitizenData extension.";
+    const imagesNeed = state.source === "demo" ? "Images need an open account document." : "Images are not ready for this document yet.";
+    if (dataOffered && imagesOffered) setBridgeStatus("READY", "Choose what to build", "Nothing starts until you choose Data or Images.", "active", false);
+    else if (dataOffered) setBridgeStatus("READY", "Choose what to build", `Nothing starts until you choose Data. ${imagesNeed}`, "active", false);
+    else if (imagesOffered) setBridgeStatus("READY", "Choose what to build", `Nothing starts until you choose Images. ${dataNeeds}`, "active", false);
+    else setBridgeStatus("READY", "Before you can build", `${dataNeeds} ${imagesNeed}`, "active", false);
+  }
+
+  function openBuildChooser() {
+    if (state.mediaController) {
+      reopenMediaOverlay();
+      return;
+    }
+    if (accountOperationActive()) {
+      state.mediaOverlayActive = false;
+      showOverlayExpanded();
+      renderCollectionStatus(state.publicStatus);
+      return;
+    }
+    state.mediaOverlayActive = false;
+    showOverlayExpanded();
+    refs.buildChoices.hidden = false;
+    refreshBuildChoices();
+    refs.overlayOperation.textContent = "BUILD";
+    refs.collectionActivity.hidden = true;
+    refs.collectionControls.hidden = true;
+    refs.mediaControls.hidden = true;
+    refs.eventLog.hidden = true;
+    setCollectionActivityImage(false);
+  }
+
+  function reopenMediaOverlay() {
+    showOverlayExpanded();
+    if (state.mediaController) {
+      renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(state.mediaPlan.length), active: true });
+    } else if (state.pendingMediaPackage) {
+      renderMediaOverlay({ badge: "COMPLETED", operation: "Offline image ZIP ready", detail: refs.mediaStatus.textContent, tone: "success", active: false, completed: state.mediaPlan.length, total: state.mediaPlan.length });
+    } else {
+      renderMediaOverlay({ badge: "READY", operation: "Offline images ready", detail: "Choose Download offline images from Build to start.", active: false, completed: 0, total: state.mediaPlan.length });
+    }
+  }
+
+  // The sentence under "Downloading offline images". Its structure never changes; only its numbers do.
+  function mediaDownloadDetail(total) {
+    return `${formatInteger(state.mediaCompleted)} of ${formatInteger(total)} images finished. ${formatInteger(state.mediaActiveRequests)} of ${formatInteger(globalThis.CITIZENDATA_MEDIA_POLICY.maximumConcurrency)} requests active.`;
+  }
+
+  function chooseAccountBuild() {
+    refs.buildChoices.hidden = true;
+    refs.eventLog.hidden = false;
+    if (accountOperationActive()) {
+      state.mediaOverlayActive = false;
+      showOverlayExpanded();
+      renderCollectionStatus(state.publicStatus);
+      return;
+    }
+    void proposeBuild();
+  }
+
+  function chooseImageBuild() {
+    refs.buildChoices.hidden = true;
+    refs.eventLog.hidden = false;
+    const planIsCurrent = state.mediaPlanDocument === state.document;
+    if (state.mediaController || state.pendingMediaPackage && planIsCurrent) {
+      reopenMediaOverlay();
+      return;
+    }
+    // A plan made for another document than the one open is made again first.
+    if (!planIsCurrent) {
+      void prepareMediaPlan().then(() => { if (state.mediaPlanDocument === state.document) void runMediaDownload(); });
+      return;
+    }
+    void runMediaDownload();
+  }
+
+  function activateRail(link) {
+    for (const candidate of document.querySelectorAll(".rail-nav a")) {
+      const selected = candidate === link;
+      candidate.classList.toggle("active", selected);
+      if (selected) candidate.setAttribute("aria-current", "page");
+      else candidate.removeAttribute("aria-current");
+    }
+  }
+
+  function useAccountDocument(accepted, { source, fileName }) {
+    Model.validateAccountDocument(accepted);
+    // A file that waited to be offered to the extension belongs to the document this one replaces.
+    state.buildOffer = null;
+    if (!state.organizationDocument || !globalThis.CitizenDataOrganizationDocument.sameAccount(state.organizationDocument.account, accepted.account)) state.organizationOffer = null;
+    const sameMediaAccount = Boolean(state.mediaPlanAccount && globalThis.CitizenDataOrganizationDocument.sameAccount(state.mediaPlanAccount, accepted.account));
+    if (state.mediaController && !sameMediaAccount) throw new Error("Cancel the active image download before opening a different account document.");
+    if (state.loadedMediaPackage?.fromExtension && !state.mediaController && !state.pendingMediaPackage) clearLoadedMediaPackage();
+    const preserveMedia = sameMediaAccount && Boolean(state.mediaController || state.pendingMediaPackage || state.loadedMediaPackage);
+    if (!sameMediaAccount && state.loadedMediaPackage) clearLoadedMediaPackage();
+    if (state.organizationDocument && !globalThis.CitizenDataOrganizationDocument.sameAccount(state.organizationDocument.account, accepted.account)) {
+      state.organizationDocument = null;
+      state.organizationFileName = null;
+    }
+    if (ccuDialog.open) ccuDialog.close();
+    // A waiting Organization Data result is retried once the Account JSON it belongs to has been loaded.
+    if (source === "file") state.requestedCompletedRunIds.clear();
+    state.document = accepted;
+    state.source = source;
+    state.fileName = fileName;
+    state.activeInventory = "hangar";
+    state.activeRecordKey = null;
+    state.inventoryPage = 1;
+    state.referralPath = "current.prospects";
+    state.referralOrder = "newest";
+    state.referralPage = 1;
+    state.referralSearch = "";
+    state.organizationSid = accepted.profile?.mainOrganizationSid ?? accepted.organizations.memberships[0]?.sid ?? "";
+    state.organizationPage = 1;
+    state.organizationSearch = "";
+    refs.organizationSearch.value = "";
+    refs.referralSearch.value = "";
+    updateBuildAction();
+    renderAll();
+    if (preserveMedia) {
+      refs.mediaStatus.textContent = state.mediaController
+        ? "Image download continues in Build Status."
+        : state.pendingMediaPackage
+          ? "The prepared image ZIP remains available in Build Status."
+          : `${state.loadedMediaFileName ?? "The loaded Images ZIP"} remains open for this dashboard.`;
+      text("healthMedia", state.mediaController ? "Image download in progress" : state.pendingMediaPackage ? "ZIP ready to save" : "Packaged images loaded");
+      // The open ZIP stays; the plan is made again for the document now open. A download that is running keeps its
+      // own plan until it ends.
+      if (!state.mediaController) void prepareMediaPlan();
+    } else {
+      void prepareMediaPlan();
+    }
+  }
+
+  async function acceptAccountDocument(parsed, metadata) {
+    const accepted = await globalThis.CitizenDataAccountDocument.acceptAccountDocument(parsed, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
+    const rosterSids = [...new Set(Model.asArray(accepted.organizations?.members).map((member) => member?.organizationSid).filter(Boolean))];
+    if (rosterSids.length && metadata.source !== "demo") {
+      const previousOrganizations = state.organizationDocument && globalThis.CitizenDataOrganizationDocument.sameAccount(state.organizationDocument.account, accepted.account)
+        ? state.organizationDocument
+        : null;
+      state.organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
+        accountDocument: accepted,
+        previous: previousOrganizations,
+        resultDocument: accepted,
+        selectedSids: rosterSids,
+        exportedAt: accepted.exportedAt,
+        generatorVersion: DASHBOARD_VERSION
+      });
+      state.organizationFileName ??= "Extracted from Account JSON";
+    }
+    let accountOnly = accepted;
+    if (metadata.source !== "demo" && Model.asArray(accepted.organizations?.members).length) {
+      const copy = structuredClone(accepted);
+      delete copy.organizations.members;
+      copy.sync.organizationMemberOutcomes = {};
+      accountOnly = await globalThis.CitizenDataAccountDocument.stampIntegrity(copy);
+      await globalThis.CitizenDataAccountDocument.acceptAccountDocument(accountOnly, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
+    }
+    useAccountDocument(accountOnly, metadata);
+    return accountOnly;
+  }
+
+  async function loadJsonFile(file) {
+    if (!file) return;
+    if (file.size > JSON_LIMITS.maxBytes) throw new Error(`Choose a JSON file no larger than ${JSON_LIMITS.maxBytes / (1024 * 1024)} MiB.`);
+    const parsed = parseBoundedJson(await file.text());
+    if (globalThis.CitizenDataHangarLinkImport.isHangarLinkFile(parsed)) {
+      await loadHangarLinkFile(parsed, file.name);
+      return;
+    }
+    if (isRecoveryBackup(parsed)) {
+      await loadRecoveryBackup(parsed, file.name);
+      return;
+    }
+    await acceptAccountDocument(parsed, { source: "file", fileName: file.name });
+    const verified = "Your file passed the canonical schema and SHA-256 integrity checks. It is open on this device; nothing was uploaded or saved by the website.";
+    showDialog("LOCAL JSON", "Account file verified", verified);
+    tellHandOver(handOverBuild(parsed, "this file"), verified, (sentence) => `${verified} ${sentence}`);
+  }
+
+  // The file is confirmed at once; the extension's answer follows. It is added to the message that confirmed the
+  // file while that message is still shown, and is a short notice when the message was closed first.
+  function tellHandOver(answer, shown, withAnswer) {
+    void answer.then((sentence) => {
+      if (!sentence) return;
+      if (refs.messageDialog.open && refs.dialogMessage.textContent === shown) refs.dialogMessage.textContent = withAnswer(sentence);
+      else showToast(sentence);
+    });
+  }
+
+  // What the extension answered when it was offered a build the user opened here, as one sentence.
+  function handOverSentence(response, what) {
+    if (response?.ok && response.kept && Number.isSafeInteger(response.rosters)) return "The extension now keeps these rosters with your latest build.";
+    if (response?.ok && response.kept) return response.replaced ? `The extension now keeps ${what} as your latest build, in place of the older build it held.` : `The extension now keeps ${what} as your latest build.`;
+    if (response?.ok && response.reason === "SAME_BUILD") return "The extension already keeps this build.";
+    if (response?.ok && response.reason === "NEWER_BUILD_HELD") return `The extension keeps a newer build of this account, so it did not take ${what} in.`;
+    if (response?.ok && response.reason === "NOTHING_NEWER") return "The extension already keeps these rosters.";
+    const because = {
+      BUILD_HISTORY_OFF: "Build history is off in the extension popup",
+      BUILD_IN_PROGRESS: "a build is in progress. Open the file again when that build has finished",
+      INCOMPLETE_BUILD: "it is not a complete build",
+      INVALID_BUILD: "it did not pass the extension's own checks",
+      INVALID_ORGANIZATIONS: "they did not pass the extension's own checks",
+      NO_BUILD_HELD: "it holds no build of this account. Open the account JSON first"
+    }[response?.code];
+    return because ? `The extension did not take ${what} in, because ${because}.` : `The extension did not take ${what} in.`;
+  }
+
+  // Offers a waiting file to the extension, once. The answer is a sentence for the user, or nothing when the
+  // extension is not connected, in which case the offer waits for it. Offers go one after the other, so the rosters
+  // of an Orgs JSON reach the extension after the account build they belong to.
+  function offerToExtension(slot, type) {
+    const result = state.handOverQueue.then(async () => {
+      const offer = state[slot];
+      if (!offer || offer.sent || !state.bridge || state.extensionUpdateRequired) return null;
+      offer.sent = true;
+      let sentence;
+      try {
+        sentence = handOverSentence(await requestBridge(type, { document: offer.document }), offer.what);
+      } catch (error) {
+        sentence = `The extension did not take ${offer.what} in: ${error?.message ?? "unknown error"}`;
+      }
+      if (state[slot] === offer) state[slot] = null;
+      return sentence;
+    });
+    state.handOverQueue = result.catch(() => {});
+    return result;
+  }
+
+  function offerBuildToExtension() {
+    return offerToExtension("buildOffer", "KEEP_BUILD");
+  }
+
+  // An Orgs JSON the user opened, and this page verified, is handed to the extension in the same way: its rosters
+  // go into the account build the extension keeps.
+  function offerOrganizationsToExtension() {
+    return offerToExtension("organizationOffer", "KEEP_ORGANIZATIONS");
+  }
+
+  // A complete account file the user opened, and this page verified, is handed to the extension by itself, so an
+  // extension that holds no build of the account has one without a step in its popup. The extension checks the file
+  // again and decides what it keeps. The example, a Hangar Link file, and a build the extension handed to this page
+  // are never offered.
+  async function handOverBuild(document, what) {
+    state.buildOffer = { document, what, sent: false };
+    return offerBuildToExtension();
+  }
+
+  // The extension's recovery backup, saved from its popup: its working records, among them the latest finished
+  // build of each account. It is not an account file, but the builds inside it are.
+  function isRecoveryBackup(parsed) {
+    return Boolean(parsed) && typeof parsed === "object" && !Array.isArray(parsed) && parsed.schemaVersion === undefined
+      && Number.isSafeInteger(parsed.databaseVersion) && Boolean(parsed.stores) && typeof parsed.stores === "object" && Array.isArray(parsed.stores.snapshots);
+  }
+
+  // Opens the newest finished build inside a recovery backup, after the same schema and integrity checks as any
+  // account file, and offers that build to the extension. Its other records are put back by importing the file in
+  // the extension popup.
+  async function loadRecoveryBackup(parsed, fileName) {
+    const restore = "To put the extension's records back, import this file in the extension popup under Recovery and permissions.";
+    const otherRecords = "The other records in this file are put back by importing it in the extension popup under Recovery and permissions.";
+    const builds = parsed.stores.snapshots
+      .map((snapshot) => snapshot?.document)
+      .filter((candidate) => candidate && typeof candidate === "object" && typeof candidate.exportedAt === "string")
+      .sort((left, right) => left.exportedAt < right.exportedAt ? 1 : left.exportedAt > right.exportedAt ? -1 : 0);
+    if (!builds.length) throw new Error(`This is an extension recovery backup, and it holds no finished build to open. ${restore}`);
+    await acceptAccountDocument(builds[0], { source: "file", fileName });
+    const opened = `${fileName} is an extension recovery backup. ${builds.length === 1 ? "The finished build" : `The newest of the ${formatInteger(builds.length)} finished builds`} inside it passed the canonical schema and SHA-256 integrity checks and is open on this device; nothing was uploaded or saved by the website.`;
+    showDialog("RECOVERY BACKUP", "Latest build opened", `${opened} ${restore}`);
+    tellHandOver(handOverBuild(builds[0], "that build"), `${opened} ${restore}`, (sentence) => `${opened} ${sentence} ${otherRecords}`);
+  }
+
+  // A Hangar Link file is opened as an incomplete build: its hangar and buy-backs, and nothing else. Build reads the
+  // whole account from RSI. The file itself is never handed to the extension.
+  async function loadHangarLinkFile(parsed, fileName) {
+    const { document: converted, counts } = globalThis.CitizenDataHangarLinkImport.toAccountDocument(parsed, {
+      importedAt: new Date().toISOString(),
+      localAccountId: crypto.randomUUID(),
+      generatorVersion: DASHBOARD_VERSION
+    });
+    await acceptAccountDocument(await globalThis.CitizenDataAccountDocument.stampIntegrity(converted), { source: "file", fileName });
+    const plural = (number, singular, many) => `${formatInteger(number)} ${number === 1 ? singular : many}`;
+    const notes = [];
+    if (counts.repeated) notes.push(` ${plural(counts.repeated, "record appears", "records appear")} in the file more than once and ${counts.repeated === 1 ? "is" : "are"} shown once.`);
+    if (counts.leftOut) notes.push(` ${plural(counts.leftOut, "record", "records")} without a pledge number, name, date, or account could not be read and ${counts.leftOut === 1 ? "is" : "are"} left out.`);
+    showDialog("HANGAR LINK JSON", "Incomplete build opened", `${fileName} is open with ${plural(counts.hangar, "hangar pledge", "hangar pledges")} and ${plural(counts.buybacks, "buy-back", "buy-backs")}.${notes.join("")} A Hangar Link file holds no Hangar Log, billing, referrals, organizations, or images. Choose Build to read the whole account from RSI with the extension. Nothing was uploaded or saved by the website.`);
+  }
+
+  async function loadOrganizationFile(file) {
+    if (!file) return;
+    const maximumBytes = 512 * 1024 * 1024;
+    if (file.size > maximumBytes) throw new Error("Choose an Orgs JSON file no larger than 512 MiB.");
+    if (state.source === "demo") throw new Error("Load the matching Account JSON before loading an Orgs JSON.");
+    const parsed = parseBoundedJson(await file.text(), { maxBytes: maximumBytes, maxNodes: 8000000, maxArrayItems: 4000000 });
+    const accepted = await globalThis.CitizenDataOrganizationDocument.accept(parsed);
+    if (!globalThis.CitizenDataOrganizationDocument.sameAccount(accepted.account, state.document.account)) throw new Error("This Orgs JSON belongs to a different Account JSON.");
+    state.organizationDocument = accepted;
+    state.organizationFileName = file.name;
+    state.organizationPage = 1;
+    renderOrganizations();
+    const verified = `${file.name} passed integrity and account identity checks. It is open on this device; nothing was uploaded.`;
+    showDialog("LOCAL ORGS JSON", "Organization data verified", verified);
+    state.organizationOffer = { document: accepted, what: "these rosters", sent: false };
+    tellHandOver(offerOrganizationsToExtension(), verified, (sentence) => `${verified} ${sentence}`);
+  }
+
+  async function loadMediaPackageFile(file) {
+    if (!file) return;
+    if (state.source === "demo") throw new Error("Load the matching Account JSON before loading an Images ZIP.");
+    const loaded = await globalThis.CitizenDataMediaPackageReader.open(file, { maximumBytes: globalThis.CITIZENDATA_MEDIA_POLICY.maximumBytes });
+    if (!globalThis.CitizenDataOrganizationDocument.sameAccount(loaded.manifest.account, state.document.account)) throw new Error("This Images ZIP belongs to a different Account JSON.");
+    clearLoadedMediaPackage();
+    state.loadedMediaPackage = loaded;
+    state.loadedMediaFileName = file.name;
+    state.pendingMediaPackage = null;
+    const reusable = loaded.manifest.assets.filter((asset) => ["downloaded", "reused"].includes(asset.status)).length;
+    refs.mediaStatus.textContent = `${file.name} is open with ${formatInteger(reusable)} reusable images. Images validate lazily when displayed.`;
+    text("healthMedia", `${formatInteger(reusable)} packaged images loaded`);
+    renderAll();
+    await prepareMediaPlan();
+    showDialog("IMAGES ZIP", "Image package verified", `${file.name} passed manifest, account, and package structure checks. Individual image hashes are checked when first displayed or reused.`);
+    void keepPackageImages(loaded).then((note) => {
+      if (note && state.loadedMediaPackage === loaded) refs.mediaStatus.textContent += note;
+    });
+  }
+
+  // With the extension's build history on, the extension keeps the images of an opened Images ZIP that it does not
+  // keep yet. Returns a sentence for the image status, or nothing when the extension is absent or keeps no images.
+  async function keepPackageImages(opened) {
+    if (!state.bridge || state.extensionUpdateRequired) return "";
+    try {
+      const kept = await globalThis.CitizenDataExtensionMedia.index(requestBridge);
+      if (!kept?.keeping) return "";
+      const outcome = await globalThis.CitizenDataExtensionMedia.keep({
+        assets: opened.manifest.assets,
+        readFile: async (asset) => new Uint8Array(await (await opened.fileBlob(asset.relativePath, asset.mediaType)).arrayBuffer()),
+        kept,
+        request: requestBridge
+      });
+      if (!outcome.stored && !outcome.refused) return outcome.already ? " The extension already keeps these images." : "";
+      return ` ${formatInteger(outcome.stored)} ${outcome.stored === 1 ? "image is" : "images are"} now kept in the extension${outcome.refused ? `; it refused ${formatInteger(outcome.refused)}` : ""}.`;
+    } catch (error) {
+      return ` The extension could not keep the images: ${error?.message ?? "unknown error"}`;
+    }
+  }
+
+  // The images the extension keeps are opened like an Images ZIP, unless the user has one open.
+  async function attachKeptImages() {
+    const usable = () => state.bridge && !state.extensionUpdateRequired && state.source !== "demo" && !state.mediaController && !state.pendingMediaPackage && state.mediaPlan.length > 0 && (!state.loadedMediaPackage || state.loadedMediaPackage.fromExtension);
+    if (!usable()) return;
+    const generation = state.mediaPlanGeneration;
+    const plan = state.mediaPlan;
+    const kept = await globalThis.CitizenDataExtensionMedia.index(requestBridge);
+    if (!kept || generation !== state.mediaPlanGeneration || !usable()) return;
+    const opened = globalThis.CitizenDataExtensionMedia.createPackage({ plan, kept, accountDocument: state.document, request: requestBridge });
+    if (!opened) return;
+    clearLoadedMediaPackage();
+    state.loadedMediaPackage = opened;
+    state.loadedMediaFileName = globalThis.CitizenDataExtensionMedia.SOURCE_NAME;
+    renderAll();
+    const held = opened.manifest.assets.length;
+    refs.mediaStatus.textContent = `${formatInteger(held)} of ${formatInteger(plan.length)} images are kept in the extension and shown from it.${held < plan.length ? " Use Build to download the rest." : ""}`;
+    if (!refs.buildChoices.hidden) refreshBuildChoices();
+  }
+
+  function validEnvelope(value) {
+    return value && typeof value === "object" && value.channel === BRIDGE_CHANNEL && value.protocolVersion === PROTOCOL_VERSION && typeof value.type === "string" && typeof value.requestId === "string" && typeof value.bridgeSessionId === "string" && typeof value.nonce === "string";
+  }
+
+  function bridgePostTarget() {
+    return location.protocol === "file:" ? "*" : location.origin;
+  }
+
+  function bridgeMessageOriginMatches(origin) {
+    return location.protocol === "file:" ? origin === "null" : origin === location.origin;
+  }
+
+  function setBridgeStatus(summary, stateText, detail, tone = "quiet", active = false) {
+    text("overlaySummary", summary);
+    text("overlayState", stateText);
+    text("overlayDetail", detail);
+    refs.overlay.dataset.tone = tone;
+    const pulse = document.querySelector(".parser-overlay .pulse");
+    pulse.classList.toggle("idle", !active);
+    pulse.classList.toggle("warning", tone === "warning");
+    pulse.classList.toggle("failure", tone === "failure");
+  }
+
+  function setOverlayMinimized(minimized) {
+    refs.overlay.classList.toggle("minimized", minimized);
+    const activeJob = state.publicStatus?.activeJob;
+    const badge = byId("overlaySummary").textContent;
+    const section = Model.collectionSectionPresentation(activeJob?.currentSection);
+    const progress = Model.collectionProgress(activeJob);
+    const minimizedTitle = state.mediaOverlayActive
+      ? `${badge} · Offline images · ${formatInteger(state.mediaCompleted)}/${formatInteger(state.mediaPlan.length)}`
+      : activeJob ? `${badge} · ${section.label} · ${progress.currentPosition}/${progress.sectionCount}` : badge;
+    text("overlayTitle", minimized ? minimizedTitle : "BUILD STATUS");
+    text("overlayToggleSymbol", minimized ? "+" : "−");
+    byId("minimizeOverlay").setAttribute("aria-expanded", String(!minimized));
+    byId("minimizeOverlay").setAttribute("aria-label", minimized ? "Expand build status" : "Minimize build status");
+  }
+
+  function showOverlayExpanded() {
+    state.overlayDismissed = false;
+    refs.overlay.hidden = false;
+    setOverlayMinimized(false);
+  }
+
+  function setCollectionActivityImage(show) {
+    const shown = !refs.collectionActivityImage.hidden && refs.collectionActivityImage.hasAttribute("src");
+    if (show === shown) return;
+    refs.collectionActivity.classList.toggle("has-activity-image", show);
+    if (show) {
+      refs.collectionActivityImage.src = "assets/activity/dancing-ben.gif";
+      refs.collectionActivityImage.hidden = false;
+      return;
+    }
+    refs.collectionActivityImage.hidden = true;
+    refs.collectionActivityImage.removeAttribute("src");
+  }
+
+  function normalizedPublicStatus(value) {
+    if (value?.status && typeof value.status === "object" && !Array.isArray(value.status)) return value.status;
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  }
+
+  function completedRunId(publicStatus = state.publicStatus) {
+    const activeJob = publicStatus?.activeJob;
+    return activeJob?.status === "complete" && typeof activeJob.runId === "string" ? activeJob.runId : null;
+  }
+
+  function activityTime(value) {
+    if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return null;
+    return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function renderEventLog(publicStatus, presentation) {
+    const activeJob = publicStatus?.activeJob;
+    const continuable = activeJob?.status === "failed" && publicStatus?.continuable === true;
+    const rows = (Array.isArray(activeJob?.activityLog) ? activeJob.activityLog : [])
+      .slice(-20)
+      .map(Model.safeActivityPresentation)
+      .filter(Boolean)
+      .reverse();
+    if (activeJob?.status === "failed" && activeJob.failure) {
+      if (continuable) rows.unshift(
+        { at: null, tone: "warning", message: presentation.historyMessage ?? "The previous attempt stopped. Completed data remains available." },
+        { at: null, tone: "diagnostic", message: `Technical detail: ${presentation.technicalMessage ?? "RUN_FAILED"}` }
+      );
+      else {
+        const code = typeof activeJob.failure.code === "string" ? activeJob.failure.code.slice(0, 80) : "RUN_FAILED";
+        const message = typeof activeJob.failure.message === "string" ? activeJob.failure.message.slice(0, 500) : "The account backup stopped.";
+        rows.unshift({ at: null, tone: "failure", message: `${code}: ${message}` });
+      }
+    }
+    refs.eventLog.replaceChildren();
+    if (continuable) refs.eventLog.append(element("p", "waiting", "Previous attempt history"));
+    if (!rows.length) {
+      refs.eventLog.append(element("p", "", activeJob ? "Data collection has started." : "No account collection has started."));
+      return;
+    }
+    for (const row of rows.slice(0, 20)) {
+      const line = element("p", row.tone === "failure" ? "failure" : row.tone === "warning" ? "waiting" : "");
+      const displayedTime = activityTime(row.at);
+      if (displayedTime) {
+        const time = element("time", "", displayedTime);
+        time.dateTime = row.at;
+        line.append(time, document.createTextNode(row.message));
+      } else {
+        line.textContent = row.message;
+      }
+      refs.eventLog.append(line);
+    }
+  }
+
+  function addMediaActivity(message, tone = "normal") {
+    state.mediaActivity.push({ at: new Date().toISOString(), message, tone });
+    state.mediaActivity = state.mediaActivity.slice(-20);
+  }
+
+  function renderMediaEventLog() {
+    refs.eventLog.replaceChildren();
+    for (const row of [...state.mediaActivity].reverse()) {
+      const line = element("p", row.tone === "failure" ? "failure" : row.tone === "warning" ? "waiting" : "");
+      const time = element("time", "", activityTime(row.at) ?? "");
+      line.append(time, document.createTextNode(row.message));
+      refs.eventLog.append(line);
+    }
+    if (!state.mediaActivity.length) refs.eventLog.append(element("p", "", "No image download has started."));
+  }
+
+  function renderMediaOverlay({ badge, operation, detail, tone = "active", active = false, completed = state.mediaCompleted, total = state.mediaPlan.length, refreshLog = true }) {
+    state.mediaOverlayActive = true;
+    setBridgeStatus(badge, operation, detail, tone, active);
+    refs.overlayOperation.textContent = "OFFLINE IMAGES";
+    refs.buildChoices.hidden = true;
+    refs.eventLog.hidden = false;
+    refs.collectionControls.hidden = true;
+    refs.mediaControls.hidden = false;
+    refs.mediaCancelOverlay.hidden = !state.mediaController;
+    refs.mediaSaveOverlay.hidden = !state.pendingMediaPackage;
+    refs.collectionActivity.hidden = false;
+    refs.requestProgress.hidden = true;
+    text("collectionActivityLabel", "Offline images");
+    const boundedTotal = Math.max(1, total);
+    refs.collectionActivityProgress.value = Math.max(0, Math.min(100, completed / boundedTotal * 100));
+    text("collectionActivityText", `${formatInteger(completed)} of ${formatInteger(total)} images finished`);
+    refs.collectionActivityImage.alt = "Offline image download activity";
+    setCollectionActivityImage(active && !matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (refreshLog) renderMediaEventLog();
+    updateBuildAction();
+    updateOrganizationActionAvailability();
+    if (!state.overlayDismissed) refs.overlay.hidden = false;
+  }
+
+  function renderCollectionStatus(value, options = {}) {
+    const publicStatus = normalizedPublicStatus(value) ?? state.publicStatus;
+    if (publicStatus) state.publicStatus = publicStatus;
+    if (state.mediaOverlayActive) {
+      updateBuildAction();
+      return;
+    }
+    const activeJob = publicStatus?.activeJob ?? null;
+    refs.buildChoices.hidden = true;
+    refs.eventLog.hidden = false;
+    const presentation = Model.collectionStatusPresentation(publicStatus, {
+      bridgeConnected: state.bridgeReachable,
+      connecting: options.connecting === true || state.connecting,
+      jobKind: options.jobKind
+    });
+    setBridgeStatus(presentation.badge, presentation.operation, presentation.summary, presentation.tone, presentation.active);
+
+    const statusName = activeJob?.status ?? publicStatus?.status;
+    const running = statusName === "running";
+    const paused = statusName === "paused";
+    const requiresRebind = publicStatus?.requiresRebind === true;
+    const continuable = statusName === "failed" && publicStatus?.continuable === true;
+    state.continuePartial = continuable;
+    const rosterJob = options.jobKind === "organizationData" || activeJob?.jobKind === "organizationData" || activeJob?.currentSection?.startsWith?.("organizations.members.");
+    refs.overlayOperation.textContent = rosterJob ? "ORGANIZATION DATA" : continuable ? "CONTINUE BACKUP" : "ACCOUNT DATA";
+    updateBuildAction();
+    updateOrganizationActionAvailability();
+    refs.mediaControls.hidden = true;
+    refs.collectionControls.hidden = !state.bridgeReachable || !(running || paused || requiresRebind || continuable);
+    refs.rebindCollection.hidden = !state.bridgeReachable || !requiresRebind;
+    refs.pauseCollection.hidden = !state.bridgeReachable || requiresRebind || !running;
+    refs.resumeCollection.hidden = !state.bridgeReachable || requiresRebind || !(paused || continuable);
+    refs.resumeCollection.textContent = continuable ? rosterJob ? "Continue Organization Data" : "Continue backup" : "Resume";
+    refs.cancelCollection.hidden = !state.bridgeReachable || requiresRebind || !(running || paused);
+    // Skip is offered for one stage only, the reading of CCU buy-back prices, and once for a run.
+    refs.skipCollection.hidden = !state.bridgeReachable || requiresRebind || !running || activeJob?.currentSection !== "buybackUpgradePrices" || state.skipRequestedRunId === activeJob.runId;
+
+    const showActivity = Boolean(activeJob) || requiresRebind;
+    refs.collectionActivity.hidden = !showActivity;
+    refs.requestProgress.hidden = true;
+    if (showActivity) {
+      const section = Model.collectionSectionPresentation(activeJob?.currentSection);
+      const progress = Model.collectionProgress(activeJob);
+      text("collectionActivityLabel", section.label);
+      text("collectionActivityText", `${progress.overallText} · ${progress.httpText}`);
+      refs.collectionActivityProgress.value = Math.max(0, Math.min(100, progress.overallPercent));
+      if (progress.requestProgress) {
+        refs.requestProgress.hidden = false;
+        refs.requestProgressLabel.textContent = progress.requestProgress.label;
+        if (progress.requestProgress.indeterminate) refs.collectionRequestProgress.removeAttribute("value");
+        else refs.collectionRequestProgress.value = Math.max(0, Math.min(100, progress.requestProgress.percent));
+        refs.requestProgressText.textContent = progress.requestProgress.text;
+      }
+      setCollectionActivityImage(running && !requiresRebind && !matchMedia("(prefers-reduced-motion: reduce)").matches);
+    } else {
+      setCollectionActivityImage(false);
+    }
+    renderEventLog(publicStatus, presentation);
+
+    // The panel shows by itself only for a run that is going on or waits for the user. With nothing running, or a
+    // finished build, it stays as it is: closed until Build opens it.
+    if (running || paused || requiresRebind || continuable) refs.overlay.hidden = state.overlayDismissed;
+  }
+
+  function clearStatusPoll() {
+    window.clearTimeout(state.statusPollTimer);
+    state.statusPollTimer = null;
+  }
+
+  function statusPollDelay() {
+    const jobStatus = state.publicStatus?.activeJob?.status;
+    return state.publicStatus?.hasActiveJob === true || ["running", "paused"].includes(jobStatus) ? 5000 : 15000;
+  }
+
+  function scheduleStatusPoll() {
+    clearStatusPoll();
+    if (!state.bridge || document.hidden) return;
+    state.statusPollTimer = window.setTimeout(() => { void pollStatus(); }, statusPollDelay());
+  }
+
+  function markBridgeDisconnected() {
+    state.bridgeReachable = false;
+    state.connecting = false;
+    renderCollectionStatus(state.publicStatus);
+  }
+
+  async function openPartialDocument(documentValue, publicStatus) {
+    const runId = publicStatus?.activeJob?.runId;
+    if (!runId || state.openedPartialRunIds.has(runId)) return;
+    const handle = typeof documentValue?.account?.handle === "string" ? documentValue.account.handle.replace(/[^A-Za-z0-9_-]+/gu, "-").slice(0, 64) : "account";
+    const timestamp = globalThis.CitizenDataFileTimestamp.format(new Date().toISOString());
+    await acceptAccountDocument(documentValue, { source: "extension-partial", fileName: `citizendata-${handle || "account"}-partial-${timestamp}.json` });
+    state.openedPartialRunIds.add(runId);
+    showToast("Partial backup open. Completed sections are available locally; this partial document was not downloaded as a completed backup.");
+  }
+
+  async function openPartialOrganizationDocument(documentValue, publicStatus) {
+    const acceptedResult = await globalThis.CitizenDataAccountDocument.acceptAccountDocument(documentValue, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
+    const selectedSids = Model.asArray(publicStatus?.activeJob?.selectedSections)
+      .filter((section) => {
+        if (typeof section !== "string" || !section.startsWith("organizations.members.")) return false;
+        const sid = section.slice("organizations.members.".length);
+        return ["complete", "partial"].includes(acceptedResult.sync?.organizationMemberOutcomes?.[sid]?.status);
+      })
+      .map((section) => section.slice("organizations.members.".length));
+    if (!selectedSids.length) return;
+    state.organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
+      accountDocument: acceptedResult,
+      previous: state.organizationDocument,
+      resultDocument: acceptedResult,
+      selectedSids,
+      exportedAt: acceptedResult.exportedAt ?? new Date().toISOString(),
+      generatorVersion: DASHBOARD_VERSION,
+      terminalStatus: "partial"
+    });
+    state.organizationFileName = "Unsaved partial Organization Data";
+    renderOrganizations();
+    showToast("Completed organization rosters from the partial job are open locally. Continue the job before saving the final Orgs JSON.");
+  }
+
+  async function requestPartialDocument(publicStatus) {
+    const runId = publicStatus?.activeJob?.runId;
+    if (!state.bridge || !publicStatus?.partialAvailable || !runId || state.openedPartialRunIds.has(runId) || state.requestedPartialRunIds.has(runId)) return;
+    state.requestedPartialRunIds.add(runId);
+    let receivedPartial = false;
+    try {
+      const response = await requestBridge("GET_PARTIAL_RESULT", null);
+      state.bridgeReachable = true;
+      if (response.status) renderCollectionStatus(response.status);
+      if (!response.ok || !response.partialResult) throw new Error(response.message ?? response.code ?? "The partial backup was unavailable.");
+      receivedPartial = true;
+      await openPartialDocument(response.partialResult, normalizedPublicStatus(response.status) ?? publicStatus);
+    } catch (error) {
+      if (!receivedPartial) state.requestedPartialRunIds.delete(runId);
+      if (!state.partialFailureNotifiedRunIds.has(runId)) {
+        state.partialFailureNotifiedRunIds.add(runId);
+        showDialog("PARTIAL BACKUP", "Partial backup could not be opened", error.message);
+      }
+    }
+  }
+
+  // Returns true once the backup file has been handed to the browser, which is what lets the extension stop offering it.
+  async function openCompletedDocument(documentValue, { recovered = false } = {}) {
+    const timestamp = globalThis.CitizenDataFileTimestamp.format(new Date().toISOString());
+    const accepted = await acceptAccountDocument(documentValue, { source: "extension", fileName: `citizendata-${timestamp}.json` });
+    const contentHash = accepted.integrity.contentHash;
+    if (state.savedBuildContentHashes.has(contentHash)) return true;
+    try {
+      const saved = globalThis.CitizenDataCanonicalDownload.download(accepted);
+      state.savedBuildContentHashes.add(contentHash);
+      state.fileName = saved.fileName;
+      text("railExported", saved.fileName);
+      showDialog("BUILD JSON", "Account backup saved", `${recovered ? "This backup finished while the dashboard was not connected. " : ""}${saved.fileName} passed the canonical schema and SHA-256 integrity checks, was saved to your device, and is now open in this dashboard.${removalSummary(accepted)} Keep your earlier backup files as well: a record RSI stops listing can only be shown by comparing two backups.`);
+      return true;
+    } catch (error) {
+      showDialog("BUILD JSON", "Account backup open; download failed", `The canonical account backup is open in this dashboard, but the browser did not save it: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function openCompletedOrganizationDocument(documentValue, publicStatus) {
+    const acceptedResult = await globalThis.CitizenDataAccountDocument.acceptAccountDocument(documentValue, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
+    if (!globalThis.CitizenDataOrganizationDocument.sameAccount(acceptedResult.account, state.document.account)) throw new Error("The Organization Data result belongs to a different Account JSON.");
+    const selectedSids = Model.asArray(publicStatus?.activeJob?.selectedSections)
+      .filter((section) => typeof section === "string" && section.startsWith("organizations.members."))
+      .map((section) => section.slice("organizations.members.".length));
+    if (!selectedSids.length) throw new Error("The completed Organization Data job did not identify its selected organizations.");
+    const exportedAt = acceptedResult.exportedAt ?? new Date().toISOString();
+    const organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
+      accountDocument: acceptedResult,
+      previous: state.organizationDocument,
+      resultDocument: acceptedResult,
+      selectedSids,
+      exportedAt,
+      generatorVersion: DASHBOARD_VERSION,
+      terminalStatus: "complete"
+    });
+    state.organizationDocument = organizationDocument;
+    const contentHash = organizationDocument.integrity.contentHash;
+    renderOrganizations();
+    if (state.savedOrganizationHashes.has(contentHash)) return true;
+    const saved = globalThis.CitizenDataCanonicalDownload.downloadOrganizations(organizationDocument);
+    state.savedOrganizationHashes.add(contentHash);
+    state.organizationFileName = saved.fileName;
+    refs.orgFileStatus.textContent = saved.fileName;
+    showDialog("ORGANIZATION DATA", "Organization data saved", `${saved.fileName} contains the selected member rosters in one account-bound Organization JSON.`);
+    return true;
+  }
+
+  async function acknowledgeCompletedResult(runId) {
+    if (typeof runId !== "string" || state.acknowledgedRunIds.has(runId)) return;
+    state.acknowledgedRunIds.add(runId);
+    try {
+      const response = await requestBridge("ACKNOWLEDGE_RESULT", { runId });
+      if (!response.ok) state.acknowledgedRunIds.delete(runId);
+    } catch {
+      // The extension keeps offering the result; its content hash prevents the same file from being saved twice in this page.
+      state.acknowledgedRunIds.delete(runId);
+    }
+  }
+
+  // While the extension's build history is on, the dashboard opens the latest finished build by itself when it
+  // loads, in place of the example. It asks once for a page load. A file the user opened, or a result that arrived
+  // first, is never replaced, and nothing is saved again: the build was saved as a file when it finished.
+  async function openLatestBuild() {
+    if (state.latestBuildRequested || !state.bridge || state.extensionUpdateRequired || state.source !== "demo") return;
+    state.latestBuildRequested = true;
+    let response;
+    try {
+      response = await requestBridge("GET_LATEST_BUILD", null);
+    } catch {
+      return;
+    }
+    if (!response?.ok || !response.result || state.source !== "demo") return;
+    try {
+      const fileName = globalThis.CitizenDataCanonicalDownload.canonicalFileName(response.result);
+      await acceptAccountDocument(response.result, { source: "extension", fileName });
+      state.fileName = fileName;
+      text("railExported", fileName);
+      showToast("Your latest build, kept in the extension, is open.");
+    } catch (error) {
+      showToast(`The latest build kept in the extension could not be opened: ${error?.message ?? "unknown error"}`);
+    }
+  }
+
+  // A finished run is pushed to the dashboard once. If no dashboard was open to receive it, the result waits in the extension and is fetched here.
+  async function requestCompletedResult(publicStatus) {
+    const pending = publicStatus?.completedResultPending;
+    const runId = pending?.runId;
+    if (!state.bridge || typeof runId !== "string" || state.requestedCompletedRunIds.has(runId) || state.acknowledgedRunIds.has(runId)) return;
+    const organizationData = pending.jobKind === "organizationData";
+    // An Organization Data result can only be merged into the Account JSON it belongs to.
+    if (organizationData && state.source === "demo") return;
+    state.requestedCompletedRunIds.add(runId);
+    try {
+      const response = await requestBridge("GET_COMPLETED_RESULT", null);
+      if (!response.ok || !response.result || response.runId !== runId) throw new Error(response.message ?? response.code ?? "The completed result was unavailable.");
+      const saved = organizationData
+        ? await openCompletedOrganizationDocument(response.result, { activeJob: { jobKind: "organizationData", selectedSections: Model.asArray(response.selectedSections) } })
+        : await openCompletedDocument(response.result, { recovered: true });
+      if (saved) await acknowledgeCompletedResult(runId);
+    } catch (error) {
+      showDialog("BUILD JSON", "Completed result could not be opened", `${error.message} The result stays in the extension; reload this page to try again.`);
+    }
+  }
+
+  async function applyDashboardPayload(payload) {
+    const publicStatus = normalizedPublicStatus(payload);
+    state.bridgeReachable = true;
+    state.connecting = false;
+    renderCollectionStatus(publicStatus);
+    if (payload?.partialResult) {
+      if (publicStatus?.activeJob?.jobKind === "organizationData") await openPartialOrganizationDocument(payload.partialResult, publicStatus);
+      else await openPartialDocument(payload.partialResult, publicStatus);
+    }
+    else await requestPartialDocument(publicStatus);
+    if (payload?.result) {
+      const saved = publicStatus?.activeJob?.jobKind === "organizationData"
+        ? await openCompletedOrganizationDocument(payload.result, publicStatus)
+        : await openCompletedDocument(payload.result);
+      if (saved) await acknowledgeCompletedResult(completedRunId(publicStatus));
+    }
+    else await requestCompletedResult(publicStatus);
+    scheduleStatusPoll();
+  }
+
+  async function pollStatus() {
+    if (!state.bridge || document.hidden) {
+      scheduleStatusPoll();
+      return;
+    }
+    try {
+      const response = await requestBridge("GET_STATUS", null);
+      if (!response.ok || !response.status) throw new Error(response.message ?? response.code ?? "CitizenData status is unavailable.");
+      await applyDashboardPayload({ status: response.status });
+    } catch {
+      markBridgeDisconnected();
+      scheduleStatusPoll();
+    }
+  }
+
+  function requestBridge(type, payload) {
+    if (state.extensionUpdateRequired) return Promise.reject(new Error("Update the CitizenData extension, then reload this page."));
+    if (!state.bridge) return Promise.reject(new Error("The CitizenData extension bridge is not connected."));
+    const requestId = crypto.randomUUID();
+    const envelope = { channel: BRIDGE_CHANNEL, protocolVersion: PROTOCOL_VERSION, type, requestId, bridgeSessionId: state.bridge.bridgeSessionId, nonce: state.bridge.nonce, payload };
+    return new Promise((resolve, reject) => {
+      const timeoutMs = ["PROPOSE_BUILD", "PROPOSE_ORGANIZATION_ROSTER", "CONTINUE_PARTIAL", "GET_KEPT_IMAGES", "GET_KEPT_IMAGE_FILES", "KEEP_IMAGES", "GET_LATEST_BUILD", "KEEP_BUILD", "KEEP_ORGANIZATIONS"].includes(type) ? 60000 : 8000;
+      const timer = window.setTimeout(() => {
+        state.bridgePending.delete(requestId);
+        reject(new Error("The extension did not respond before the request timed out."));
+      }, timeoutMs);
+      state.bridgePending.set(requestId, { resolve, reject, timer });
+      window.postMessage(envelope, bridgePostTarget());
+    });
+  }
+
+  // Any extension release that speaks this bridge protocol version is compatible; its own version number is not compared.
+  function noteBridgeProtocolMismatch(payload) {
+    const extensionVersion = typeof payload?.extensionVersion === "string" ? payload.extensionVersion.slice(0, 32) : "unknown";
+    state.bridge = null;
+    state.extensionUpdateRequired = true;
+    state.bridgeReachable = false;
+    state.bridgeSeen = true;
+    state.connecting = false;
+    state.continuePartial = false;
+    clearStatusPoll();
+    refs.buildButton.classList.add("bridge-gated");
+    refs.overlay.hidden = false;
+    refs.buildChoices.hidden = true;
+    refs.collectionControls.hidden = true;
+    refs.collectionActivity.hidden = true;
+    setBridgeStatus("UPDATE REQUIRED", "Extension and dashboard do not match", `CitizenData extension ${extensionVersion} uses a different connection version than this page. Update the extension, then reload this page.`, "warning", false);
+    setOverlayMinimized(false);
+    updateBuildAction();
+    updateOrganizationActionAvailability();
+    if (!state.extensionUpdateNotified) {
+      state.extensionUpdateNotified = true;
+      showDialog("EXTENSION STATUS", "CitizenData update required", `The installed CitizenData extension (${extensionVersion}) and this dashboard use different connection versions. Update the extension, then reload this page. If the extension is already current, reloading this page loads the current dashboard.`);
+    }
+  }
+
+  function bridgeMessage(event) {
+    if (event.source !== window || !bridgeMessageOriginMatches(event.origin)) return;
+    const candidate = event.data;
+    if (candidate && typeof candidate === "object" && candidate.channel === BRIDGE_CHANNEL && candidate.type === "BRIDGE_READY"
+      && Number.isSafeInteger(candidate.protocolVersion) && candidate.protocolVersion !== PROTOCOL_VERSION) {
+      noteBridgeProtocolMismatch(candidate.payload);
+      return;
+    }
+    // A downloaded copy stays disconnected until the user approves it in the extension popup.
+    if (candidate && typeof candidate === "object" && candidate.channel === BRIDGE_CHANNEL && candidate.type === "LOCAL_APPROVAL_REQUIRED"
+      && location.protocol === "file:" && !state.bridge) {
+      state.localApprovalRequired = true;
+      if (!refs.buildChoices.hidden) refreshBuildChoices();
+      return;
+    }
+    if (!validEnvelope(candidate)) return;
+    const message = candidate;
+    if (message.type === "BRIDGE_READY") {
+      const extensionVersion = typeof message.payload?.extensionVersion === "string" ? message.payload.extensionVersion : "unknown";
+      state.bridge = { bridgeSessionId: message.bridgeSessionId, nonce: message.nonce, extensionVersion, capabilities: message.payload?.capabilities ?? {} };
+      state.extensionUpdateRequired = false;
+      state.extensionUpdateNotified = false;
+      state.localApprovalRequired = false;
+      state.bridgeReachable = true;
+      state.bridgeSeen = true;
+      state.connecting = false;
+      const enabled = state.bridge.capabilities.buildJson === true;
+      refs.buildButton.classList.toggle("bridge-gated", !enabled);
+      renderCollectionStatus(state.publicStatus ?? { status: "idle", activeJob: null });
+      if (!enabled) setBridgeStatus("CONNECTED", "Account adapters are gated", state.bridge.capabilities.reason ?? "This source checkpoint performs no authenticated RSI requests.", "warning", false);
+      void pollStatus();
+      void attachKeptImages();
+      void openLatestBuild();
+      // A file the user opened before the extension connected is offered to it now.
+      void offerBuildToExtension().then((sentence) => { if (sentence) showToast(sentence); });
+      void offerOrganizationsToExtension().then((sentence) => { if (sentence) showToast(sentence); });
+      return;
+    }
+    if (message.bridgeSessionId !== state.bridge?.bridgeSessionId || message.nonce !== state.bridge?.nonce) return;
+    if (message.type === "STATUS" || message.type === "RESULT") {
+      void applyDashboardPayload(message.payload).catch((error) => showDialog("BUILD JSON", "Extension result rejected", error.message));
+      return;
+    }
+    if (message.type !== "RESPONSE") return;
+    const pending = state.bridgePending.get(message.requestId);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    state.bridgePending.delete(message.requestId);
+    state.bridgeReachable = true;
+    pending.resolve(message.payload ?? {});
+  }
+
+  async function proposeBuild() {
+    if (state.mediaController) {
+      reopenMediaOverlay();
+      return;
+    }
+    if (!state.bridge) {
+      openBuildChooser();
+      return;
+    }
+    state.mediaOverlayActive = false;
+    refs.mediaControls.hidden = true;
+    refs.buildButton.disabled = true;
+    clearStatusPoll();
+    const priorCompletedRunId = completedRunId();
+    if (priorCompletedRunId) state.dismissedCompletedRunIds.delete(priorCompletedRunId);
+    showOverlayExpanded();
+    state.connecting = true;
+    renderCollectionStatus(state.publicStatus, { connecting: true });
+    try {
+      const response = await requestBridge("PROPOSE_BUILD", Model.buildDefaultPlan());
+      state.connecting = false;
+      if (response.status) await applyDashboardPayload({ status: response.status });
+      else renderCollectionStatus(state.publicStatus);
+      if (response.ok) {
+        showToast(response.message ?? "Account backup started.");
+      }
+      else showDialog("BUILD JSON", response.code === "COLLECTION_GATED" ? "Account adapters are gated" : "Build request declined", response.message ?? "No account collection started.");
+    } catch (error) {
+      markBridgeDisconnected();
+      scheduleStatusPoll();
+      showDialog("BUILD JSON", "Extension request failed", error.message);
+    } finally {
+      state.connecting = false;
+      updateBuildAction();
+      scheduleStatusPoll();
+    }
+  }
+
+  function populateOrganizationChecklist(preferredSid = null) {
+    const memberships = Model.asArray(state.document.organizations?.memberships);
+    refs.orgRosterChecklist.replaceChildren();
+    for (const membership of memberships) {
+      const index = state.organizationDocument?.rosterIndex?.find((entry) => entry.organizationSid === membership.sid);
+      const input = element("input");
+      input.type = "checkbox";
+      input.name = "organizationSid";
+      input.value = membership.sid;
+      input.checked = preferredSid ? membership.sid === preferredSid : index?.status !== "complete";
+      input.addEventListener("change", updateOrganizationActionAvailability);
+      const copy = element("span");
+      copy.append(element("b", "", membership.name ?? membership.sid), element("small", "", `${membership.sid} · ${formatInteger(membership.memberCount ?? 0)} reported members · ${index?.status ?? "not downloaded"}`));
+      const label = element("label");
+      label.append(input, copy);
+      refs.orgRosterChecklist.append(label);
+    }
+    updateOrganizationActionAvailability();
+  }
+
+  function openOrganizationBuildDialog(preferredSid = null) {
+    if (state.source === "demo") {
+      showDialog("ORGANIZATION DATA", "Load Account JSON first", "Build Orgs JSON uses the organization memberships from the loaded Account JSON.");
+      return;
+    }
+    populateOrganizationChecklist(preferredSid);
+    if (typeof refs.orgBuildDialog.showModal === "function") refs.orgBuildDialog.showModal();
+  }
+
+  async function proposeOrganizationRosters(organizationSids) {
+    const sids = [...new Set(Model.asArray(organizationSids))];
+    const memberships = Model.asArray(state.document.organizations?.memberships);
+    if (!sids.length || sids.some((sid) => !memberships.some((membership) => membership?.sid === sid)) || !state.bridge) {
+      showDialog("ORGANIZATION DATA", "Organization plan expired", "Choose the organizations again before starting the job.");
+      return;
+    }
+    const blocker = activeOperationNotice();
+    if (blocker) {
+      showDialog("ORGANIZATION DATA", "Another job is active", blocker);
+      return;
+    }
+    showOverlayExpanded();
+    state.connecting = true;
+    renderCollectionStatus(state.publicStatus, { connecting: true, jobKind: "organizationData" });
+    try {
+      const response = await requestBridge("PROPOSE_ORGANIZATION_ROSTER", { organizationSids: sids });
+      state.connecting = false;
+      if (response.status) await applyDashboardPayload({ status: response.status });
+      if (response.ok) {
+        showToast(response.message ?? "Organization Data job started.");
+      } else showDialog("ORGANIZATION DATA", "Organization job declined", response.message ?? "No Organization Data job started.");
+    } catch (error) {
+      state.connecting = false;
+      showDialog("ORGANIZATION DATA", "Extension request failed", error.message);
+    }
+  }
+
+  async function controlCollection(type) {
+    const continuing = type === "CONTINUE_PARTIAL";
+    if (continuing) {
+      clearStatusPoll();
+      showOverlayExpanded();
+      state.connecting = true;
+      renderCollectionStatus(state.publicStatus, { connecting: true });
+    }
+    try {
+      const response = await requestBridge(type, null);
+      state.connecting = false;
+      if (response.status) await applyDashboardPayload({ status: response.status });
+      else renderCollectionStatus(state.publicStatus);
+      scheduleStatusPoll();
+      if (response.ok && continuing) showToast(response.message ?? "Partial backup continuation started.");
+      if (!response.ok) showDialog("ACCOUNT COLLECTION", continuing ? "Continuation declined" : "Control request declined", response.message ?? response.code ?? "The collection state did not change.");
+      return response.ok === true;
+    } catch (error) {
+      state.connecting = false;
+      markBridgeDisconnected();
+      scheduleStatusPoll();
+      showDialog("ACCOUNT COLLECTION", "Extension request failed", error.message);
+      return false;
+    }
+  }
+
+  async function prepareMediaPlan() {
+    if (state.mediaController) return;
+    const generation = state.mediaPlanGeneration + 1;
+    state.mediaPlanGeneration = generation;
+    state.mediaPlan = [];
+    state.mediaPlanAccount = null;
+    state.mediaPlanDocument = null;
+    state.pendingMediaPackage = null;
+    text("mediaAssetCount", "Preparing");
+    text("mediaSummary", "Preparing plan");
+    refs.mediaStatus.textContent = "Preparing image plan.";
+    if (state.source === "demo") {
+      const images = exampleImageCount();
+      text("mediaAssetCount", formatInteger(images));
+      text("mediaSummary", `${formatInteger(images)} unique images`);
+      refs.mediaStatus.textContent = `${EXAMPLE_IMAGES_FILE} is open with ${formatInteger(images)} images. Every image in this example is shown from it.`;
+      return;
+    }
+    try {
+      const plan = await globalThis.CitizenDataMediaMaterializer.plan(state.document, globalThis.CITIZENDATA_MEDIA_POLICY);
+      if (generation !== state.mediaPlanGeneration) return;
+      state.mediaPlan = plan;
+      state.mediaPlanAccount = state.document.account ? { localAccountId: state.document.account.localAccountId ?? null, handle: state.document.account.handle ?? null } : null;
+      state.mediaPlanDocument = state.document;
+      text("mediaAssetCount", formatInteger(plan.length));
+      text("mediaSummary", `${formatInteger(plan.length)} unique images`);
+      refs.mediaStatus.textContent = plan.length ? "Use Build to start the image download." : "No RSI image links were found in this account file.";
+      if (!refs.buildChoices.hidden) refreshBuildChoices();
+      void attachKeptImages();
+    } catch (error) {
+      if (generation !== state.mediaPlanGeneration) return;
+      text("mediaAssetCount", "Plan unavailable");
+      text("mediaSummary", "Plan unavailable");
+      refs.mediaStatus.textContent = `Image plan could not be prepared: ${error.message}`;
+    }
+  }
+
+  async function runMediaDownload() {
+    if (!state.mediaPlan.length || state.mediaController) return;
+    const controller = new AbortController();
+    const plan = state.mediaPlan;
+    const accountDocument = state.mediaPlanDocument;
+    if (!accountDocument) throw new Error("The image plan is not bound to an account document.");
+    state.mediaController = controller;
+    state.pendingMediaPackage = null;
+    state.mediaCompleted = 0;
+    state.mediaActiveRequests = 0;
+    state.mediaActivity = [];
+    addMediaActivity(`Started ${formatInteger(plan.length)} image downloads.`);
+    refs.mediaStatus.textContent = "Image download is running in Build Status.";
+    showOverlayExpanded();
+    renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: `Downloading ${formatInteger(plan.length)} public images.`, active: true, completed: 0, total: plan.length });
+    const startedAt = new Date().toISOString();
+    let finalPresentation = null;
+    try {
+      const fromExtension = state.loadedMediaPackage?.fromExtension === true;
+      if (fromExtension) {
+        addMediaActivity("Reading the images kept in the extension.");
+        await state.loadedMediaPackage.preload();
+      }
+      const delta = await globalThis.CitizenDataMediaPackageReader.prepareDelta(plan, state.loadedMediaPackage);
+      state.mediaCompleted = delta.reused.assets.length;
+      if (delta.reused.assets.length) addMediaActivity(`Reusing ${formatInteger(delta.reused.assets.length)} validated images from ${fromExtension ? "the extension" : "the loaded ZIP"}. ${formatInteger(delta.pending.length)} images remain to download.`);
+      const downloaded = await globalThis.CitizenDataMediaMaterializer.materialize(delta.pending, globalThis.CITIZENDATA_MEDIA_POLICY, {
+        fetcher: (url, options) => fetch(url, { ...options, mode: "cors", cache: "no-store" }),
+        signal: controller.signal,
+        onRequestStart: ({ index, total, attempt, activeRequests, maximumConcurrency }) => {
+          state.mediaActiveRequests = activeRequests;
+          addMediaActivity(`Started image ${formatInteger(index + 1)} of ${formatInteger(total)}. ${formatInteger(activeRequests)} of ${formatInteger(maximumConcurrency)} requests active${attempt > 1 ? `. Attempt ${formatInteger(attempt)}.` : "."}`);
+          renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(plan.length), active: true, completed: state.mediaCompleted, total: plan.length });
+        },
+        onProgress: ({ completed, total, receipt, activeRequests }) => {
+          state.mediaCompleted = delta.reused.assets.length + completed;
+          if (Number.isSafeInteger(activeRequests)) state.mediaActiveRequests = activeRequests;
+          addMediaActivity(`Finished delta image ${formatInteger(completed)} of ${formatInteger(total)}. Result: ${receipt.status}.`, receipt.status === "failed" ? "warning" : "normal");
+          renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(plan.length), active: true, completed: state.mediaCompleted, total: plan.length });
+        }
+      });
+      const assetsByUrl = new Map([...delta.reused.assets, ...downloaded.assets].map((asset) => [asset.sourceUrl, asset]));
+      const filesByPath = new Map([...delta.reused.files, ...downloaded.files].map((file) => [file.name, file]));
+      const materialized = {
+        assets: plan.map((entry) => assetsByUrl.get(entry.normalizedUrl)).filter(Boolean),
+        files: [...filesByPath.values()].sort((left, right) => left.name.localeCompare(right.name, "en")),
+        totalBytes: [...filesByPath.values()].reduce((total, file) => total + file.bytes.byteLength, 0),
+        downloadedBytes: downloaded.downloadedBytes
+      };
+      const result = await globalThis.CitizenDataMediaPackage.buildArchive({
+        accountDocument,
+        materialized,
+        policy: globalThis.CITIZENDATA_MEDIA_POLICY,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        version: accountDocument.generator?.version ?? DASHBOARD_VERSION,
+        requestCount: delta.pending.length,
+        priorPackage: state.loadedMediaPackage && !fromExtension ? { packageId: state.loadedMediaPackage.manifest.packageId, manifestHash: state.loadedMediaPackage.manifest.integrity.contentHash } : null
+      });
+      state.pendingMediaPackage = result;
+      const openedResult = await globalThis.CitizenDataMediaPackageReader.open(new Blob([result.archive], { type: "application/zip" }), { maximumBytes: globalThis.CITIZENDATA_MEDIA_POLICY.maximumBytes });
+      clearLoadedMediaPackage();
+      state.loadedMediaPackage = openedResult;
+      state.loadedMediaFileName = result.fileName;
+      let automaticDownloadError = null;
+      try {
+        globalThis.CitizenDataMediaPackage.download(result);
+      } catch (error) {
+        automaticDownloadError = error;
+      }
+      renderAll();
+      const failed = result.manifest.summary.failed;
+      const size = (result.archive.byteLength / (1024 * 1024)).toLocaleString("en-US", { maximumFractionDigits: 1 });
+      const packageDetail = failed ? `${formatInteger(failed)} ${failed === 1 ? "image failed and is" : "images failed and are"} recorded in the manifest.` : "All images completed.";
+      const keptNote = await keepPackageImages(openedResult);
+      if (keptNote) addMediaActivity(keptNote.trim(), keptNote.includes("could not") || keptNote.includes("refused") ? "warning" : "normal");
+      refs.mediaStatus.textContent = (automaticDownloadError
+        ? `${result.fileName} is open for this dashboard, but automatic download failed: ${automaticDownloadError.message}`
+        : `${result.fileName} was sent to the browser download manager and is open for this dashboard. Size: ${size} MiB. ${packageDetail}`) + keptNote;
+      text("healthMedia", `${formatInteger(result.manifest.summary.downloaded + result.manifest.summary.reused)} packaged images loaded${failed ? ` · ${formatInteger(failed)} failed` : ""}`);
+      refs.mediaSaveOverlay.textContent = automaticDownloadError ? "Save image ZIP" : "Save image ZIP again";
+      addMediaActivity(automaticDownloadError ? `Automatic ZIP download failed: ${automaticDownloadError.message}` : "Image ZIP downloaded and opened for this dashboard.", automaticDownloadError || failed ? "warning" : "normal");
+      finalPresentation = { badge: automaticDownloadError ? "READY TO SAVE" : "COMPLETED", operation: automaticDownloadError ? "Offline image ZIP ready" : "Offline image ZIP downloaded", detail: refs.mediaStatus.textContent, tone: automaticDownloadError ? "warning" : "success", active: false, completed: plan.length, total: plan.length };
+    } catch (error) {
+      refs.mediaStatus.textContent = error?.name === "AbortError" ? "Image download cancelled. No partial ZIP was created." : `Image download failed: ${error?.message ?? "Unknown error"}`;
+      addMediaActivity(refs.mediaStatus.textContent, error?.name === "AbortError" ? "warning" : "failure");
+      finalPresentation = { badge: error?.name === "AbortError" ? "CANCELLED" : "FAILED", operation: error?.name === "AbortError" ? "Image download cancelled" : "Image download failed", detail: refs.mediaStatus.textContent, tone: error?.name === "AbortError" ? "warning" : "failure", active: false, completed: state.mediaCompleted, total: plan.length };
+    } finally {
+      if (state.mediaController === controller) state.mediaController = null;
+      if (finalPresentation) renderMediaOverlay(finalPresentation);
+    }
+  }
+
+  async function saveMediaPackage() {
+    if (!state.pendingMediaPackage) return;
+    try {
+      const mode = await globalThis.CitizenDataMediaPackage.save(state.pendingMediaPackage);
+      refs.mediaStatus.textContent = mode === "picker" ? `${state.pendingMediaPackage.fileName} was saved to the selected location.` : `${state.pendingMediaPackage.fileName} was sent to the browser download manager.`;
+      text("healthMedia", "Offline image ZIP saved");
+      addMediaActivity(refs.mediaStatus.textContent);
+      renderMediaOverlay({ badge: "COMPLETED", operation: "Offline image ZIP saved", detail: refs.mediaStatus.textContent, tone: "success", active: false, completed: state.mediaPlan.length, total: state.mediaPlan.length });
+    } catch (error) {
+      refs.mediaStatus.textContent = error?.name === "AbortError" ? "Save cancelled. The prepared ZIP remains available." : `ZIP could not be saved: ${error?.message ?? "Unknown error"}`;
+      addMediaActivity(refs.mediaStatus.textContent, "warning");
+      renderMediaOverlay({ badge: "READY TO SAVE", operation: "Offline image ZIP ready", detail: refs.mediaStatus.textContent, tone: "warning", active: false, completed: state.mediaPlan.length, total: state.mediaPlan.length });
+    }
+  }
+
+  function bindEvents() {
+    refs.loadButton.addEventListener("click", () => refs.fileInput.click());
+    refs.fileInput.addEventListener("change", () => loadJsonFile(refs.fileInput.files?.[0]).catch((error) => showDialog("LOAD JSON", "File rejected", error.message)).finally(() => { refs.fileInput.value = ""; }));
+    refs.loadOrgButton.addEventListener("click", (event) => { event.stopPropagation(); refs.orgFileInput.click(); });
+    refs.orgFileInput.addEventListener("change", () => loadOrganizationFile(refs.orgFileInput.files?.[0]).catch((error) => showDialog("LOAD ORGS JSON", "File rejected", error.message)).finally(() => { refs.orgFileInput.value = ""; }));
+    refs.buildOrgButton.addEventListener("click", (event) => { event.stopPropagation(); openOrganizationBuildDialog(); });
+    refs.loadMediaZipButton.addEventListener("click", () => refs.mediaZipInput.click());
+    refs.mediaZipInput.addEventListener("change", () => loadMediaPackageFile(refs.mediaZipInput.files?.[0]).catch((error) => showDialog("LOAD IMAGES ZIP", "Package rejected", error.message)).finally(() => { refs.mediaZipInput.value = ""; }));
+    refs.buildButton.addEventListener("click", openBuildChooser);
+    refs.buildAccountAction.addEventListener("click", chooseAccountBuild);
+    refs.buildImagesAction.addEventListener("click", chooseImageBuild);
+    refs.rebindCollection.addEventListener("click", async () => {
+      refs.rebindCollection.disabled = true;
+      try {
+        const response = await requestBridge("REQUEST_REBIND", null);
+        if (response.status) await applyDashboardPayload({ status: response.status });
+        if (response.ok) showToast(response.message ?? "The active run is connected again.");
+        else showDialog("RECONNECT RUN", "Run could not be reconnected", response.message ?? response.code ?? "The active run could not be reconnected.");
+      } catch (error) {
+        showDialog("RECONNECT RUN", "Extension request failed", error.message);
+      } finally {
+        refs.rebindCollection.disabled = false;
+      }
+    });
+    refs.pauseCollection.addEventListener("click", () => controlCollection("PAUSE"));
+    refs.resumeCollection.addEventListener("click", () => controlCollection(state.continuePartial ? "CONTINUE_PARTIAL" : "RESUME"));
+    refs.cancelCollection.addEventListener("click", () => controlCollection("CANCEL"));
+    refs.skipCollection.addEventListener("click", async () => {
+      const runId = state.publicStatus?.activeJob?.runId ?? null;
+      state.skipRequestedRunId = runId;
+      refs.skipCollection.hidden = true;
+      // A request the extension declines leaves the button to be used again.
+      if (!await controlCollection("SKIP_CCU_PRICES") && state.skipRequestedRunId === runId) state.skipRequestedRunId = null;
+    });
+    refs.mediaCancelOverlay.addEventListener("click", () => state.mediaController?.abort());
+    refs.mediaSaveOverlay.addEventListener("click", () => { void saveMediaPackage(); });
+    byId("loadReceiptButton").addEventListener("click", () => {
+      const anomalyCount = Model.asArray(state.document.dataQuality?.anomalies).length;
+      const detail = state.source === "demo"
+        ? "You are viewing bundled example records and images. Load your own JSON to review your account."
+        : anomalyCount
+          ? `Your JSON is open on this device. ${formatInteger(anomalyCount)} raw source record warning${anomalyCount === 1 ? " was" : "s were"} retained for review. Nothing was uploaded or saved by the website.`
+          : "Your JSON is open on this device. Nothing was uploaded or saved by the website.";
+      showDialog("FILE DETAILS", state.source === "demo" ? "Example data" : "Local file", detail);
+    });
+    byId("minimizeOverlay").addEventListener("click", () => setOverlayMinimized(!refs.overlay.classList.contains("minimized")));
+    byId("closeOverlay").addEventListener("click", () => {
+      state.overlayDismissed = true;
+      refs.overlay.hidden = true;
+      if (state.mediaOverlayActive && !state.mediaController) state.mediaOverlayActive = false;
+    });
+    const closeOrganizationBuild = () => {
+      state.pendingOrganizationSids = [];
+      if (refs.orgBuildDialog.open) refs.orgBuildDialog.close();
+    };
+    byId("orgBuildClose").addEventListener("click", closeOrganizationBuild);
+    byId("orgBuildCancel").addEventListener("click", closeOrganizationBuild);
+    refs.orgBuildForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      updateOrganizationActionAvailability();
+      if (refs.orgBuildStart.disabled) return;
+      const selectedSids = [...refs.orgRosterChecklist.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
+      if (refs.orgBuildDialog.open) refs.orgBuildDialog.close();
+      void proposeOrganizationRosters(selectedSids);
+    });
+    for (const button of document.querySelectorAll("[data-view]")) {
+      button.addEventListener("click", () => setInventoryView(button.dataset.view));
+      button.addEventListener("keydown", (event) => {
+        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+        event.preventDefault();
+        setInventoryView(button.dataset.view === "hangar" ? "buybacks" : "hangar", true);
+      });
+    }
+    for (const trigger of document.querySelectorAll("[data-open-view]")) trigger.addEventListener("click", () => setInventoryView(trigger.dataset.openView));
+    refs.search.addEventListener("input", () => {
+      state.inventoryPage = 1;
+      renderInventory();
+    });
+    refs.inventoryPrevious.addEventListener("click", () => setInventoryPage(state.inventoryPage - 1));
+    refs.inventoryNext.addEventListener("click", () => setInventoryPage(state.inventoryPage + 1));
+    refs.filterButton.addEventListener("click", () => {
+      refs.filterPanel.hidden = !refs.filterPanel.hidden;
+      refs.filterButton.setAttribute("aria-expanded", String(!refs.filterPanel.hidden));
+    });
+    refs.mediaGalleryDialog.addEventListener("close", () => {
+      const opener = mediaGalleryOpener;
+      mediaGalleryRecord = null;
+      mediaGalleryOpener = null;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    });
+    for (const chip of document.querySelectorAll(".filter-chip")) chip.addEventListener("click", () => {
+      state.activeGroup = chip.dataset.group;
+      state.inventoryPage = 1;
+      for (const candidate of document.querySelectorAll(".filter-chip")) {
+        const selected = candidate === chip;
+        candidate.classList.toggle("active", selected);
+        candidate.setAttribute("aria-pressed", String(selected));
+      }
+      refs.filterCount.textContent = state.activeGroup === "all" ? "0" : "1";
+      renderInventory();
+    });
+    byId("clearFilters").addEventListener("click", () => {
+      refs.search.value = "";
+      state.activeGroup = "all";
+      state.inventoryPage = 1;
+      refs.filterCount.textContent = "0";
+      for (const chip of document.querySelectorAll(".filter-chip")) {
+        const selected = chip.dataset.group === "all";
+        chip.classList.toggle("active", selected);
+        chip.setAttribute("aria-pressed", String(selected));
+      }
+      renderInventory();
+    });
+    byId("referralSortButton").addEventListener("click", () => {
+      state.referralOrder = state.referralOrder === "newest" ? "oldest" : "newest";
+      state.referralPage = 1;
+      renderReferrals();
+    });
+    refs.referralSearchForm.addEventListener("submit", (event) => event.preventDefault());
+    refs.referralSearch.addEventListener("input", () => {
+      state.referralSearch = refs.referralSearch.value;
+      state.referralPage = 1;
+      renderReferrals();
+    });
+    byId("referralPrevious").addEventListener("click", () => { state.referralPage -= 1; renderReferrals(); });
+    byId("referralNext").addEventListener("click", () => { state.referralPage += 1; renderReferrals(); });
+    byId("organizationPrevious").addEventListener("click", () => { state.organizationPage -= 1; renderOrganizations(); });
+    byId("organizationNext").addEventListener("click", () => { state.organizationPage += 1; renderOrganizations(); });
+    refs.organizationSearch.addEventListener("input", () => {
+      state.organizationSearch = refs.organizationSearch.value;
+      state.organizationPage = 1;
+      renderOrganizations();
+    });
+    for (const link of document.querySelectorAll(".rail-nav a")) link.addEventListener("click", () => activateRail(link));
+    window.addEventListener("message", bridgeMessage);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) clearStatusPoll();
+      else void pollStatus();
+    });
+    window.addEventListener("pagehide", clearStatusPoll);
+  }
+
+  async function initializeDashboard() {
+    rotateHero();
+    bindEvents();
+    globalThis.CitizenDataExportControls.bind({
+          getSnapshot: () => ({ document: documentForSelectedExports(), sourceName: state.source === "demo" ? "Example data" : state.fileName, sourceFileName: state.source === "demo" ? "example.json" : state.fileName, example: state.source === "demo" }),
+      onDownloadStarted: (fileName) => showToast(`Download started: ${fileName}`)
+    });
+    renderAll();
+    void prepareMediaPlan();
+    renderCollectionStatus({ status: "idle", activeJob: null });
+    window.dispatchEvent(new CustomEvent("citizendata-dashboard-ready"));
+  }
+
+  initializeDashboard().catch((error) => {
+    state.document = globalThis.CITIZENDATA_DEMO_DATA;
+    state.source = "demo";
+    state.fileName = "example.json";
+    renderAll();
+    showDialog("DASHBOARD", "Account data could not be opened", error.message);
+    window.dispatchEvent(new CustomEvent("citizendata-dashboard-ready"));
+  });
+})();

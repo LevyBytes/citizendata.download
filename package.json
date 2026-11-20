@@ -1,0 +1,29 @@
+{
+  "name": "citizendata-download",
+  "version": "0.42.1",
+  "private": true,
+  "license": "MIT",
+  "description": "Local-first Star Citizen account export extension and offline dashboard.",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/run-tests.mjs",
+    "test:dashboard": "node tests/web/validate-dashboard.mjs",
+    "test:extension": "node tests/extension/e2e/check-extension.mjs --out tests/work-temp-extension-e2e",
+    "test:readability": "node tests/web/readability/check-readability.mjs",
+    "test:hero-motion": "node tests/web/hero-motion/check-hero-motion.mjs",
+    "test:performance": "node tests/web/performance/run-performance.mjs",
+    "test:firefox": "node tests/web/compatibility/check-firefox.mjs",
+    "test:webkit": "node tests/web/compatibility/check-webkit.mjs",
+    "verify": "node scripts/verify.mjs",
+    "sync:schemas": "node scripts/sync-schemas.mjs",
+    "check:schemas": "node scripts/sync-schemas.mjs --check",
+    "package:extension": "node scripts/package-extension.mjs",
+    "lint": "node scripts/run-linters.mjs",
+    "check:limits": "node scripts/check-source-limits.mjs",
+    "check:names": "node scripts/check-file-names.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
+

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CitizenData</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="../icons/citizendata-128.png" alt="">
+    <span><b>CitizenData</b><small id="versionLabel"></small></span>
+  </header>
+  <main id="popupMain">
+    <section class="approval" id="approvalView" aria-labelledby="approvalTitle" hidden>
+      <canvas class="approval-embers" id="approvalEmbers" aria-hidden="true"></canvas>
+      <span class="approval-art" id="approvalArt" aria-hidden="true"></span>
+      <div class="approval-body">
+        <span class="eyebrow" id="approvalEyebrow">LOCAL DASHBOARD</span>
+        <h1 id="approvalTitle">Allow this local copy?</h1>
+        <p id="approvalLead">A CitizenData dashboard opened from your own disk is asking to connect.</p>
+        <p class="approval-path" id="approvalPath"></p>
+        <p class="approval-note" id="approvalNote">Allow only a copy you downloaded yourself. Once allowed, this page can ask the extension to read your RSI account and receive the result. You can remove the approval here at any time.</p>
+        <div class="approval-actions" id="approvalActions">
+          <button class="primary" id="approveLocal" type="button">Allow this local dashboard</button>
+          <button id="dismissLocal" type="button">Not now</button>
+        </div>
+      </div>
+    </section>
+    <section class="state" aria-labelledby="stateTitle">
+      <span class="state-marker" aria-hidden="true"></span>
+      <div><h1 id="stateTitle">Ready for account backup</h1><p id="stateMessage">Checking the extension…</p></div>
+    </section>
+    <button class="primary" id="openDashboard" type="button">Open CitizenData</button>
+    <details>
+      <summary>Recovery and permissions</summary>
+      <div class="details-body">
+        <p id="permissionState">Checking RSI access…</p>
+        <button id="grantRsiAccess" type="button" hidden>Allow RSI access</button>
+        <button id="exportBackup" type="button">Export recovery backup</button>
+        <label class="file-button" for="importBackup">Import recovery backup</label>
+        <input id="importBackup" type="file" accept="application/json,.json">
+        <button class="danger" id="deleteIncomplete" type="button" disabled>Delete incomplete run</button>
+        <button class="danger" id="clearAllData" type="button" aria-pressed="false">Clear local extension data</button>
+      </div>
+    </details>
+    <details id="buildHistory">
+      <summary>Build history</summary>
+      <div class="details-body">
+        <label class="toggle" for="historyEnabled">
+          <input id="historyEnabled" type="checkbox" role="switch">
+          <span>Keep earlier builds</span>
+        </label>
+        <p id="historyExplain">Off: this browser keeps only your latest build. On: when a new build differs from the one before, the earlier build is kept here as a compressed account file. Your organization rosters are kept as one Orgs JSON, updated after each build. Images the dashboard downloads are kept too, so it can show them again without the Images ZIP. The dashboard opens your latest build by itself when it loads, and a complete account file you open there with Load JSON is kept here as your latest build unless a newer one is held. An Orgs JSON you open there adds its rosters to it.</p>
+        <label class="number-field" for="historyKeep">
+          <span>Earlier builds to keep</span>
+          <input id="historyKeep" type="number" min="1" max="100" step="1" inputmode="numeric" value="5">
+        </label>
+        <div class="history-question" id="historyOffQuestion" role="group" aria-labelledby="historyOffText" hidden>
+          <p id="historyOffText"></p>
+          <button class="danger" id="historyDeleteAll" type="button">Delete the kept builds</button>
+          <button id="historyKeepAll" type="button">Keep them</button>
+        </div>
+        <p id="historySummary">No earlier build is kept.</p>
+        <ul class="history-list" id="historyList"></ul>
+        <p id="historyRecoveryNote" hidden>Kept builds are not part of the recovery backup. Save the ones you want as files.</p>
+        <p id="imagesSummary">No image is kept.</p>
+        <button class="danger" id="imagesDelete" type="button" hidden>Delete the kept images</button>
+        <p id="historyProblem" hidden></p>
+        <p id="storageState">Checking storage…</p>
+      </div>
+    </details>
+    <details id="localCopies">
+      <summary>Downloaded copies of the dashboard</summary>
+      <div class="details-body">
+        <p id="fileAccessState">Checking file access…</p>
+        <button id="openExtensionDetails" type="button" hidden>Open this extension's Chrome settings</button>
+        <p id="localListLabel">No local dashboard is allowed.</p>
+        <ul class="local-list" id="localList"></ul>
+      </div>
+    </details>
+    <p class="notice" id="notice" role="status" aria-live="polite"></p>
+  </main>
+  <script src="../storage/build-history.js"></script>
+  <script src="approval-motion.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

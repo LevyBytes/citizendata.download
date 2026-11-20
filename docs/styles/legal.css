@@ -1,0 +1,22 @@
+@font-face { font-family: Orbitron; src: url("../assets/fonts/orbitron-medium.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+:root { color-scheme: dark; font-family: "Segoe UI", Arial, sans-serif; color: #e6f1f3; background: #02080b; }
+* { box-sizing: border-box; }
+body { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+a { color: #65e7f4; text-underline-offset: .2em; }
+a:hover { color: #fff; }
+:focus-visible { outline: 2px solid #65e7f4; outline-offset: 4px; }
+.legal-shell { width: min(100% - 2rem, 52rem); margin-inline: auto; }
+.legal-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1.5rem; border-bottom: 1px solid #30525a; }
+.legal-brand { display: inline-flex; align-items: center; gap: .75rem; color: #e6f1f3; font: 500 1.1rem/1.5 Orbitron, sans-serif; text-decoration: none; }
+.legal-brand img { width: 2.5rem; height: 2.5rem; }
+main { margin-block: 2rem; padding: clamp(1.25rem, 4vw, 2.75rem); background: #091d23; border: 1px solid #30525a; border-top: 3px solid #65e7f4; }
+h1, h2 { font-family: Orbitron, "Segoe UI", sans-serif; font-weight: 500; line-height: 1.45; }
+h1 { margin: .25rem 0; font-size: clamp(1.6rem, 5vw, 2.3rem); }
+h2 { margin: 2rem 0 .75rem; color: #65e7f4; font-size: 1.08rem; }
+p, ul { margin: .85rem 0; }
+ul { padding-inline-start: 1.4rem; }
+li + li { margin-top: .4rem; }
+.legal-date { color: #d9b86a; font-size: .9rem; }
+.legal-intro { color: #c3d5da; font-size: 1.08rem; }
+.legal-footer { margin: 2rem 0; padding-block: 1rem; border-top: 1px solid #30525a; color: #a8bfc5; font-size: .85rem; }
+@media print { :root, main { background: white; color: black; } main { border: 0; padding: 0; } h2, a, .legal-date, .legal-intro, .legal-footer { color: black; } .legal-header { display: none; } }

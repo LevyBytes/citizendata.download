@@ -1,0 +1,23 @@
+dist/
+node_modules/
+*.log
+*.tmp
+*.pem
+*.crx
+.DS_Store
+Thumbs.db
+
+# Screenshots and scratch folders that test runs write next to the tests.
+work-temp-*
+
+# Never commit local account exports or captured RSI pages.
+account-data*.json
+rsi-account*.json
+citizendata-*.json
+citizendata-*.zip
+hangarlink*.json
+!tests/web/readability/citizendata-states.json
+private-data/
+captures/
+fixtures/private/
+

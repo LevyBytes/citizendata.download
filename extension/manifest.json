@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "CitizenData",
+  "short_name": "CitizenData",
+  "version": "0.42.1",
+  "version_name": "0.42.1",
+  "description": "Build and review a local Star Citizen account data backup with explicit user control.",
+  "minimum_chrome_version": "120",
+  "homepage_url": "https://citizendata.download/",
+  "incognito": "not_allowed",
+  "icons": {
+    "16": "icons/citizendata-16.png",
+    "32": "icons/citizendata-32.png",
+    "48": "icons/citizendata-48.png",
+    "128": "icons/citizendata-128.png"
+  },
+  "action": {
+    "default_title": "CitizenData",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/citizendata-16.png",
+      "32": "icons/citizendata-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "permissions": [
+    "alarms",
+    "cookies",
+    "offscreen",
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://robertsspaceindustries.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://citizendata.download/*",
+        "file:///*/docs/index.html"
+      ],
+      "js": [
+        "shared/protocol.js",
+        "content/dashboard-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "ISOLATED"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+  }
+}

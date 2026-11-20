@@ -1,0 +1,2658 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RSI Account Data Export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generator",
+    "exportedAt",
+    "account",
+    "profile",
+    "pledges",
+    "hangarLog",
+    "buybacks",
+    "financial",
+    "referrals",
+    "organizations",
+    "sync",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "generator": {
+      "$ref": "#/$defs/generator"
+    },
+    "exportedAt": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "account": {
+      "$ref": "#/$defs/account"
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "pledges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pledge"
+      }
+    },
+    "hangarLog": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hangarEvent"
+      }
+    },
+    "buybacks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/buyback"
+      }
+    },
+    "buybackDetails": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/buybackDetail"
+      }
+    },
+    "buybackUpgradePrices": {
+      "type": "array",
+      "description": "The price RSI asked for each different CCU buy-back when this build read it. A CCU is identified by the ship it upgrades from, the ship it upgrades to, and RSI's SKU of the upgrade, and its price is read once for all its buy-backs. A CCU buy-back has no page of its own; RSI prices it in its store upgrade page. These prices change, so a build never keeps one from an earlier build.",
+      "items": {
+        "$ref": "#/$defs/buybackUpgradePrice"
+      }
+    },
+    "financial": {
+      "$ref": "#/$defs/financial"
+    },
+    "referrals": {
+      "$ref": "#/$defs/referrals"
+    },
+    "organizations": {
+      "$ref": "#/$defs/organizations"
+    },
+    "dataQuality": {
+      "$ref": "#/$defs/dataQuality"
+    },
+    "sync": {
+      "$ref": "#/$defs/sync"
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    }
+  },
+  "$defs": {
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nullableInteger": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "nullablePositiveInteger": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "inventoryCategory": {
+      "type": "string",
+      "enum": [
+        "gamePackage",
+        "standaloneShip",
+        "shipUpgrade",
+        "reward",
+        "hangarItem",
+        "armor",
+        "weapon",
+        "other",
+        "unknown"
+      ]
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(?:\\.[0-9]{1,4})?$"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      }
+    },
+    "nullableMoney": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/money"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "catalogIdentifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "value",
+        "source"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "rsi",
+            "communityMapping"
+          ]
+        }
+      }
+    },
+    "billingTotal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount",
+        "currency",
+        "observedAt",
+        "source"
+      ],
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(?:\\.[0-9]{1,4})?$"
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "source": {
+          "const": "billingPageTotal"
+        }
+      }
+    },
+    "imageReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "imageKey",
+        "normalizationVersion",
+        "role",
+        "url",
+        "altText",
+        "width",
+        "height",
+        "mimeTypeHint"
+      ],
+      "properties": {
+        "imageKey": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "normalizationVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^(?:https://|file://)"
+        },
+        "altText": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "width": {
+          "$ref": "#/$defs/nullablePositiveInteger"
+        },
+        "height": {
+          "$ref": "#/$defs/nullablePositiveInteger"
+        },
+        "mimeTypeHint": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "relatedUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "sourceLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url",
+        "observedAt"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "listing",
+            "detail"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://robertsspaceindustries\\.com/"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "detail"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "url": {
+                "pattern": "^https://robertsspaceindustries\\.com/pledge/buyback/[0-9]+$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "url": {
+                "pattern": "^https://robertsspaceindustries\\.com/(?:en/)?account/(?:pledges|buy-back-pledges)(?:\\?[^#]*)?$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "observationMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firstObservedAt",
+        "lastObservedAt",
+        "parserVersion"
+      ],
+      "properties": {
+        "firstObservedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "lastObservedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "parserVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relatedUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "localAccountId",
+        "ueeCitizenRecord",
+        "handle"
+      ],
+      "properties": {
+        "localAccountId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "ueeCitizenRecord": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "handle": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "unlockedBadge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceIndex",
+        "id",
+        "title",
+        "images"
+      ],
+      "properties": {
+        "sourceIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "id": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "title": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        }
+      }
+    },
+    "profileBadge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "images"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        }
+      }
+    },
+    "featuredProfileBadge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "images",
+        "relatedUrls"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "relatedUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "badgeCollectionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawRows",
+        "nonNullRows",
+        "nullRows",
+        "uniqueIdTitlePairs",
+        "exactDuplicateRows"
+      ],
+      "properties": {
+        "rawRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nonNullRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nullRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uniqueIdTitlePairs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exactDuplicateRows": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "handle",
+        "displayTitle",
+        "enlistedOnRaw",
+        "location",
+        "languages",
+        "website",
+        "biography",
+        "mainOrganizationSid",
+        "organizationRank",
+        "images",
+        "observation"
+      ],
+      "properties": {
+        "displayName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "handle": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "displayTitle": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "enlistedOnRaw": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "location": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "website": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "biography": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "mainOrganizationSid": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "organizationRank": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "dossierBadgeTitle": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "unlockedBadges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unlockedBadge"
+          }
+        },
+        "badgeCollection": {
+          "$ref": "#/$defs/badgeCollectionSummary"
+        },
+        "selectedBadge": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/profileBadge"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "featuredBadges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/featuredProfileBadge"
+          }
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "containedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordKey",
+        "name",
+        "kind",
+        "category",
+        "quantity",
+        "images",
+        "catalogIdentifiers"
+      ],
+      "properties": {
+        "recordKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "manufacturer": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "customName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "section": {
+          "type": "string",
+          "enum": [
+            "items",
+            "alsoContains"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/inventoryCategory"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "relatedUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        },
+        "catalogIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogIdentifier"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "ccuStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stepKey",
+        "fromShip",
+        "toShip",
+        "appliedDateRaw",
+        "cost",
+        "cumulativeValue",
+        "sourceEventKeys"
+      ],
+      "properties": {
+        "stepKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromShip": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toShip": {
+          "type": "string",
+          "minLength": 1
+        },
+        "appliedDateRaw": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "cost": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "cumulativeValue": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "sourceEventKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "recordRemoval": {
+      "description": "Kept on a record RSI no longer lists when the Hangar Log does not account for its absence. It stays on the record if RSI lists it again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lastSeenAt",
+        "firstMissingAt",
+        "returnedAt"
+      ],
+      "properties": {
+        "lastSeenAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "firstMissingAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "returnedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "pledge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pledgeId",
+        "recordKey",
+        "title",
+        "category",
+        "availability",
+        "createdDateRaw",
+        "containsSummary",
+        "items",
+        "images",
+        "sourceLinks",
+        "state",
+        "observation",
+        "meltValue",
+        "meltEligible",
+        "baseValue",
+        "ccuHistory",
+        "catalogIdentifiers"
+      ],
+      "properties": {
+        "pledgeId": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "recordKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "$ref": "#/$defs/inventoryCategory"
+        },
+        "availability": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "createdDateRaw": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "containsSummary": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/containedItem"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "sourceLinks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/sourceLink"
+          }
+        },
+        "sourcePage": {
+          "$ref": "#/$defs/nullablePositiveInteger"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "current",
+            "missing-unresolved",
+            "historical",
+            "not-reconcilable"
+          ]
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        },
+        "meltValue": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "meltEligible": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "giftEligible": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "baseValue": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "ccuHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ccuStep"
+          }
+        },
+        "catalogIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogIdentifier"
+          },
+          "uniqueItems": true
+        },
+        "removal": {
+          "$ref": "#/$defs/recordRemoval"
+        }
+      }
+    },
+    "hangarEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint",
+        "occurrenceOrdinal",
+        "rawTimestamp",
+        "subjectId",
+        "subjectName",
+        "kind",
+        "rawDetail",
+        "parsed",
+        "observation"
+      ],
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "occurrenceOrdinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rawTimestamp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subjectId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "subjectName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rawDetail": {
+          "type": "string"
+        },
+        "parsed": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "buybackUpgrade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromShipIdentifiers",
+        "toShipIdentifiers",
+        "skuIdentifiers"
+      ],
+      "properties": {
+        "fromShipIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogIdentifier"
+          },
+          "uniqueItems": true
+        },
+        "toShipIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogIdentifier"
+          },
+          "uniqueItems": true
+        },
+        "skuIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogIdentifier"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "buyback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buybackId",
+        "recordKey",
+        "kind",
+        "category",
+        "title",
+        "reclaimDateRaw",
+        "containsSummary",
+        "availability",
+        "images",
+        "sourceLinks",
+        "state",
+        "observation",
+        "buybackPrice",
+        "items",
+        "catalogIdentifiers",
+        "upgrade"
+      ],
+      "properties": {
+        "buybackId": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "recordKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "ordinary",
+            "upgrade",
+            "unknown"
+          ]
+        },
+        "category": {
+          "$ref": "#/$defs/inventoryCategory"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reclaimDateRaw": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "containsSummary": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "availability": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "sourceLinks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/sourceLink"
+          }
+        },
+        "sourcePage": {
+          "$ref": "#/$defs/nullablePositiveInteger"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "missing-unresolved",
+            "historical",
+            "not-reconcilable"
+          ]
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        },
+        "buybackPrice": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/containedItem"
+          }
+        },
+        "catalogIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogIdentifier"
+          },
+          "uniqueItems": true
+        },
+        "upgrade": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/buybackUpgrade"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "removal": {
+          "$ref": "#/$defs/recordRemoval"
+        }
+      }
+    },
+    "buybackDetailShip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "manufacturer",
+        "focus",
+        "shipPageUrl",
+        "images"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manufacturer": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "focus": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "shipPageUrl": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/relatedUrl"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        }
+      }
+    },
+    "buybackDetail": {
+      "description": "What a buy-back's page showed when it was read. The price is the price on that day; a discount is recorded as shown, without a cause. RSI shows the same page for every buy-back of the same item, so one page is read for an item: a detail with readFromBuybackId holds what the page of that other buy-back of the same item showed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buybackId",
+        "recordKey",
+        "title",
+        "categoryLabel",
+        "name",
+        "pageType",
+        "price",
+        "priceText",
+        "originalPrice",
+        "discountPercent",
+        "discountText",
+        "priceDataValue",
+        "priceDataCurrency",
+        "skuId",
+        "descriptionTitle",
+        "description",
+        "ships",
+        "alsoContains",
+        "images",
+        "buybackTokensAvailable",
+        "sourceUrl",
+        "capturedAt"
+      ],
+      "properties": {
+        "buybackId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "recordKey": {
+          "type": "string",
+          "pattern": "^buyback-detail:[0-9]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "categoryLabel": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageType": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "price": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "priceText": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "originalPrice": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "discountPercent": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "discountText": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "priceDataValue": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "priceDataCurrency": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "skuId": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "descriptionTitle": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "description": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "ships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/buybackDetailShip"
+          }
+        },
+        "alsoContains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "buybackTokensAvailable": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "sourceUrl": {
+          "description": "The address of this buy-back's own page.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://robertsspaceindustries\\.com/(?:[a-z]{2}/)?pledge/buyback/[0-9]+$"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "readFromBuybackId": {
+          "description": "Present when this buy-back's own page was not read: the number of the buy-back of the same item, the same title and contents line, whose page was read. capturedAt is when that page was read.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "buybackUpgradePrice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordKey",
+        "fromShipId",
+        "toShipId",
+        "toSkuId",
+        "readFromBuybackId",
+        "price",
+        "nativeAmount",
+        "capturedAt"
+      ],
+      "properties": {
+        "recordKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fromShipId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "RSI's number of the ship the upgrade starts from."
+        },
+        "toShipId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "RSI's number of the ship the upgrade leads to."
+        },
+        "toSkuId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "RSI's number of the upgrade's SKU."
+        },
+        "readFromBuybackId": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The buy-back whose number was given to RSI when the price was read."
+        },
+        "fromShipName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "toShipName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "price": {
+          "$ref": "#/$defs/nullableMoney"
+        },
+        "nativeAmount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The amount as RSI gave it, in cents of a US dollar, or null when RSI gave no price."
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/dateTime"
+        }
+      }
+    },
+    "balance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount",
+        "unit",
+        "observedAt"
+      ],
+      "properties": {
+        "amount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(?:\\.[0-9]{1,4})?$"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "USD",
+            "UEC",
+            "REC"
+          ]
+        },
+        "observedAt": {
+          "$ref": "#/$defs/dateTime"
+        }
+      }
+    },
+    "creditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint",
+        "occurrenceOrdinal",
+        "rawTimestamp",
+        "amount",
+        "unit",
+        "rawDetail",
+        "parsed",
+        "observation"
+      ],
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "occurrenceOrdinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rawTimestamp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(?:\\.[0-9]{1,4})?$"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "USD",
+            "UEC",
+            "REC"
+          ]
+        },
+        "rawDetail": {
+          "type": "string"
+        },
+        "parsed": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "subscriptionPayment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawTimestamp",
+        "processor",
+        "status",
+        "amount"
+      ],
+      "properties": {
+        "rawTimestamp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "processor": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        }
+      }
+    },
+    "subscription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscriptionId",
+        "plan",
+        "state",
+        "startDateRaw",
+        "endDateRaw",
+        "recurringState",
+        "amount",
+        "totalPaid",
+        "totalTimeRaw",
+        "payments",
+        "images",
+        "observation"
+      ],
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "ended"
+          ]
+        },
+        "startDateRaw": {
+          "type": "string",
+          "minLength": 1
+        },
+        "endDateRaw": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "recurringState": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "amount": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalPaid": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTimeRaw": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "payments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/subscriptionPayment"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "orderItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "quantity",
+        "unitPrice",
+        "discount",
+        "total",
+        "physical",
+        "trackingAvailable",
+        "images"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unitPrice": {
+          "$ref": "#/$defs/money"
+        },
+        "discount": {
+          "$ref": "#/$defs/money"
+        },
+        "total": {
+          "$ref": "#/$defs/money"
+        },
+        "physical": {
+          "type": "boolean"
+        },
+        "trackingAvailable": {
+          "type": "boolean"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "relatedUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "lines",
+        "city",
+        "region",
+        "postalCode",
+        "country"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "city": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "region": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "postalCode": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "country": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "orderPayment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawTimestamp",
+        "processor",
+        "status",
+        "amount"
+      ],
+      "properties": {
+        "rawTimestamp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "processor": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        }
+      }
+    },
+    "order": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "orderId",
+        "placedAtRaw",
+        "storefront",
+        "status",
+        "paymentState",
+        "fulfillmentState",
+        "physical",
+        "items",
+        "billingAddress",
+        "shippingAddress",
+        "itemsTotal",
+        "additionalDiscount",
+        "creditsUsed",
+        "shippingAndHandling",
+        "tax",
+        "total",
+        "payments",
+        "invoiceAvailable",
+        "observation"
+      ],
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "placedAtRaw": {
+          "type": "string",
+          "minLength": 1
+        },
+        "storefront": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "paymentState": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "fulfillmentState": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "physical": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/orderItem"
+          }
+        },
+        "billingAddress": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/address"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shippingAddress": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/address"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "itemsTotal": {
+          "$ref": "#/$defs/money"
+        },
+        "additionalDiscount": {
+          "$ref": "#/$defs/money"
+        },
+        "creditsUsed": {
+          "$ref": "#/$defs/money"
+        },
+        "shippingAndHandling": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tax": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total": {
+          "$ref": "#/$defs/money"
+        },
+        "payments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/orderPayment"
+          }
+        },
+        "invoiceAvailable": {
+          "type": "boolean"
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "financial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "balances",
+        "billingTotal",
+        "creditLedgers",
+        "subscriptions",
+        "orders"
+      ],
+      "properties": {
+        "balances": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "storeCredit",
+            "uec",
+            "rec"
+          ],
+          "properties": {
+            "storeCredit": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/balance"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "uec": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/balance"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rec": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/balance"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "billingTotal": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/billingTotal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Direct TOTAL SPENT value observed on the RSI billing page; never replace it with a sum of order totals."
+        },
+        "creditLedgers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "storeCredit",
+            "uec",
+            "rec"
+          ],
+          "properties": {
+            "storeCredit": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/creditEvent"
+              }
+            },
+            "uec": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/creditEvent"
+              }
+            },
+            "rec": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/creditEvent"
+              }
+            }
+          }
+        },
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/subscription"
+          }
+        },
+        "orders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/order"
+          }
+        }
+      }
+    },
+    "referralPerson": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordKey",
+        "displayName",
+        "handle",
+        "dateLabel",
+        "dateRaw",
+        "dateSortKey",
+        "images",
+        "observation"
+      ],
+      "properties": {
+        "recordKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "handle": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "displayNameRaw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nicknameRaw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dateLabel": {
+          "type": "string",
+          "enum": [
+            "enlistedOn",
+            "purchasedOn"
+          ]
+        },
+        "dateRaw": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dateSortKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Evidence-derived ISO 8601 calendar date used only for deterministic ordering; preserve dateRaw as the displayed source wording and use null when normalization is not proven."
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "referralSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prospects",
+        "recruits"
+      ],
+      "properties": {
+        "prospects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/referralPerson"
+          }
+        },
+        "recruits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/referralPerson"
+          }
+        }
+      }
+    },
+    "referrals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current",
+        "legacy"
+      ],
+      "properties": {
+        "current": {
+          "$ref": "#/$defs/referralSource"
+        },
+        "legacy": {
+          "$ref": "#/$defs/referralSource"
+        }
+      }
+    },
+    "organizationMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sid",
+        "name",
+        "membershipType",
+        "memberCount",
+        "rank",
+        "archetype",
+        "language",
+        "primaryActivity",
+        "secondaryActivity",
+        "recruiting",
+        "rolePlay",
+        "commitment",
+        "exclusive",
+        "images",
+        "observation"
+      ],
+      "properties": {
+        "sid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "membershipType": {
+          "type": "string",
+          "enum": [
+            "main",
+            "affiliate"
+          ]
+        },
+        "memberCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rank": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "archetype": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "language": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "primaryActivity": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "secondaryActivity": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "recruiting": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rolePlay": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "commitment": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "exclusive": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "organizationMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordKey",
+        "organizationSid",
+        "visibility",
+        "displayName",
+        "handle",
+        "membershipType",
+        "rank",
+        "rankStars",
+        "roles",
+        "images",
+        "observation"
+      ],
+      "properties": {
+        "recordKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "organizationSid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "public",
+            "restricted"
+          ]
+        },
+        "displayName": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "handle": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "membershipType": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rank": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "rankStars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/imageReference"
+          }
+        },
+        "observation": {
+          "$ref": "#/$defs/observationMetadata"
+        }
+      }
+    },
+    "organizations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memberships"
+      ],
+      "properties": {
+        "memberships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/organizationMembership"
+          }
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/organizationMember"
+          }
+        }
+      }
+    },
+    "dataQualityAnomaly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anomalyKey",
+        "section",
+        "recordIndex",
+        "pageOrBatch",
+        "issueCode",
+        "message",
+        "raw",
+        "retainedInNormalizedData",
+        "observedAt",
+        "sourceUrls"
+      ],
+      "properties": {
+        "anomalyKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recordIndex": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pageOrBatch": {
+          "$ref": "#/$defs/nullablePositiveInteger"
+        },
+        "issueCode": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "raw": {
+          "type": [
+            "object",
+            "array",
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "retainedInNormalizedData": {
+          "type": "boolean"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "sourceUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "dataQuality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "anomalies"
+      ],
+      "properties": {
+        "anomalies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dataQualityAnomaly"
+          }
+        }
+      }
+    },
+    "sectionOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "parserVersion",
+        "startedAt",
+        "endedAt",
+        "records",
+        "pagesOrBatches",
+        "warnings"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "failed",
+            "skipped",
+            "notRun"
+          ]
+        },
+        "parserVersion": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "startedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "records": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pagesOrBatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "organizationMemberAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorizationId",
+        "parentAuthorizationId",
+        "authorizedAt",
+        "organizations",
+        "extensionVersion",
+        "parserVersion",
+        "minimumInterActionDelayMs",
+        "oneRunOnly"
+      ],
+      "properties": {
+        "authorizationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "parentAuthorizationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "authorizedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "organizations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sid",
+              "observedMemberCount",
+              "maximumRecords"
+            ],
+            "properties": {
+              "sid": {
+                "type": "string",
+                "minLength": 1
+              },
+              "observedMemberCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "maximumRecords": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "extensionVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parserVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minimumInterActionDelayMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "oneRunOnly": {
+          "const": true
+        }
+      }
+    },
+    "runAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorizationId",
+        "authorizedAt",
+        "expiresAt",
+        "localAccountId",
+        "dashboardOrigin",
+        "bridgeSessionId",
+        "planHash",
+        "selectedSections",
+        "maximumRecordsBySection",
+        "minimumInterRequestDelayMs",
+        "extensionVersion",
+        "parserVersions",
+        "oneRunOnly"
+      ],
+      "properties": {
+        "authorizationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "authorizedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "localAccountId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "dashboardOrigin": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^(?:https://|file://$)"
+        },
+        "bridgeSessionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "planHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "selectedSections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "maximumRecordsBySection": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "minimumInterRequestDelayMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "extensionVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parserVersions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "oneRunOnly": {
+          "const": true
+        }
+      }
+    },
+    "runReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "status",
+        "startedAt",
+        "endedAt",
+        "selectedSections",
+        "authorization",
+        "organizationMemberAuthorization"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "selectedSections": {
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^organizations\\.members\\.[A-Z0-9][A-Z0-9_-]{0,63}$"
+                }
+              }
+            },
+            "required": [
+              "selectedSections"
+            ]
+          },
+          "then": {
+            "properties": {
+              "organizationMemberAuthorization": {
+                "$ref": "#/$defs/organizationMemberAuthorization"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "organizationMemberAuthorization": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "startedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "selectedSections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "authorization": {
+          "$ref": "#/$defs/runAuthorization"
+        },
+        "organizationMemberAuthorization": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/organizationMemberAuthorization"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "removalComparison": {
+      "description": "Whether one list was compared with the earlier backup, and what the comparison found. No removal is claimed unless the status is compared.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason",
+        "missing",
+        "explained",
+        "notReconcilable",
+        "returned",
+        "kept"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "compared",
+            "not-compared"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explained": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "notReconcilable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kept": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "removalTracking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "comparedAt",
+        "comparedWithExportedAt",
+        "pledges",
+        "buybacks"
+      ],
+      "properties": {
+        "comparedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "comparedWithExportedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pledges": {
+          "$ref": "#/$defs/removalComparison"
+        },
+        "buybacks": {
+          "$ref": "#/$defs/removalComparison"
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sectionOutcomes",
+        "organizationMemberOutcomes",
+        "checkpoints",
+        "runs"
+      ],
+      "properties": {
+        "sectionOutcomes": {
+          "type": "object",
+          "required": [
+            "profile",
+            "pledges",
+            "hangarLog",
+            "buybacks",
+            "financial.balances",
+            "referrals.current.prospects",
+            "referrals.current.recruits",
+            "referrals.legacy.prospects",
+            "referrals.legacy.recruits",
+            "organizations.memberships"
+          ],
+          "properties": {
+            "profile": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "pledges": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "hangarLog": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "buybacks": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "buybackDetails": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "buybackUpgradePrices": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "financial.balances": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "referrals.current.prospects": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "referrals.current.recruits": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "referrals.legacy.prospects": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "referrals.legacy.recruits": {
+              "$ref": "#/$defs/sectionOutcome"
+            },
+            "organizations.memberships": {
+              "$ref": "#/$defs/sectionOutcome"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/sectionOutcome"
+          }
+        },
+        "organizationMemberOutcomes": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/sectionOutcome"
+          }
+        },
+        "checkpoints": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runReceipt"
+          }
+        },
+        "removalTracking": {
+          "$ref": "#/$defs/removalTracking"
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "contentHash"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Lowercase SHA-256 hexadecimal of the UTF-8 RFC 8785 JSON Canonicalization Scheme bytes after removing only integrity.contentHash and retaining integrity.algorithm; this detects document changes but is not an authenticity signature."
+        }
+      }
+    }
+  }
+}

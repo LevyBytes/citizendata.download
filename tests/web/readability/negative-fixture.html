@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Local contrast checker fixture</title><style>
+html, body { margin: 0; background: #fff; color: #000; font: 16px Arial, sans-serif; }
+body { padding: 20px; } p { margin: 12px 0; } .large { font-size: 24px; } .bold { font-size: 18.667px; font-weight: 700; }
+#low { color: #aaa; } #normal-gray, #large-gray, #bold-gray { color: #777; }
+#alpha { color: rgba(0,0,0,.5); } #layer { background: rgba(0,0,0,.5); color: #000; }
+#gradient { background: linear-gradient(#fff, #000); color: #999; } #opacity { opacity: .6; }
+#pseudo::before { content: ""; position: absolute; width: 30px; height: 20px; background: #555; }
+#overpaint, #svg-overlay, #image-overlay { position: relative; }
+#overpaint::after { content: ""; position: absolute; inset: 0; background: rgba(0,0,0,.7); }
+#opaque-child { background: #fff; } #svg-overlay svg, #image-overlay img { position: absolute; left: 0; top: 0; width: 30px; height: 20px; }
+#inset { box-shadow: inset 0 0 0 100px #999; }
+input { font: 16px Arial; color: #000; background: #fff; } input::placeholder { color: #aaa; opacity: 1; }
+button:disabled { color: #eee; background: #fff; }
+</style></head><body>
+<p id="black-white">Known black on white, 21:1.</p>
+<p id="low">This low-contrast normal text must fail.</p>
+<p id="normal-gray">Low normal text must also fail.</p>
+<p id="large-gray" class="large">Large gray text must pass 3:1.</p>
+<p id="bold-gray" class="bold">Bold large text must pass 3:1.</p>
+<p id="alpha">Half-transparent black must fail 4.5:1.</p>
+<p id="layer">Black on composited half-black background must pass.</p>
+<p id="gradient">Gradient must be manual.</p>
+<p id="opacity">Opacity must be manual.</p>
+<p id="pseudo">Pseudo decoration must be manual.</p>
+<input id="placeholder" placeholder="Low-contrast placeholder must fail" aria-label="Fixture placeholder">
+<button disabled>Inactive low-contrast control must be skipped</button>
+<p id="svg-overlay">SVG overlap must be manual.<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="#777"/></svg></p>
+<p id="image-overlay">Descendant image overlap must be manual.<img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='10' height='10' fill='%23777'/%3E%3C/svg%3E"></p>
+<p id="overpaint"><span id="opaque-child">Ancestor pseudo over opaque child must be manual.</span></p>
+<p id="inset">Inset box shadow must be manual.</p>
+</body></html>

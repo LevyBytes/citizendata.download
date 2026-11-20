@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; connect-src 'self' https://robertsspaceindustries.com https://media.robertsspaceindustries.com; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>Star Citizen Data Downloader | CitizenData</title>
+  <meta name="description" content="Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.">
+  <link rel="canonical" href="https://citizendata.download/">
+  <link rel="privacy-policy" href="privacy-policy.html">
+  <link rel="terms-of-service" href="terms-of-service.html">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#061419">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://citizendata.download/">
+  <meta property="og:site_name" content="CitizenData">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="Star Citizen Data Downloader | CitizenData">
+  <meta property="og:description" content="Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.">
+  <meta property="og:image" content="https://citizendata.download/assets/social/citizendata-share-v2.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="CitizenData's cyan laurel and gold download logo. Star Citizen Data Downloader: local backup tool for your Star Citizen account data.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Star Citizen Data Downloader | CitizenData">
+  <meta name="twitter:description" content="Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.">
+  <meta name="twitter:image" content="https://citizendata.download/assets/social/citizendata-share-v2.png">
+  <meta name="twitter:image:alt" content="CitizenData's cyan laurel and gold download logo. Star Citizen Data Downloader: local backup tool for your Star Citizen account data.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://citizendata.download/#website",
+        "url": "https://citizendata.download/",
+        "name": "CitizenData",
+        "alternateName": "citizendata.download",
+        "inLanguage": "en",
+        "description": "CitizenData saves a Star Citizen account's records to a JSON file on the owner's device and displays that file in the browser. There is no server that receives the data."
+      },
+      {
+        "@type": "WebApplication",
+        "@id": "https://citizendata.download/#application",
+        "url": "https://citizendata.download/",
+        "name": "Star Citizen Data Downloader",
+        "alternateName": "CitizenData",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Windows, macOS, Linux, ChromeOS",
+        "browserRequirements": "Requires JavaScript. Building a backup requires Google Chrome 120 or later with the CitizenData extension. Viewing a saved backup works in any current browser.",
+        "description": "Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.",
+        "featureList": [
+          "Builds one JSON backup of a Star Citizen account: hangar pledges, buyback pledges, hangar log, billing orders, subscriptions, store credit, UEC and REC ledgers, referrals and organization memberships",
+          "Updates an existing backup by reading only what changed since the last one",
+          "Downloads member rosters for the organizations you choose",
+          "Packages the images a backup refers to into a ZIP for offline viewing",
+          "Exports chosen sections as JSON, including an inventory file that Hangar Link and Fleetview import",
+          "Runs in the browser with no account, no upload and no tracking; there is no server that receives your data"
+        ],
+        "isAccessibleForFree": true,
+        "inLanguage": "en",
+        "image": "https://citizendata.download/assets/social/citizendata-share-v2.png",
+        "license": "https://opensource.org/license/mit",
+        "isPartOf": { "@id": "https://citizendata.download/#website" }
+      }
+    ]
+  }
+  </script>
+  <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" sizes="96x96" href="assets/favicon-96.png">
+  <link rel="icon" type="image/svg+xml" href="assets/citizendata.svg">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Skip to account data</a>
+  <noscript><p class="noscript-note">CitizenData is a free, open-source tool that saves your Star Citizen account records to a JSON file on your own device: hangar, buybacks, hangar log, billing, referrals and organizations. A Chrome extension reads your RSI account pages inside your browser, and this page displays the file it builds. There is no server that receives your data, no sign-up and no tracking. This page needs JavaScript to open a backup.</p></noscript>
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="#overview" aria-label="Star Citizen Data Downloader home">
+      <img class="brand-icon" src="assets/citizendata.svg" alt="">
+      <span><b>STAR CITIZEN DATA DOWNLOADER</b><small>LOCAL BACKUP TOOL FOR YOUR STAR CITIZEN ACCOUNT DATA</small></span>
+    </a>
+    <div class="topbar-status" role="status" id="documentStatus">
+      <span class="status-dot"></span>
+      <span><b id="documentStatusTitle">EXAMPLE DATA</b><small id="documentStatusDetail">No private account data · no upload</small></span>
+    </div>
+    <div class="top-actions">
+      <input id="jsonFileInput" type="file" accept="application/json,.json" hidden>
+      <button class="button button-quiet" type="button" id="loadButton"><span class="rsi-icon icon-download" aria-hidden="true"></span>Load JSON</button>
+      <button class="button button-build" type="button" id="buildButton" aria-controls="parserOverlay"><span class="rsi-icon icon-gear" aria-hidden="true"></span><span id="buildButtonLabel">Build</span></button>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="section-rail" aria-label="Account data sections">
+      <div class="rail-label">ACCOUNT DATA</div>
+      <nav class="rail-nav">
+        <a class="active" href="#overview" aria-current="page" data-rail-section="overview"><span class="rsi-icon icon-citizen" aria-hidden="true"></span><span>Overview<small>Identity and data state</small></span></a>
+        <a href="#balances" data-rail-section="balances"><span class="rsi-icon icon-billing" aria-hidden="true"></span><span>Balances<small>Credit, UEC, REC</small></span></a>
+        <a href="#inventory" data-rail-view="hangar"><span class="rsi-icon icon-hangar" aria-hidden="true"></span><span>Current Hangar<small id="railHangarCount">3 demo records</small></span></a>
+        <a href="#inventory" data-open-view="buybacks" data-rail-view="buybacks"><span class="rsi-icon icon-buybacks" aria-hidden="true"></span><span>Buybacks<small id="railBuybackCount">3 demo records</small></span></a>
+        <a href="#referrals" data-rail-section="referrals"><span class="rsi-icon icon-referrals" aria-hidden="true"></span><span>Referrals<small>Current + legacy</small></span></a>
+        <a href="#organizations" data-rail-section="organizations"><span class="rsi-icon icon-organizations" aria-hidden="true"></span><span>Organizations<small>Roster requires approval</small></span></a>
+      </nav>
+      <div class="rail-evidence" data-nosnippet>
+        <span class="eyebrow">LOADED DOCUMENT</span>
+        <dl>
+          <div><dt>Account</dt><dd id="railAccount">DownloadCitizen</dd></div>
+          <div><dt>Exported</dt><dd id="railExported">example.json</dd></div>
+        </dl>
+      </div>
+    </aside>
+
+    <main id="mainContent" tabindex="-1">
+      <section class="identity-panel angled-panel" id="overview" data-nosnippet>
+        <span class="identity-hero-art" id="identityHeroArt" data-hero-art="radar" aria-hidden="true"></span>
+        <div class="identity-main">
+        <div class="avatar" id="avatar" role="img" aria-label="Example account avatar"><img id="avatarImage" alt="" hidden><span id="avatarInitials">DC</span></div>
+          <div class="identity-copy">
+            <div class="eyebrow" id="snapshotEyebrow">EXAMPLE ACCOUNT</div>
+            <h1 id="accountHandle">DownloadCitizen</h1>
+            <p class="identity-title"><span class="identity-badge"><span class="identity-mark-media" hidden><img id="dossierBadgeImage" alt="" hidden><span id="dossierBadgeFallback" hidden></span></span><span id="displayTitle">Clearance Level Ultra</span></span><span class="identity-title-separator" aria-hidden="true">·</span><span class="uee-record" id="citizenRecord"><span>UEE Citizen</span><span id="citizenRecordNumber">#42</span></span></p>
+            <dl class="identity-meta">
+              <div><dt>Enlisted</dt><dd id="enlistedOn">October 18, 2012</dd></div>
+              <div class="identity-organization"><dt>Main organization</dt><dd><span class="identity-mark-media"><img id="organizationEmblemImage" alt="" hidden><span class="rsi-icon icon-organizations identity-mark-fallback" id="organizationEmblemFallback" aria-hidden="true"></span></span><span id="mainOrganization">TEST</span></dd></div>
+              <div><dt>Rank</dt><dd id="organizationRank">RECRUIT</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="identity-aside">
+          <div class="snapshot-state">
+            <img class="state-emblem" src="assets/citizendata.svg" alt="">
+            <div><b id="dataStateTitle">Example preview loaded</b><span id="dataStateDetail">Load an account JSON to review local data</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="summary-strip" aria-label="Account summary" data-nosnippet>
+        <a href="#inventory"><span class="rsi-icon icon-hangar" aria-hidden="true"></span><span><small>Current Hangar</small><b id="hangarTotal">3</b><em>records</em></span></a>
+        <a href="#inventory" data-open-view="buybacks"><span class="rsi-icon icon-buybacks" aria-hidden="true"></span><span><small>Buybacks</small><b id="buybackTotal">3</b><em>records</em></span></a>
+        <a href="#balances"><span class="rsi-icon icon-billing" aria-hidden="true"></span><span><small>Store credit</small><b id="storeCredit">$395.00</b><em>USD</em></span></a>
+        <a href="#balances"><span class="rsi-icon icon-uec" aria-hidden="true"></span><span><small>UEC</small><b id="uecBalance">42,000</b></span></a>
+        <a href="#subscriptions" id="subscriptionSummary"><span class="subscriber-icon" id="subscriptionSummaryIcon" aria-hidden="true" hidden><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><path fill="currentColor" d="M3.902 1.693c-.07-.257-.437-.257-.507 0L2.968 3.27a.26.26 0 0 1-.185.183l-1.589.425a.26.26 0 0 0 0 .503l1.589.425c.09.024.16.094.185.184l.427 1.578c.07.257.437.257.507 0l.427-1.578a.26.26 0 0 1 .186-.184l1.588-.425a.26.26 0 0 0 0-.503l-1.588-.425a.26.26 0 0 1-.186-.183l-.427-1.578Zm5.348.687c-.103-.39-.658-.39-.761 0L7.397 6.515a.39.39 0 0 1-.276.277L3.027 7.917a.39.39 0 0 0 0 .753l4.094 1.124c.135.037.24.143.276.278l1.092 4.136c.103.39.658.39.76 0l1.093-4.136a.39.39 0 0 1 .276-.278L14.71 8.67a.39.39 0 0 0 0-.753l-4.093-1.124a.39.39 0 0 1-.276-.277z"/></svg></span><span><small>Subscriptions</small><b id="subscriptionSpent"></b><em id="subscriptionMetricDetail"></em></span></a>
+        <a class="billing-total" href="#balances"><span class="currency-glyph" aria-hidden="true">$</span><span><small>Billing total</small><b id="billingTotal">$1,069.42</b><em id="billingCurrency">USD total spent</em></span></a>
+      </section>
+
+      <details class="panel detail-panel balance-detail" id="balances" open>
+        <summary><span class="summary-icon"><span class="rsi-icon icon-billing" aria-hidden="true"></span></span><span><small>BALANCES</small><b>Credit, UEC, and REC</b></span><span class="summary-total">3 ledgers</span></summary>
+        <div class="details-content balance-list" data-nosnippet><div><span>Store credit</span><b id="detailStoreCredit">$395.00 USD</b></div><div><span>UEC</span><b id="detailUec">42,000</b></div><div><span>REC</span><b id="detailRec">7,500</b></div></div>
+      </details>
+
+      <section class="panel subscription-panel" id="subscriptions" data-nosnippet aria-labelledby="subscriptionHeading">
+        <div class="section-heading"><h2 class="eyebrow" id="subscriptionHeading">SUBSCRIPTION STATUS</h2><span class="subscription-note" id="subscriptionNote" hidden></span></div>
+        <dl class="subscription-details">
+          <div><dt>Plan</dt><dd class="subscription-plan"><span class="subscriber-icon" id="subscriptionStatusIcon" aria-hidden="true" hidden><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16"><path fill="currentColor" d="M3.902 1.693c-.07-.257-.437-.257-.507 0L2.968 3.27a.26.26 0 0 1-.185.183l-1.589.425a.26.26 0 0 0 0 .503l1.589.425c.09.024.16.094.185.184l.427 1.578c.07.257.437.257.507 0l.427-1.578a.26.26 0 0 1 .186-.184l1.588-.425a.26.26 0 0 0 0-.503l-1.588-.425a.26.26 0 0 1-.186-.183l-.427-1.578Zm5.348.687c-.103-.39-.658-.39-.761 0L7.397 6.515a.39.39 0 0 1-.276.277L3.027 7.917a.39.39 0 0 0 0 .753l4.094 1.124c.135.037.24.143.276.278l1.092 4.136c.103.39.658.39.76 0l1.093-4.136a.39.39 0 0 1 .276-.278L14.71 8.67a.39.39 0 0 0 0-.753l-4.093-1.124a.39.39 0 0 1-.276-.277z"/></svg></span><span id="subscriptionTier"></span></dd></div>
+          <div><dt>Total spent</dt><dd id="subscriptionDetailSpent"></dd></div>
+        </dl>
+      </section>
+
+      <details class="panel badge-panel" id="badges">
+        <summary><span><small>BADGES</small><b>Account titles and badges</b></span><span class="summary-total" id="badgeSummaryCount">No badge data</span></summary>
+        <div class="badge-content">
+          <div class="badge-grid" id="unlockedBadgeGrid" aria-label="RSI account badges"></div>
+          <p class="badge-note" id="unlockedBadgeNote" hidden></p>
+          <p class="badge-empty" id="unlockedBadgeEmpty" hidden>No account badge records were found in this file.</p>
+          <details class="unlockable-badges" id="unlockableBadges"><summary><span>Unlockable badges</span><span id="unlockableBadgeCount">Catalogue unavailable</span></summary><div class="badge-grid" id="unlockableBadgeGrid" aria-label="Unlockable badges not present in the RSI account badge list"></div><p class="badge-empty" id="unlockableBadgeEmpty">Load the maintained unlockable badge catalogue before comparing badges.</p></details>
+        </div>
+      </details>
+
+      <section class="inventory panel" id="inventory" data-nosnippet>
+        <div class="inventory-heading">
+          <div><span class="eyebrow">ACCOUNT INVENTORY</span><p>Select a record to review its details and included items.</p></div>
+          <div class="inventory-view-tabs" role="tablist" aria-label="Inventory dataset">
+            <button class="active" id="hangarTab" type="button" role="tab" aria-selected="true" aria-controls="inventoryPanel" tabindex="0" data-view="hangar">Current Hangar <b id="hangarTabCount">3</b></button>
+            <button id="buybacksTab" type="button" role="tab" aria-selected="false" aria-controls="inventoryPanel" tabindex="-1" data-view="buybacks">Buybacks <b id="buybacksTabCount">3</b></button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Search inventory records</span><input id="recordSearch" type="search" placeholder="Search inventory records"></label>
+          <button class="button button-filter" type="button" id="filterButton" aria-expanded="false" aria-controls="filterPanel"><span class="rsi-icon icon-filter" aria-hidden="true"></span>Filters <b id="filterCount">0</b></button>
+          <span class="result-count" id="resultCount" role="status"></span>
+        </div>
+        <div class="filter-panel" id="filterPanel" hidden>
+          <fieldset><legend>RSI category</legend><div class="filter-options"><button class="filter-chip active" type="button" aria-pressed="true" data-group="all">All</button><button class="filter-chip" type="button" aria-pressed="false" data-group="gamePackage">Game packages</button><button class="filter-chip" type="button" aria-pressed="false" data-group="standaloneShip">Standalone ships</button><button class="filter-chip" type="button" aria-pressed="false" data-group="shipUpgrade">Ship upgrades</button><button class="filter-chip" type="button" aria-pressed="false" data-group="reward">Rewards</button><button class="filter-chip" type="button" aria-pressed="false" data-group="hangarItem">Hangar items</button><button class="filter-chip" type="button" aria-pressed="false" data-group="armor">Armor</button><button class="filter-chip" type="button" aria-pressed="false" data-group="weapon">Weapons</button><button class="filter-chip" type="button" aria-pressed="false" data-group="other">Other</button><button class="filter-chip" type="button" aria-pressed="false" data-group="unknown">Unknown</button><button class="filter-clear" type="button" id="clearFilters">Clear all</button></div></fieldset>
+        </div>
+        <div class="inventory-layout" id="inventoryPanel" role="tabpanel" aria-labelledby="hangarTab">
+          <div class="inventory-list">
+          <div class="table-shell" tabindex="0" role="region" aria-label="Account inventory">
+            <table role="table"><caption id="inventoryCaption"></caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Record</th><th scope="col" role="columnheader">Category</th><th scope="col" role="columnheader" id="inventoryValueHeading">Melt Value</th><th scope="col" role="columnheader">Date</th><th scope="col" role="columnheader">Media</th></tr></thead><tbody id="inventoryRows" role="rowgroup"></tbody></table>
+            <div class="empty-state" id="emptyState" hidden><b>No record matches these filters.</b><span>Clear the filters or search to restore rows.</span></div>
+          </div>
+          <div class="collection-pagination inventory-pagination" id="inventoryPagination" hidden><button class="text-button" id="inventoryPrevious" type="button">Previous</button><span id="inventoryPageStatus"></span><button class="text-button" id="inventoryNext" type="button">Next</button></div>
+          </div>
+          <aside class="record-inspector" id="recordInspector" tabindex="-1" aria-label="Selected record details">
+            <div class="inspector-art"><button class="inspector-gallery-main" id="inspectorGalleryOpen" type="button" aria-haspopup="dialog" aria-controls="mediaGalleryDialog" hidden><img class="inspector-image" id="inspectorImage" alt="" hidden></button><div class="inspector-gallery-thumbnails" id="inspectorGalleryThumbnails" hidden></div><span class="rsi-icon icon-media-pending" id="inspectorIcon" aria-hidden="true"></span><small id="inspectorMedia">NO IMAGES</small></div>
+            <div class="inspector-body"><span class="eyebrow" id="inspectorGroup">RECORD</span><div class="inspector-title-row"><h3 id="inspectorTitle">Select a record</h3><button type="button" class="ccu-history-button" id="inspectorCcu" aria-label="View CCU history" aria-haspopup="dialog" aria-controls="ccuDialog" hidden><span class="rsi-icon icon-computer" aria-hidden="true"></span></button></div><p id="inspectorSubtitle">Choose a record to see its details.</p><div class="inspector-wiki" id="inspectorWiki" hidden></div><dl id="inspectorFacts"></dl><section class="inspector-items" id="inspectorItems" aria-labelledby="inspectorItemsTitle" hidden><span class="eyebrow" id="inspectorItemsTitle">CONTAINED ITEMS</span><div id="inspectorItemList"></div><small id="inspectorItemRemainder"></small></section><div class="inspector-note"><b>About this record</b><span id="inspectorNote">Details from your account file.</span></div><a class="button button-quiet wide" id="inspectorSource" href="#inventory" hidden>Open RSI page</a><span class="source-pending" id="inspectorSourcePending">Page link unavailable</span></div>
+          </aside>
+        </div>
+        <p class="sr-only" id="inspectorAnnouncement" role="status"></p>
+      </section>
+
+      <section class="secondary-grid" aria-label="Account detail summaries" data-nosnippet>
+        <details class="panel detail-panel offline-detail" id="offlineImages">
+          <summary><span class="summary-icon"><span class="rsi-icon icon-download" aria-hidden="true"></span></span><span><small>FILE STATUS AND IMAGES</small><b id="healthSummaryTitle">Example account</b></span><span class="health-summary-detail" id="healthSummaryDetail">Bundled sample data</span></summary>
+          <div class="details-content status-media-content">
+            <section class="health-details" aria-labelledby="fileStatusHeading">
+              <div class="status-section-heading"><span class="eyebrow" id="fileStatusHeading">FILE STATUS</span><button class="text-button" id="loadReceiptButton" type="button">Review file details</button></div>
+              <dl>
+                <div><dt>Source</dt><dd id="healthSource">Bundled example</dd></div>
+                <div><dt>Collection</dt><dd id="healthCompleteness">Example records</dd></div>
+                <div><dt>Raw data warnings</dt><dd id="healthWarnings">None</dd></div>
+                <div><dt>Account JSON</dt><dd id="healthAccountFile">example.json</dd></div>
+                <div><dt>Orgs JSON</dt><dd id="orgFileStatus">Example roster data</dd></div>
+                <div><dt>Images ZIP</dt><dd id="imageFileStatus">No Images ZIP loaded</dd></div>
+                <div><dt>Image status</dt><dd id="healthMedia">Not downloaded</dd></div>
+              </dl>
+            </section>
+            <section class="media-workflow" aria-labelledby="offlineImagesHeading">
+              <div class="status-section-heading"><span class="eyebrow" id="offlineImagesHeading">OFFLINE IMAGES</span><span class="media-plan-total" id="mediaSummary">Preparing plan</span></div>
+              <p>CitizenData reads the public image links stored in the open document. Image requests omit cookies, authorization, and referrer information.</p>
+              <dl class="media-plan">
+                <div><dt>Unique images</dt><dd id="mediaAssetCount">Preparing</dd></div>
+                <div><dt>Request schedule</dt><dd>Up to 4 at once, starting 100 to 200 ms apart</dd></div>
+                <div><dt>Maximum package</dt><dd>512 MiB</dd></div>
+              </dl>
+              <p class="media-status" id="mediaStatus" role="status" aria-live="polite">Preparing image plan.</p>
+              <div class="inline-actions media-zip-actions"><input id="mediaZipInput" type="file" accept=".zip,application/zip" hidden><span class="media-zip-loaded-state" id="mediaZipLoadedState" hidden>Images Zip Loaded</span><button class="button button-quiet" id="loadMediaZipButton" type="button">Load Images ZIP</button></div>
+              <p class="media-build-note">Use <b>Build</b> in the header to start or return to an image download. Progress and controls appear in Build Status.</p>
+            </section>
+          </div>
+        </details>
+
+        <details class="panel detail-panel collection-detail" id="referrals" open>
+          <summary><span class="summary-icon"><span class="rsi-icon icon-referrals" aria-hidden="true"></span></span><span><small>REFERRALS</small><b>Prospects are shared; recruit lists remain separate</b></span><span class="summary-total">4 lists</span></summary>
+          <div class="details-content">
+            <div class="referral-grid" id="referralCards"></div>
+            <section class="collection-browser" aria-labelledby="referralListTitle">
+              <div class="collection-toolbar"><div><span class="eyebrow">REFERRAL RECORDS</span><h3 id="referralListTitle">Current prospects</h3><span class="referral-outcome" id="referralOutcome">Example data</span></div><form class="collection-search referral-search" id="referralSearchForm" role="search"><label class="sr-only" id="referralSearchLabel" for="referralSearch">Search current prospects by moniker or username</label><input id="referralSearch" type="search" placeholder="Search moniker or username" autocomplete="off"><span id="referralSearchCount" role="status"></span></form><button class="sort-button" id="referralSortButton" type="button" aria-label="Sort referral records oldest first" data-order="newest"><img src="assets/icons/sort-direction.svg" alt="">Newest first</button></div>
+              <div class="collection-table-shell"><table role="table"><caption id="referralCaption">Current prospect records, newest first.</caption><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Moniker</th><th role="columnheader" scope="col">Username</th><th role="columnheader" scope="col">Date</th></tr></thead><tbody id="referralRows" role="rowgroup"></tbody></table></div>
+              <div class="collection-pagination"><button class="text-button" id="referralPrevious" type="button">Previous</button><span id="referralPageStatus" role="status"></span><button class="text-button" id="referralNext" type="button">Next</button></div>
+            </section>
+          </div>
+        </details>
+
+        <details class="panel detail-panel collection-detail" id="organizations" open>
+          <summary><span class="summary-icon"><span class="rsi-icon icon-organizations" aria-hidden="true"></span></span><span><small>ORGANIZATIONS</small><b id="organizationSummaryName">Example Exploration Group</b></span><span class="summary-total" id="organizationSummaryCount">5 members</span></summary>
+          <div class="details-content">
+            <section class="collection-browser" aria-labelledby="organizationListTitle">
+              <div class="collection-toolbar organization-toolbar"><div><span class="eyebrow">MEMBER ROSTER</span><div class="organization-title-row"><h3 id="organizationListTitle">TEST</h3><details class="organization-selector" id="organizationSelector"><summary aria-label="Choose organization"></summary><div class="membership-list" id="membershipList" role="list" aria-label="Organization memberships"></div></details><span class="organization-selector-label">Choose organization</span></div></div><div class="organization-data-actions" aria-label="Organization data actions"><input id="orgFileInput" type="file" accept=".json,application/json" hidden><button class="button button-quiet" id="loadOrgButton" type="button" aria-label="Load Orgs JSON">LOAD</button><button class="button button-primary" id="buildOrgButton" type="button" aria-label="Build Orgs JSON">BUILD</button></div></div>
+              <p class="collection-note">Some members keep their profile private. Unavailable details appear as a dash.</p>
+              <label class="collection-search"><span class="sr-only">Search organization members by moniker or username</span><input id="organizationSearch" type="search" placeholder="Search moniker or username"><span id="organizationSearchCount" role="status"></span></label>
+              <div class="collection-table-shell"><table role="table"><caption id="organizationCaption">Organization members.</caption><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Moniker</th><th role="columnheader" scope="col">Username</th><th role="columnheader" scope="col">Rank</th><th role="columnheader" scope="col">Role</th><th role="columnheader" scope="col">Membership</th></tr></thead><tbody id="organizationRows" role="rowgroup"></tbody></table></div>
+              <div class="collection-pagination"><button class="text-button" id="organizationPrevious" type="button">Previous</button><span id="organizationPageStatus" role="status"></span><button class="text-button" id="organizationNext" type="button">Next</button></div>
+            </section>
+          </div>
+        </details>
+
+        <section class="panel project-support" id="projectSupport" aria-labelledby="projectSupportTitle">
+          <h2 id="projectSupportTitle">Support the project</h2>
+          <p>If you find bugs or issues, please <a id="supportIssues" href="https://github.com/LevyBytes/citizendata.download/issues" target="_blank" rel="noopener noreferrer">make an issue report on GitHub</a>.</p>
+          <p>Please consider supporting this project with a <a id="supportStar" href="https://github.com/LevyBytes/citizendata.download" target="_blank" rel="noopener noreferrer">star on GitHub</a>.</p>
+          <p>Thought of something to add? <a id="supportFeature" href="https://github.com/LevyBytes/citizendata.download/issues/new?title=Feature%20request%3A%20&amp;body=Describe%20the%20feature%20you%20would%20like%20and%20how%20it%20would%20help." target="_blank" rel="noopener noreferrer">Make a feature request on GitHub</a> or <a id="supportSpectrum" href="https://robertsspaceindustries.com/spectrum/messages/member/DirectorGunner" target="_blank" rel="noopener noreferrer">message me on RSI Spectrum</a>.</p>
+          <p>New to SC? Looking for a Star Citizen Referral Code? See <a id="supportEnlist" href="https://enlistcitizen.com" target="_blank" rel="noopener noreferrer" aria-label="EnlistCitizen.com (opens in a new tab)">EnlistCitizen.com</a>.</p>
+          <details class="support-thanks" id="supportThanks">
+            <summary aria-label="Special thanks"></summary>
+            <p>Special thanks to <a id="supportWiki" href="https://starcitizen.tools/" target="_blank" rel="noopener noreferrer" aria-label="starcitizen.tools (opens in a new tab)">starcitizen.tools</a> and my friends in <a id="supportTest" href="http://discord.gg/test" target="_blank" rel="noopener noreferrer" aria-label="TEST Squadron (opens in a new tab)">TEST Squadron</a> and the community for putting up with me all these years 🍺😂</p>
+          </details>
+          <p class="support-terms"><a href="terms-of-service.html" target="_blank" rel="noopener noreferrer" aria-label="Terms of Service (opens in a new tab)">Terms of Service</a></p>
+        </section>
+
+        <section class="panel export-card" id="exportData" aria-labelledby="exportDataTitle">
+          <span class="summary-icon"><span class="rsi-icon icon-download" aria-hidden="true"></span></span>
+          <div class="export-card-copy"><h2 id="exportDataTitle">EXPORT DATA</h2><p>Choose what to save</p></div>
+          <button class="button button-quiet" type="button" id="exportButton" aria-haspopup="dialog" aria-controls="exportDialog">Choose export</button>
+        </section>
+      </section>
+
+      <footer class="community-footer"><img src="assets/made-by-the-community.svg" alt="Made by the Community" width="1418" height="1418" loading="lazy" decoding="async"><div><span class="eyebrow">INDEPENDENT COMMUNITY TOOL</span><h2>Built for citizens who want local backed up records of their own account history.</h2><p>This project is not affiliated with or endorsed by Cloud Imperium Games. Account data stays local in the device the browser runs on.</p><p class="trademark-notice">Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC. All related intellectual property and marks remain the property of their respective owners.</p></div></footer>
+    </main>
+  </div>
+
+  <aside class="parser-overlay minimized" id="parserOverlay" aria-label="Build status" hidden>
+    <div class="overlay-header" id="overlayHeader"><span class="overlay-header-decor" aria-hidden="true"><span class="overlay-header-art" id="overlayHeaderArt" aria-hidden="true"></span></span><span class="overlay-heading"><span class="pulse idle"></span><b id="overlayTitle">BUILD STATUS</b><small id="overlaySummary">Not connected</small></span><span class="overlay-window-controls"><button class="overlay-window-button" type="button" id="minimizeOverlay" aria-label="Expand build status" aria-expanded="false" aria-controls="parserOverlayBody"><span id="overlayToggleSymbol" aria-hidden="true">+</span></button><button class="overlay-window-button" type="button" id="closeOverlay" aria-label="Close build status"><span aria-hidden="true">×</span></button></span></div>
+    <div class="overlay-body" id="parserOverlayBody">
+      <div class="overlay-route"><small id="overlayOperation">ACCOUNT BACKUP</small><b id="overlayState">Install or connect the extension</b><span id="overlayDetail">This website cannot read an RSI account on its own.</span></div>
+      <div class="build-choice-grid" id="buildChoices" hidden><p class="extension-notice" id="extensionNotice" hidden><b id="extensionNoticeTitle">CitizenData extension not detected</b><span id="extensionNoticeDetail">This page cannot read an RSI account on its own. The extension does that in your browser. Install the extension. Once the extension is on, reload this page.</span></p><button class="build-choice" type="button" id="buildAccountAction"><b id="buildAccountActionTitle">Build account backup</b><span id="buildAccountActionDetail">Read your RSI account and update the open document.</span></button><a class="build-choice build-choice-install" id="installExtensionAction" href="https://chromewebstore.google.com/" target="_blank" rel="noopener noreferrer" hidden><b id="installExtensionTitle">Get the CitizenData extension</b><span id="installExtensionDetail">Opens the Chrome Web Store in a new tab. Reload this page after installing.</span></a><button class="build-choice" type="button" id="buildImagesAction"><b id="buildImagesActionTitle">Download offline images</b><span id="buildImagesActionDetail">Use the public image links in the open document.</span></button></div>
+      <div class="collection-activity" id="collectionActivity" hidden><img id="collectionActivityImage" alt="Collection activity" hidden><div><b id="collectionActivityLabel">Gathering account data</b><progress id="collectionActivityProgress" max="100" value="0"></progress><span id="collectionActivityText">Starting…</span><div class="request-progress" id="requestProgress" hidden><b id="requestProgressLabel">Current section</b><progress id="collectionRequestProgress" max="100" value="0"></progress><span id="requestProgressText">Discovering request total…</span></div></div></div>
+      <div class="collection-controls" id="collectionControls" hidden><button class="button button-quiet" id="rebindCollection" type="button" hidden>Reconnect paused run</button><button class="button button-quiet" id="pauseCollection" type="button">Pause</button><button class="button button-quiet" id="resumeCollection" type="button" hidden>Resume</button><button class="button button-quiet" id="cancelCollection" type="button">Cancel</button><button class="button button-quiet" id="skipCollection" type="button" hidden>Skip</button></div>
+      <div class="media-controls" id="mediaControls" hidden><button class="button button-quiet" id="mediaCancelOverlay" type="button" hidden>Cancel image download</button><button class="button button-primary" id="mediaSaveOverlay" type="button" hidden>Save image ZIP</button></div>
+      <div class="event-log" id="eventLog"><p>No account collection has started.</p></div>
+    </div>
+  </aside>
+
+  <dialog id="ccuDialog" class="ccu-dialog" aria-labelledby="ccuTitle" aria-describedby="ccuPledgeName">
+    <form method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Close CCU history" autofocus>×</button>
+      <h2 id="ccuTitle">CCU history</h2>
+      <p id="ccuPledgeName" class="ccu-pledge-name"></p>
+      <div class="ccu-summary"><span class="evidence-badge">Example data</span><span>Base value <b id="ccuBaseValue"></b></span></div>
+      <ol id="ccuSteps" class="ccu-steps" aria-label="Applied upgrades"></ol>
+      <button class="button button-quiet wide" value="cancel">Close</button>
+    </form>
+  </dialog>
+
+  <dialog id="messageDialog"><form method="dialog"><button class="dialog-close" value="cancel" aria-label="Close">×</button><span class="eyebrow" id="dialogEyebrow">LOCAL DATA</span><h2 id="dialogTitle">Status</h2><p id="dialogMessage"></p><button class="button button-primary wide" value="cancel">Close</button></form></dialog>
+  <dialog class="media-gallery-dialog" id="mediaGalleryDialog" aria-labelledby="mediaGalleryTitle" aria-describedby="mediaGalleryStatus">
+    <form method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Close image gallery" autofocus>×</button>
+      <span class="eyebrow">RECORD IMAGES</span>
+      <h2 id="mediaGalleryTitle">Record images</h2>
+      <p id="mediaGalleryStatus" role="status"></p>
+      <div class="media-gallery-viewer">
+        <a id="mediaGalleryFull" target="_blank" rel="noopener noreferrer" hidden><img id="mediaGalleryImage" alt=""></a>
+        <p id="mediaGalleryPlaceholder">Load the offline image ZIP to view this image.</p>
+      </div>
+      <div class="media-gallery-thumbnails" id="mediaGalleryThumbnails" aria-label="Record image thumbnails"></div>
+      <button class="button button-quiet wide" value="cancel">Close</button>
+    </form>
+  </dialog>
+  <dialog id="orgBuildDialog" aria-labelledby="orgBuildDialogTitle" aria-describedby="orgBuildDialogMessage"><form id="orgBuildForm"><button class="dialog-close" type="button" id="orgBuildClose" aria-label="Cancel organization data plan">×</button><span class="eyebrow">ORGANIZATION DATA</span><h2 id="orgBuildDialogTitle">Choose member rosters</h2><p id="orgBuildDialogMessage">Select the organizations to include in this Organization JSON run. Nothing downloads until you start the job.</p><p class="operation-blocker" id="orgBuildAvailability" role="status" hidden></p><div class="org-roster-checklist" id="orgRosterChecklist"></div><div class="dialog-actions"><button class="button button-quiet" type="button" id="orgBuildCancel">Cancel</button><button class="button button-primary" type="submit" id="orgBuildStart">Start selected job</button></div></form></dialog>
+  <dialog class="export-dialog" id="exportDialog" aria-labelledby="exportDialogTitle" aria-describedby="exportSummary">
+    <form id="exportForm">
+      <button class="dialog-close" type="button" id="exportClose" aria-label="Close export">×</button>
+      <h2 id="exportDialogTitle">Export data</h2>
+      <div class="export-fields">
+        <label class="export-field" for="exportPreset"><span>Preset</span><select id="exportPreset" autofocus><option value="inventory">Inventory</option><option value="referrals">Referrals</option><option value="hangar-log">Hangar Log</option><option value="billing">Billing</option><option value="organization-members">Organization members</option><option value="custom">Custom</option></select></label>
+        <div class="export-option-grid" id="exportInventoryOptions">
+          <label class="export-field" for="exportInventoryScope"><span>Include</span><select id="exportInventoryScope"><option value="hangar">Hangar</option><option value="buybacks">Buybacks</option><option value="both" selected>Both</option></select></label>
+          <label class="export-field" for="exportFormat"><span>Format</span><select id="exportFormat"><option value="native">Data only</option><option value="hangar-link">Hangar Link · Fleetview</option></select></label>
+        </div>
+        <div class="export-option-grid" id="exportReferralOptions" hidden>
+          <label class="export-field" for="exportReferralLadder"><span>Ladder</span><select id="exportReferralLadder"><option value="both">Both</option><option value="current">Current</option><option value="legacy">Legacy</option></select></label>
+          <label class="export-field" for="exportReferralKind"><span>List</span><select id="exportReferralKind"><option value="both">Both</option><option value="prospects">Prospects</option><option value="recruits">Recruits</option></select></label>
+        </div>
+        <fieldset class="export-custom" id="exportCustomOptions" hidden><legend>Include</legend><div class="export-checkboxes"><label><input type="checkbox" name="exportSection" value="hangar" checked>Hangar</label><label><input type="checkbox" name="exportSection" value="buybacks" checked>Buybacks</label><label><input type="checkbox" name="exportSection" value="referrals">Referrals</label><label><input type="checkbox" name="exportSection" value="hangar-log">Hangar Log</label><label><input type="checkbox" name="exportSection" value="billing">Billing</label><label><input type="checkbox" name="exportSection" value="organization-members">Organization members</label></div></fieldset>
+        <label class="export-field" id="exportOrganizationOptions" for="exportOrganizationSid" hidden><span>Organization</span><select id="exportOrganizationSid"></select></label>
+      </div>
+      <div class="export-messages" id="exportMessages" role="status" aria-live="polite" hidden></div>
+      <div class="export-footer"><p id="exportSummary" role="status" aria-live="polite">Example data</p><button class="button button-primary" id="exportDownload" type="submit">Download JSON</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="statusToast" role="status" aria-live="polite" hidden></div>
+
+  <script src="schema/account-export.schema.js"></script>
+  <script src="schema/offline-package.schema.js"></script>
+  <script src="scripts/safe-json.js"></script>
+  <script src="scripts/account-document.js"></script>
+  <script src="scripts/organization-document.js"></script>
+  <script src="scripts/file-timestamp.js"></script>
+  <script src="scripts/zip-store.js"></script>
+  <script src="scripts/media-policy.js"></script>
+  <script src="scripts/media-file-names.js"></script>
+  <script src="scripts/media-materializer.js"></script>
+  <script src="scripts/media-package-builder.js"></script>
+  <script src="scripts/media-package-reader.js"></script>
+  <script src="scripts/extension-media.js"></script>
+  <script src="scripts/canonical-download.js"></script>
+  <script src="scripts/dashboard-model.js"></script>
+  <script src="scripts/subscription-summary.js"></script>
+  <script src="scripts/offline-media.js"></script>
+  <script src="scripts/demo-profile-avatars.js"></script>
+  <script src="scripts/demo-media.js"></script>
+  <script src="scripts/badge-catalog.js"></script>
+  <script src="scripts/badge-wiki-pages.js"></script>
+  <script src="scripts/unlockable-badge-catalog.js"></script>
+  <script src="scripts/demo-data.js"></script>
+  <script src="scripts/hangar-link-ships.js"></script>
+  <script src="scripts/compatibility-exports.js"></script>
+  <script src="scripts/hangar-link-import.js"></script>
+  <script src="scripts/account-exports.js"></script>
+  <script src="scripts/export-controls.js"></script>
+  <script src="scripts/dashboard.js"></script>
+  <script src="scripts/hero-motion.js"></script>
+</body>
+</html>

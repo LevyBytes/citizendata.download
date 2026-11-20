@@ -1,0 +1,39 @@
+{
+  "minSeen": 5,
+  "viewports": [{ "width": 1440, "height": 1000 }, { "width": 380, "height": 1000 }],
+  "states": [
+    { "name": "overview", "actions": [{ "type": "scroll", "selector": "#overview" }], "capture": true, "textSpacing": true },
+    { "name": "inventory", "actions": [{ "type": "click", "selector": "#hangarTab" }, { "type": "scroll", "selector": "#inventory" }], "capture": true },
+    { "name": "buybacks", "actions": [{ "type": "click", "selector": "#buybacksTab" }, { "type": "scroll", "selector": "#inventory" }] },
+    { "name": "referrals", "actions": [{ "type": "open", "selector": "#referrals" }, { "type": "scroll", "selector": "#referrals" }], "capture": true },
+    { "name": "organizations", "actions": [{ "type": "open", "selector": "#organizations" }, { "type": "scroll", "selector": "#organizations" }], "capture": true },
+    { "name": "export-dialog", "actions": [{ "type": "click", "selector": "#exportButton" }], "expectVisible": "#exportDialog:modal", "capture": true, "textSpacing": true },
+    { "name": "ccu-dialog", "actions": [{ "type": "close", "selector": "#exportDialog" }, { "type": "click", "selector": "#hangarTab" }, { "type": "click", "selector": "tr[data-record-key=\"demo-pledge-1\"] .ccu-history-button" }],
+      "expectVisible": "#ccuDialog:modal", "capture": true, "textSpacing": true }
+  ],
+  "palette": [
+    { "foreground": "--text", "background": "--base", "minimum": 4.5 },
+    { "foreground": "--text", "background": "--surface-3", "minimum": 4.5 },
+    { "foreground": "--muted", "background": "--base", "minimum": 4.5 },
+    { "foreground": "--muted", "background": "--surface", "over": "--base", "minimum": 4.5 },
+    { "foreground": "--muted", "background": "--surface-2", "over": "--base", "minimum": 4.5 },
+    { "foreground": "--muted", "background": "--surface-3", "minimum": 4.5 },
+    { "foreground": "--quiet", "background": "--base", "minimum": 4.5 },
+    { "foreground": "--quiet", "background": "--surface", "over": "--base", "minimum": 4.5 },
+    { "foreground": "--quiet", "background": "--surface-2", "over": "--base", "minimum": 4.5 },
+    { "foreground": "--quiet", "background": "--surface-3", "minimum": 4.5 },
+    { "foreground": "--gold", "background": "--surface-3", "minimum": 4.5 },
+    { "foreground": "--cyan", "background": "--surface-3", "minimum": 4.5 },
+    { "foreground": "--text", "background": "--cyan-soft", "over": "#041216", "minimum": 4.5 },
+    { "foreground": "--gold", "background": "--gold-soft", "over": "--base", "minimum": 4.5 },
+    { "foreground": "--failure", "background": "#041217", "minimum": 4.5 },
+    { "foreground": "--text", "background": "--removed-surface", "minimum": 4.5 },
+    { "foreground": "--muted", "background": "--removed-surface", "minimum": 4.5 },
+    { "foreground": "--failure", "background": "--removed-surface", "minimum": 4.5 },
+    { "foreground": "--gold", "background": "--removed-surface", "minimum": 4.5 },
+    { "foreground": "--text", "background": "--removed-surface-active", "minimum": 4.5 },
+    { "foreground": "--muted", "background": "--removed-surface-active", "minimum": 4.5 },
+    { "foreground": "--failure", "background": "--removed-surface-active", "minimum": 4.5 },
+    { "foreground": "--gold", "background": "--removed-surface-active", "minimum": 4.5 }
+  ]
+}

@@ -1,0 +1,48 @@
+// Biome is used here for its linter only (`npm run lint`): JavaScript, JSON, HTML and CSS. It formats nothing.
+{
+  "files": {
+    // The copies `npm run sync:schemas` writes are checked where they are written from.
+    "includes": [
+      "docs/**",
+      "extension/**",
+      "shared/**",
+      "schema/**",
+      "scripts/**",
+      "tests/**",
+      "*.mjs",
+      "!**/work-temp-*",
+      "!docs/schema",
+      "!extension/schema",
+      "!docs/scripts/account-document.js",
+      "!docs/scripts/organization-document.js",
+      "!extension/shared/account-document.js",
+      "!extension/shared/organization-document.js"
+    ]
+  },
+  "formatter": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        // An SVG file here is shown through an image element that carries the alternative text, or is decoration.
+        // The files themselves carry no text about themselves.
+        "noSvgWithoutTitle": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // The extension, the dashboard and the sources they share are loaded as classic scripts, where the directive
+      // is what makes them strict.
+      "includes": ["extension/**/*.js", "docs/scripts/**/*.js", "shared/**/*.js"],
+      "linter": { "rules": { "suspicious": { "noRedundantUseStrict": "off" } } }
+    },
+    {
+      // The dashboard's tables are laid out as blocks and grids on narrow screens, which takes a table's meaning
+      // away from assistive technology; the roles written on them keep it.
+      "includes": ["docs/index.html"],
+      "linter": { "rules": { "a11y": { "noRedundantRoles": "off" } } }
+    }
+  ]
+}
