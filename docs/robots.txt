@@ -1,4 +1,12 @@
+# Every crawler may read every page.
+# Content signals: this site allows search indexing (search), use in AI answers (ai-input)
+# and AI model training (ai-train).
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+Allow: /
+
+# The shared AI-training preference token: training on this site's content is allowed.
+User-agent: __usage_ai-training
 Allow: /
 
 Sitemap: https://citizendata.download/sitemap.xml

@@ -79,7 +79,7 @@ The committed `docs/CNAME` file records the intended domain but does not replace
 
 Search and sharing metadata in `docs/index.html` uses `https://citizendata.download/` as the public root. After owner-controlled deployment, verify successful public HTTPS responses for the page, `robots.txt`, `sitemap.xml`, the 96px PNG favicon, and the 1200x630 share image. Confirm their content types and crawler access before using Google/Bing URL inspection or Meta's Sharing Debugger; local preview screenshots do not prove live indexing or platform rendering.
 
-The factual WebApplication data intentionally contains no fabricated offer, review, or rating and does not claim eligibility for Google's software-app rich result. Keep title, description, canonical, Open Graph, X tags, and WebSite identity consistent; use a new share-image filename when its artwork changes. Account JSON must never change public metadata.
+The factual WebApplication data intentionally contains no fabricated offer, review, or rating and does not claim eligibility for Google's software-app rich result. Keep title, description, canonical, Open Graph, X tags, and WebSite identity consistent. When the share image's artwork changes, keep its file name, which carries no version number, and have the platforms fetch it again with their own tools, such as Meta's Sharing Debugger and LinkedIn's Post Inspector. Account JSON must never change public metadata.
 
 Before advertising an installable extension, replace the placeholder store address with the extension's Chrome Web Store listing. The dashboard's "Get the CitizenData extension" link uses the constant `EXTENSION_STORE_URL` in `docs/scripts/dashboard.js`, which is `https://chromewebstore.google.com/` until the listing exists.
 

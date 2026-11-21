@@ -1,0 +1,7 @@
+# Security contact for citizendata.download (RFC 9116).
+# Report a vulnerability privately through the repository's Security tab.
+Contact: https://github.com/LevyBytes/citizendata.download/security/advisories/new
+Policy: https://github.com/LevyBytes/citizendata.download/security/policy
+Preferred-Languages: en
+Canonical: https://citizendata.download/.well-known/security.txt
+Expires: 2027-11-19T00:00:00.000Z

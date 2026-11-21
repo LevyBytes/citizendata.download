@@ -5,69 +5,106 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; connect-src 'self' https://robertsspaceindustries.com https://media.robertsspaceindustries.com; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
-  <title>Star Citizen Data Downloader | CitizenData</title>
-  <meta name="description" content="Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.">
+  <title>Star Citizen Data Downloader</title>
+  <meta name="description" content="Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. Free, no sign-up, no upload, no tracking.">
   <link rel="canonical" href="https://citizendata.download/">
-  <link rel="privacy-policy" href="privacy-policy.html">
-  <link rel="terms-of-service" href="terms-of-service.html">
   <meta name="robots" content="index, follow, max-image-preview:large">
-  <meta name="theme-color" content="#061419">
+  <meta name="theme-color" content="#FFBB00">
+  <meta name="application-name" content="Star Citizen Data Downloader">
+  <meta name="apple-mobile-web-app-title" content="Star Citizen Download">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://citizendata.download/">
-  <meta property="og:site_name" content="CitizenData">
+  <meta property="og:site_name" content="Star Citizen Download">
   <meta property="og:locale" content="en_US">
-  <meta property="og:title" content="Star Citizen Data Downloader | CitizenData">
-  <meta property="og:description" content="Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.">
-  <meta property="og:image" content="https://citizendata.download/assets/social/citizendata-share-v2.png">
-  <meta property="og:image:type" content="image/png">
+  <meta property="og:title" content="Star Citizen Data Downloader">
+  <meta property="og:description" content="Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. Free, no sign-up, no upload, no tracking.">
+  <meta property="og:image" content="https://citizendata.download/assets/social/citizendata-share-hero.jpg">
+  <meta property="og:image:type" content="image/jpeg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="CitizenData's cyan laurel and gold download logo. Star Citizen Data Downloader: local backup tool for your Star Citizen account data.">
+  <meta property="og:image:alt" content="Star Citizen Data Downloader: local backup tool for your Star Citizen account data.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Star Citizen Data Downloader | CitizenData">
-  <meta name="twitter:description" content="Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.">
-  <meta name="twitter:image" content="https://citizendata.download/assets/social/citizendata-share-v2.png">
-  <meta name="twitter:image:alt" content="CitizenData's cyan laurel and gold download logo. Star Citizen Data Downloader: local backup tool for your Star Citizen account data.">
+  <meta name="twitter:title" content="Star Citizen Data Downloader">
+  <meta name="twitter:description" content="Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. Free, no sign-up, no upload, no tracking.">
+  <meta name="twitter:image" content="https://citizendata.download/assets/social/citizendata-share-hero.jpg">
+  <meta name="twitter:image:alt" content="Star Citizen Data Downloader: local backup tool for your Star Citizen account data.">
+  <meta name="twitter:label1" content="Price">
+  <meta name="twitter:data1" content="Free">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "WebSite",
-        "@id": "https://citizendata.download/#website",
-        "url": "https://citizendata.download/",
-        "name": "CitizenData",
-        "alternateName": "citizendata.download",
-        "inLanguage": "en",
-        "description": "CitizenData saves a Star Citizen account's records to a JSON file on the owner's device and displays that file in the browser. There is no server that receives the data."
-      },
-      {
-        "@type": "WebApplication",
-        "@id": "https://citizendata.download/#application",
-        "url": "https://citizendata.download/",
-        "name": "Star Citizen Data Downloader",
-        "alternateName": "CitizenData",
-        "applicationCategory": "UtilitiesApplication",
-        "operatingSystem": "Windows, macOS, Linux, ChromeOS",
-        "browserRequirements": "Requires JavaScript. Building a backup requires Google Chrome 120 or later with the CitizenData extension. Viewing a saved backup works in any current browser.",
-        "description": "Backup your Star Citizen hangar, buybacks, billing, referrals and org members to a file you own. Runs in your browser. No sign-up, no upload, no tracking.",
-        "featureList": [
-          "Builds one JSON backup of a Star Citizen account: hangar pledges, buyback pledges, hangar log, billing orders, subscriptions, store credit, UEC and REC ledgers, referrals and organization memberships",
-          "Updates an existing backup by reading only what changed since the last one",
-          "Downloads member rosters for the organizations you choose",
-          "Packages the images a backup refers to into a ZIP for offline viewing",
-          "Exports chosen sections as JSON, including an inventory file that Hangar Link and Fleetview import",
-          "Runs in the browser with no account, no upload and no tracking; there is no server that receives your data"
-        ],
-        "isAccessibleForFree": true,
-        "inLanguage": "en",
-        "image": "https://citizendata.download/assets/social/citizendata-share-v2.png",
-        "license": "https://opensource.org/license/mit",
-        "isPartOf": { "@id": "https://citizendata.download/#website" }
-      }
-    ]
-  }
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://citizendata.download/#website",
+          "url": "https://citizendata.download/",
+          "name": "Star Citizen Data Downloader",
+          "alternateName": [
+            "Star Citizen Download",
+            "citizendata.download"
+          ],
+          "inLanguage": "en",
+          "description": "Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. Free, no sign-up, no upload, no tracking.",
+          "publisher": {
+            "@id": "https://citizendata.download/#publisher"
+          }
+        },
+        {
+          "@type": "WebApplication",
+          "@id": "https://citizendata.download/#application",
+          "url": "https://citizendata.download/",
+          "name": "Star Citizen Data Downloader",
+          "alternateName": "Star Citizen Download",
+          "applicationCategory": "UtilitiesApplication",
+          "operatingSystem": "Windows, macOS, Linux, ChromeOS",
+          "browserRequirements": "Requires JavaScript. Building a backup needs Google Chrome 120 or later with the browser extension. Viewing a saved backup works in any current browser.",
+          "description": "Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. Free, no sign-up, no upload, no tracking.",
+          "featureList": [
+            "Saves hangar pledges, buyback pledges, the hangar log, billing orders, subscriptions, store credit, UEC and REC ledgers, referrals and organization memberships to one JSON file",
+            "Updates an existing backup by reading only what changed since the last one",
+            "Downloads member rosters for the organizations you choose",
+            "Packages the images a backup refers to into a ZIP for offline viewing",
+            "Exports chosen sections as JSON, including an inventory file in the format Hangar Link and Fleetview use",
+            "No account, no upload, no tracking: no server receives your data"
+          ],
+          "isAccessibleForFree": true,
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+          },
+          "inLanguage": "en",
+          "image": "https://citizendata.download/assets/social/citizendata-share-hero.jpg",
+          "license": "https://opensource.org/license/mit",
+          "isPartOf": {
+            "@id": "https://citizendata.download/#website"
+          },
+          "author": {
+            "@id": "https://citizendata.download/#publisher"
+          },
+          "publisher": {
+            "@id": "https://citizendata.download/#publisher"
+          },
+          "sameAs": [
+            "https://github.com/LevyBytes/citizendata.download"
+          ],
+          "about": {
+            "@type": "VideoGame",
+            "name": "Star Citizen",
+            "sameAs": "https://en.wikipedia.org/wiki/Star_Citizen"
+          }
+        },
+        {
+          "@type": "Person",
+          "@id": "https://citizendata.download/#publisher",
+          "name": "LevyBytes",
+          "url": "https://github.com/LevyBytes"
+        }
+      ]
+    }
   </script>
+  <link rel="privacy-policy" href="privacy-policy.html">
+  <link rel="terms-of-service" href="terms-of-service.html">
   <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="96x96" href="assets/favicon-96.png">
   <link rel="icon" type="image/svg+xml" href="assets/citizendata.svg">
