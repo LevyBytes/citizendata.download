@@ -88,7 +88,7 @@
     return Object.freeze(links);
   }
 
-  async function containedItem(input, parentKey, index, context) {
+  async function containedItem(input, parentKey, index) {
     const source = N.plain(input, `contained item ${index}`);
     const name = N.text(source.name, `contained item ${index}.name`);
     const recordKey = source.recordKey
@@ -198,7 +198,7 @@
           ? await N.stableKey("pledge", [title, source.createdDateRaw ?? null, source.containsSummary ?? null])
           : `pledge:${pledgeId}`;
       const items = [];
-      for (const [itemIndex, item] of N.list(source.items ?? [], `pledges[${index}].items`).entries()) items.push(await containedItem(item, recordKey, itemIndex, context));
+      for (const [itemIndex, item] of N.list(source.items ?? [], `pledges[${index}].items`).entries()) items.push(await containedItem(item, recordKey, itemIndex));
       const record = {
         pledgeId,
         recordKey,
@@ -260,7 +260,7 @@
           ? await N.stableKey("buyback", [title, source.reclaimDateRaw ?? null, source.containsSummary ?? null])
           : `buyback:${buybackId}`;
       const items = [];
-      for (const [itemIndex, item] of N.list(source.items ?? [], `buybacks[${index}].items`).entries()) items.push(await containedItem(item, recordKey, itemIndex, context));
+      for (const [itemIndex, item] of N.list(source.items ?? [], `buybacks[${index}].items`).entries()) items.push(await containedItem(item, recordKey, itemIndex));
       const record = {
         buybackId,
         recordKey,

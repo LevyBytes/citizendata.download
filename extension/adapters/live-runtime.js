@@ -118,6 +118,12 @@
     return Object.freeze([...merged.values()].sort((left, right) => left.section.localeCompare(right.section) || left.recordIndex - right.recordIndex));
   }
 
+  // The value a record parser returned for one record, which must be an array.
+  function arrayValueOf(parsed) {
+    if (!Array.isArray(parsed?.value)) throw new TypeError("The record parser did not return an array value.");
+    return parsed.value;
+  }
+
   async function parseArrayResilient(parser, raw, context, metadata, parserOptions, section) {
     try {
       return { parserResult: await parser(raw, context, { ...metadata, ...parserOptions }), anomalies: Object.freeze([]) };
@@ -128,8 +134,7 @@
       for (const [index, record] of raw.entries()) {
         try {
           const parsed = await parser([record], context, { ...metadata, warnings: [], ...parserOptions });
-          if (!Array.isArray(parsed?.value)) throw new TypeError("The record parser did not return an array value.");
-          value.push(...parsed.value);
+          value.push(...arrayValueOf(parsed));
           acceptedRaw.push(record);
         } catch (recordError) {
           rejected.push(anomaly(section, {

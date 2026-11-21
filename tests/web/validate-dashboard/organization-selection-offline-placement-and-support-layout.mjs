@@ -45,5 +45,5 @@ export async function checkSupportPanelLayout() {
     await checkDashboardGeometry(`expanded Offline Images at ${width}px`);
     await evaluate("document.querySelector('#offlineImages').open=false");
   }
-  if (captureScreenshots) await writeFile(path.join(testDirectory,'work-temp-support-layout-results.json'),JSON.stringify({results,checks:'section order,full width disclosures,support export nonoverlap'},null,2)+'\\n');
+  if (captureScreenshots) await writeFile(path.join(testDirectory,'work-temp-support-layout-results.json'),`${JSON.stringify({results,checks:'section order,full width disclosures,support export nonoverlap'},null,2)}\\n`);
 }

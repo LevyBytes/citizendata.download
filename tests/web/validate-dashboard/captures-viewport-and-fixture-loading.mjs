@@ -23,7 +23,7 @@ export async function captureElement(selector, fileName, maximumHeight = 1200) {
     const bytes = Buffer.from(capture.data, 'base64');
     assert(bytes.readUInt32BE(16)===modalGeometry.viewport.width && bytes.readUInt32BE(20)===modalGeometry.viewport.height, 'Modal screenshot did not retain the actual viewport dimensions.');
     await writeFile(path.join(testDirectory,fileName),bytes);
-    await writeFile(path.join(testDirectory,fileName.replace(/\.png$/u,'-geometry.json')),JSON.stringify({...modalGeometry,layout},null,2)+'\n');
+    await writeFile(path.join(testDirectory,fileName.replace(/\.png$/u,'-geometry.json')),`${JSON.stringify({...modalGeometry,layout},null,2)}\n`);
     return;
   }
   const clip = await evaluate(`(()=>{const rect=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:rect.left+scrollX,y:rect.top+scrollY,width:rect.width,height:Math.min(rect.height,${maximumHeight})}})()`);

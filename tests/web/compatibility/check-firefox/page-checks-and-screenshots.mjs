@@ -18,4 +18,4 @@ export async function waitFor(expression) {
 }
 export async function check(name, expression) { assert.equal(await evaluate(expression), true, name); checks.push(name); }
 export async function click(selector) { await evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element) throw new Error('Missing test control'); element.focus(); element.click(); return true; })()`); }
-export async function screenshot(name) { const result = await command('browsingContext.captureScreenshot', { context, origin: 'viewport' }); await writeFile(path.join(out, name + '.png'), Buffer.from(result.data, 'base64')); }
+export async function screenshot(name) { const result = await command('browsingContext.captureScreenshot', { context, origin: 'viewport' }); await writeFile(path.join(out, `${name}.png`), Buffer.from(result.data, 'base64')); }

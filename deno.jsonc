@@ -18,7 +18,10 @@
         "no-window-prefix",
         // This rule refuses `typeof value === expected`, where the wanted type is a value. ESLint's rule of the same
         // name checks the same mistake and accepts that comparison.
-        "valid-typeof"
+        "valid-typeof",
+        // Functions here are async to match an asynchronous interface (the in-memory storage beside IndexedDB, the
+        // test stand-ins for browser APIs) or so a thrown error becomes a rejection a caller catches.
+        "require-await"
       ]
     }
   }

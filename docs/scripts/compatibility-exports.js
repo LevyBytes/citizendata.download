@@ -56,7 +56,7 @@
     [/Greycat Industrial -/giu, ""], [/Greycat /giu, ""], [/- Mini Hauler/giu, ""]
   ]);
 
-  const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+  const own = (value, key) => Object.hasOwn(value, key);
   const text = (value) => typeof value === "string" ? value : "";
 
   function shipTable(candidate) {

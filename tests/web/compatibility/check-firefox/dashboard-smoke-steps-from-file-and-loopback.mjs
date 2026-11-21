@@ -34,7 +34,7 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
     await check(`${mode}: ${width}px document fits`, 'document.documentElement.scrollWidth <= innerWidth + 1');
   }
   await evaluate("(() => { document.getElementById('overview').scrollIntoView({ block: 'start' }); return true; })()");
-  await screenshot(mode + '-overview');
+  await screenshot(`${mode}-overview`);
   await click('#exportButton');
   await check(`${mode}: export modal and focus`, "document.getElementById('exportDialog').matches(':modal') && document.activeElement.id === 'exportPreset'");
   const before = new Set(await readdir(downloads));
@@ -67,7 +67,7 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
     await check(`${mode}: ${page} fits 320px`, 'document.documentElement.scrollWidth <= innerWidth + 1');
     await command('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: '\uE004' }, { type: 'keyUp', value: '\uE004' }] }] });
     await check(`${mode}: ${page} keyboard focus`, "document.activeElement.matches('.legal-header a') && document.activeElement.matches(':focus-visible')");
-    await screenshot(mode + '-' + page.replace('.html', ''));
+    await screenshot(`${mode}-${page.replace('.html', '')}`);
     await click('.legal-header a[href="index.html"]');
     await waitFor("document.getElementById('accountHandle')?.textContent === 'DownloadCitizen'");
     checks.push(`${mode}: ${page} dashboard backlink`);

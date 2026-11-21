@@ -13,12 +13,13 @@ finally {
   await browser?.close();
   if (server) await new Promise(resolve => server.close(resolve));
   for (const [key, value] of Object.entries(originalTemp)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-  if (path.dirname(path.resolve(scratch)) !== out) throw new Error('Scratch cleanup escaped output');
-  await rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  // The scratch folder is removed only when it is inside --out; when it is not, the run fails just below.
+  if (path.dirname(path.resolve(scratch)) === out) await rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
+if (path.dirname(path.resolve(scratch)) !== out) throw new Error('Scratch cleanup escaped output');
 await writeFile(
   path.join(out, 'webkit-compatibility.json'),
-  JSON.stringify({ engine: 'Playwright WebKit, not Safari', version, playwrightVersion, source, checkedAt: new Date().toISOString(), checks, failedChecks, modes, errors, remoteAttempts, screenshotWarnings, failure }, null, 2) + '\n'
+  `${JSON.stringify({ engine: 'Playwright WebKit, not Safari', version, playwrightVersion, source, checkedAt: new Date().toISOString(), checks, failedChecks, modes, errors, remoteAttempts, screenshotWarnings, failure }, null, 2)}\n`
 );
 process.exitCode = failure || failedChecks.length || errors.length || remoteAttempts.length ? 1 : 0;
 console.log(`${checks.length} passed; ${failedChecks.length} failed; ${errors.length} browser errors; ${remoteAttempts.length} external requests; ${screenshotWarnings.length} screenshot warnings; ${failure ? 'interrupted' : 'completed'}. Output: ${out}`);

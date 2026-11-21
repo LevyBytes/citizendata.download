@@ -450,7 +450,7 @@
 
   function rotateHero() {
     const key = "citizendata.hero-rotation.v2";
-    let index = 0;
+    let index;
     try {
       const previous = Number.parseInt(sessionStorage.getItem(key) ?? "-1", 10);
       index = Number.isInteger(previous) ? (previous + 1) % HERO_NAMES.length : 0;
@@ -814,7 +814,7 @@
   function priceText(value) {
     if (value?.amount === null || value?.amount === undefined || !value?.currency) return "—";
     const amount = formatMoney(value);
-    return amount === "—" ? amount : amount + " " + value.currency;
+    return amount === "—" ? amount : `${amount} ${value.currency}`;
   }
 
   let ccuOpener = null;
@@ -834,7 +834,7 @@
     list.replaceChildren();
     for (const [index, step] of steps.entries()) {
       const row = element("li", "ccu-step");
-      row.setAttribute("aria-label", "Upgrade " + (index + 1));
+      row.setAttribute("aria-label", `Upgrade ${index + 1}`);
       for (const [className, label, value] of [
         ["ccu-from", "From", step.fromShip ?? "—"],
         ["ccu-to", "To", step.toShip ?? "—"],
@@ -855,7 +855,7 @@
   function makeCcuButton(record) {
     const button = element("button", "ccu-history-button");
     button.type = "button";
-    button.setAttribute("aria-label", "View CCU history for " + record.title);
+    button.setAttribute("aria-label", `View CCU history for ${record.title}`);
     button.setAttribute("aria-haspopup", "dialog");
     button.setAttribute("aria-controls", "ccuDialog");
     button.title = "CCU history";
@@ -988,7 +988,7 @@
     for (const row of refs.rows.querySelectorAll("tr")) row.classList.toggle("selected", row.dataset.recordKey === state.activeRecordKey);
     inspector.ccu.hidden = !Model.asArray(pledgeDetails(record).ccuHistory).length;
     inspector.ccu.onclick = record ? () => showCcuHistory(record, inspector.ccu) : null;
-    inspector.ccu.setAttribute("aria-label", "View CCU history for " + (record?.title ?? "pledge"));
+    inspector.ccu.setAttribute("aria-label", `View CCU history for ${record?.title ?? "pledge"}`);
     if (!record) {
       inspector.title.textContent = "No visible record selected";
       inspector.subtitle.textContent = "Adjust the filters to restore records.";

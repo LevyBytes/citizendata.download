@@ -20,7 +20,7 @@ const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 setServer(createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
-    const file = path.resolve(source, '.' + (pathname === '/' ? '/index.html' : pathname));
+    const file = path.resolve(source, `.${pathname === '/' ? '/index.html' : pathname}`);
     const relative = path.relative(source, file);
     if (request.method !== 'GET' || relative.startsWith('..') || path.isAbsolute(relative)) { response.writeHead(403).end(); return; }
     const bytes = await readFile(file);

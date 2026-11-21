@@ -10,7 +10,7 @@ for (let attempt = 0; attempt < 150; attempt++) {
   await pause(100);
 }
 if (!endpoint) throw new Error(`Firefox did not expose BiDi: ${diagnostic}`);
-setSocket(new WebSocket(endpoint + '/session'));
+setSocket(new WebSocket(`${endpoint}/session`));
 socket.addEventListener('close', () => rejectPending(new Error('BiDi closed')));
 socket.addEventListener('error', () => rejectPending(new Error('BiDi connection failed')));
 await new Promise((resolve, reject) => {

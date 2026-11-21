@@ -14,7 +14,7 @@ const prefs = {
   'datareporting.policy.dataSubmissionEnabled': false, 'toolkit.telemetry.enabled': false,
   'browser.newtabpage.enabled': false, 'browser.newtabpage.activity-stream.feeds.telemetry': false
 };
-await writeFile(path.join(profile, 'user.js'), Object.entries(prefs).map(([key, value]) => `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join('\n') + '\n');
+await writeFile(path.join(profile, 'user.js'), `${Object.entries(prefs).map(([key, value]) => `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join('\n')}\n`);
 const fixture = baseAccountDocument();
 fixture.account.handle = 'CompatibilityCitizen'; fixture.profile.handle = 'CompatibilityCitizen';
 export const fixtureFile = path.join(scratch, 'compatibility-example.json');

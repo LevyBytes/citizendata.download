@@ -4,10 +4,10 @@ export function collectVisibleText(tools) {
   const skip = reason => { skipped[reason] = (skipped[reason] || 0) + 1; };
   const up = node => node.parentElement || node.getRootNode()?.host || null;
   const shortSelector = element => {
-    if (element.id) return '#' + element.id;
+    if (element.id) return `#${element.id}`;
     const parent = up(element);
-    const prefix = parent?.id ? '#' + parent.id + ' > ' : '';
-    return prefix + element.localName + [...element.classList].slice(0, 3).map(name => '.' + name).join('');
+    const prefix = parent?.id ? `#${parent.id} > ` : '';
+    return prefix + element.localName + [...element.classList].slice(0, 3).map(name => `.${name}`).join('');
   };
   const all = root => [...root.querySelectorAll('*')].flatMap(element => element.shadowRoot ? [element, ...all(element.shadowRoot)] : [element]);
   const elements = all(document);
@@ -50,7 +50,7 @@ export function collectVisibleText(tools) {
     if (style.textShadow !== 'none') reasons.add('text shadow');
     if (kind === 'placeholder' && Number(style.opacity) !== 1) reasons.add('placeholder opacity');
     if (element.matches('select')) reasons.add('native select rendering');
-    for (const item of media) if (item.element !== element && rects.some(rect => overlaps(rect, item.rect))) reasons.add(item.element.localName.toLowerCase() + ' overlaps text bounds');
+    for (const item of media) if (item.element !== element && rects.some(rect => overlaps(rect, item.rect))) reasons.add(`${item.element.localName.toLowerCase()} overlaps text bounds`);
     const colorText = kind === 'placeholder' ? style.color : element instanceof SVGElement ? style.fill : style.webkitTextFillColor || style.color;
     const foreground = tools.parseColor(colorText);
     if (!foreground) reasons.add('unsupported foreground color space');

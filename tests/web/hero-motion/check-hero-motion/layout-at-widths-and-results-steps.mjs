@@ -19,6 +19,6 @@ await viewport(1440);
 await evaluate("document.querySelector('#identityHeroArt').dataset.heroArt = 'radar'; document.querySelector('#overview').scrollIntoView({ block: 'center', behavior: 'instant' })");
 
 assert(!exceptions.length && !remote.length, 'Page exceptions or blocked remote request attempts occurred');
-await writeFile(path.join(browserFolder, 'results.json'), JSON.stringify({ source: sourceEntry, checkedAt: new Date().toISOString(), ...evidence, geometry, exceptions, remote }, null, 2) + '\n');
+await writeFile(path.join(browserFolder, 'results.json'), `${JSON.stringify({ source: sourceEntry, checkedAt: new Date().toISOString(), ...evidence, geometry, exceptions, remote }, null, 2)}\n`);
 console.log(`PASS hero motion candidate: no controls; four artworks; 60s clockwise rotation; 5s pulse; moving embers behind text; offscreen, visibility, lifecycle, resize and duplicate-loop checks; ${geometry.length} responsive/200% cases; zero remote `
   + `requests`);

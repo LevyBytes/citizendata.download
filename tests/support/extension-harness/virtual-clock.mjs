@@ -31,8 +31,7 @@ export function createClock(start) {
 export function virtualDateClass(clock) {
   class VirtualDate extends Date {
     constructor(...values) {
-      if (values.length === 0) super(clock.now);
-      else super(...values);
+      super(...(values.length === 0 ? [clock.now] : values));
     }
 
     static now() { return clock.now; }

@@ -35,7 +35,7 @@
     window.removeEventListener("pageshow", handlePageShow);
     const runtime = activeRuntime();
     if (runtime && extensionListenerRegistered) {
-      try { runtime.onMessage.removeListener(handleExtensionMessage); } catch {}
+      try { runtime.onMessage.removeListener(handleExtensionMessage); } catch { /* After the extension is reloaded or removed, its old runtime throws here and there is no listener left to remove. */ }
     }
     extensionListenerRegistered = false;
   }
@@ -133,7 +133,7 @@
     });
   }
 
-  function handleExtensionMessage(message, sender, sendResponse) {
+  function handleExtensionMessage(message, _sender, sendResponse) {
     if (!message) return;
     // Lets the extension confirm that this tab still shows the local dashboard it is being asked to approve.
     if (message.kind === "LOCAL_DASHBOARD_PING") {

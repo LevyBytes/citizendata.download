@@ -22,7 +22,7 @@ test("inventory parsers preserve exact money, identifiers, zero CCUs, and buybac
       appliedDateRaw: "November 17, 2026",
       cost: money("0.00"),
       cumulativeValue: money("100.00"),
-      sourceEventKeys: ["a".repeat(64) + ":1"]
+      sourceEventKeys: [`${"a".repeat(64)}:1`]
     }]
   }], context, { sourceUrls: ["https://robertsspaceindustries.com/en/account/pledges?page=1&product-type="] });
   assert.equal(pledges.section, "pledges");

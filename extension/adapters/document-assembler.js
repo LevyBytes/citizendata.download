@@ -238,7 +238,7 @@
     const retainedSections = [];
     if (typeof RemovalTracking?.reconcile !== "function") throw new Error("The removal tracking implementation is required.");
     // A removal is claimed only against an earlier backup whose own hash still verifies.
-    let previousVerified = false;
+    let previousVerified;
     try {
       previousVerified = options.previous ? await AccountDocument.verifyIntegrity(options.previous) === true : false;
     } catch {

@@ -37,8 +37,8 @@ export async function textSpacingCheck(name) {
   const newClips = after.clipped.filter(item => !before.clipped.includes(item));
   const failures = [
     after.pageOverflow && !before.pageOverflow ? 'new page horizontal overflow' : null,
-    ...after.dialogs.filter(item => item.overflow && !before.dialogs.some(previous => previous.id === item.id && previous.overflow)).map(item => 'new dialog overflow: ' + item.id),
-    ...newClips.map(item => 'new clipping: ' + item)
+    ...after.dialogs.filter(item => item.overflow && !before.dialogs.some(previous => previous.id === item.id && previous.overflow)).map(item => `new dialog overflow: ${item.id}`),
+    ...newClips.map(item => `new clipping: ${item}`)
   ].filter(Boolean);
   return {
     name, width: await evaluate('innerWidth'), status: failures.length ? 'failed' : 'passed', failures, before, after,

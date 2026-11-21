@@ -32,7 +32,7 @@ export async function motionSnapshot() {
       canvasAria: canvas.getAttribute('aria-hidden') };
   })()`);
 }
-export function withoutPixels(snapshot) { const { canvasData, ...rest } = snapshot; return rest; }
+export function withoutPixels(snapshot) { const { canvasData: _canvasData, ...rest } = snapshot; return rest; }
 export async function assertStill(label) {
   const first = await motionSnapshot(); await pause(350); const second = await motionSnapshot();
   assert(first.state === 'paused' && second.state === 'paused' && first.transform === second.transform && first.canvasData === second.canvasData && first.frameCalls === second.frameCalls, `${label}: motion continued`);

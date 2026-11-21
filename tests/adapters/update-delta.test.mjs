@@ -9,7 +9,7 @@ const referral = (key, name) => ({ recordKey: key, displayName: name, handle: na
 
 test("Hangar update anchors compare raw rows with canonical rows and preserve raw reconstruction", () => {
   const previous = [hangar("old-1"), hangar("old-2")];
-  const current = [hangar("new"), ...previous.map(({ observation, ...row }) => row)];
+  const current = [hangar("new"), ...previous.map(({ observation: _observation, ...row }) => row)];
   assert.equal(Delta.findAnchor(current, previous, Delta.hangarRecord), 1);
   assert.deepEqual(Delta.hangarAsRaw(previous[0]).relatedUrls, previous[0].observation.relatedUrls);
 });

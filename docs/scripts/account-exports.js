@@ -9,7 +9,7 @@
   const SECTIONS = ["hangar", "buybacks", "referrals", "hangar-log", "billing", "organization-members"];
   const LIMITS = { bytes: 25 * 1024 * 1024, depth: 64, nodes: 250000, string: 1024 * 1024, array: 200000, properties: 50000 };
   const DECIMAL = /^-?[0-9]+(?:\.[0-9]{1,4})?$/u;
-  const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+  const own = (value, key) => Object.hasOwn(value, key);
 
   function object(value, label) {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);

@@ -13,9 +13,10 @@ finally {
   if (socket) socket.close();
   if (chrome.exitCode === null) chrome.kill();
   for (let attempt = 0; attempt < 100 && chrome.exitCode === null; attempt++) await pause(50);
-  if (path.dirname(path.resolve(scratch)) !== out) throw new Error('Cleanup path escaped output');
-  await rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  // The scratch folder is removed only when it is inside --out; when it is not, the run fails just below.
+  if (path.dirname(path.resolve(scratch)) === out) await rm(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
+if (path.dirname(path.resolve(scratch)) !== out) throw new Error('Cleanup path escaped output');
 const counts = { seen: 0, passed: 0, failed: 0, manual: 0, skipped: 0, notRun: notRun.length };
 for (const state of states) { counts.seen += state.seen; for (const key of ['passed', 'failed', 'manual']) counts[key] += state.counts[key]; counts.skipped += Object.values(state.skipped).reduce((sum, value) => sum + value, 0); }
 const failures = states.flatMap(state => state.results.filter(item => item.status === 'failed').map(item => ({ state: state.name, viewport: state.viewport.width, ...item })));
@@ -23,10 +24,10 @@ const report = {
   source, checkedAt: new Date().toISOString(), scope: 'Visible text samples and separately labeled solid palette contracts; not a WCAG certification', counts, states,
   palette, spacing, coverageFailures, notRun, failures, exceptions, blockedRemoteRequests: remoteRequests, runtimeError
 };
-await writeFile(path.join(out, 'readability.json'), JSON.stringify(report, null, 2) + '\n');
+await writeFile(path.join(out, 'readability.json'), `${JSON.stringify(report, null, 2)}\n`);
 const paletteCounts = Object.fromEntries(['passed', 'failed', 'manual'].map(status => [status, palette.filter(item => item.status === status).length]));
 const summary = [
-  `# Readability evidence`, '', report.scope + '.', '',
+  `# Readability evidence`, '', `${report.scope}.`, '',
   `Rendered samples: **${counts.passed} passed, ${counts.failed} failed, ${counts.manual} manual** (${counts.seen} seen). Skipped hidden/offscreen/inactive/covered samples: ${counts.skipped}. State captures not run: ${counts.notRun}.`,
   '',
   `Separate solid-only palette contracts: ${paletteCounts.passed} passed, ${paletteCounts.failed} failed, ${paletteCounts.manual} manual. These do not establish contrast over gradients, images, canvas, pseudo-elements, filters, or opacity.`,

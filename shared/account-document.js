@@ -199,7 +199,7 @@
       if (Array.isArray(value)) {
         if (Object.keys(value).some((key) => !/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length)) throw new TypeError("JCS arrays cannot contain named properties.");
         for (let index = 0; index < value.length; index += 1) if (!Object.hasOwn(value, index)) throw new TypeError("JCS arrays cannot contain holes.");
-        const output = value.map((item, index) => {
+        const output = value.map((item) => {
           return canonicalize(item, active);
         });
         return `[${output.join(",")}]`;

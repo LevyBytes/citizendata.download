@@ -55,6 +55,9 @@ export async function importLarge(session, index) {
     const durationMs = performance.now()-started; document.querySelector('#messageDialog').close();
     return {durationMs,nodes:document.querySelectorAll('*').length,renderedInventoryRows:document.querySelectorAll('#inventoryRows tr').length,longTasks:window.__performanceSample.longTasks.slice(taskStart)};
   })()`);
-  assert(result.renderedInventoryRows === 1000, 'Large fixture did not render its 1000 Hangar records');
+  // The Hangar table shows its records 100 to a page: all 1000 are listed when its first page holds 100 rows and its
+  // page status counts 1,000 records over 10 pages.
+  const listed = await session.evaluate("document.querySelector('#inventoryPageStatus').textContent");
+  assert(result.renderedInventoryRows === 100 && listed === '1,000 records · page 1 of 10', `Large fixture did not list its 1000 Hangar records: ${result.renderedInventoryRows} rows, "${listed}"`);
   report.interactions.push({ label: 'large-json-import', index, ...result });
 }

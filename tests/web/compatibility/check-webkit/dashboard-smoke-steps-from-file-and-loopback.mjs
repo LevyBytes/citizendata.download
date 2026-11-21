@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { checks, failedChecks, modes } from "./evidence-lists-and-browser-in-use.mjs";
+import { checks, modes } from "./evidence-lists-and-browser-in-use.mjs";
 import { out, source } from "./options-and-evidence-folder.mjs";
 import { fixtureFile, hosted } from "./playwright-module-fixture-file-and-docs-server-steps.mjs";
 import { check, page, screenshot } from "./webkit-page-with-error-and-request-watch-steps.mjs";
@@ -36,14 +36,14 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
     await check(`${mode}: ${width}px document fits`, 'document.documentElement.scrollWidth <= innerWidth + 1');
   }
   await page.locator('#overview').scrollIntoViewIfNeeded();
-  await screenshot(mode + '-overview.png');
+  await screenshot(`${mode}-overview.png`);
   await page.click('#exportButton');
   await check(`${mode}: export modal and focus`, "document.getElementById('exportDialog').matches(':modal') && document.activeElement.id === 'exportPreset'");
   const expected = await page.evaluate(() => globalThis.CitizenDataExports.createExport(globalThis.CITIZENDATA_DEMO_DATA, { preset: 'inventory', inventoryScope: 'both', format: 'native', example: true }).text);
   const saved = page.waitForEvent('download');
   await page.click('#exportDownload');
   const download = await saved;
-  const downloadPath = path.join(out, mode + '-export.json');
+  const downloadPath = path.join(out, `${mode}-export.json`);
   await download.saveAs(downloadPath);
   assert.deepEqual(JSON.parse(await readFile(downloadPath, 'utf8')), JSON.parse(expected), `${mode}: downloaded JSON matches selected data`);
   checks.push(`${mode}: downloaded JSON matches selected data`);
@@ -52,7 +52,7 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
   await check(`${mode}: export focus return`, "document.activeElement.id === 'exportButton'");
   await page.setInputFiles('input[type=file]', fixtureFile);
   await page.waitForFunction(() => document.getElementById('accountHandle').textContent === 'CompatibilityCitizen');
-  await check(`${mode}: file picker reads synthetic account`, "document.getElementById('messageDialog').matches(':modal') && document.getElementById('dialogTitle').textContent === 'Account file ready'");
+  await check(`${mode}: file picker reads synthetic account`, "document.getElementById('messageDialog').matches(':modal') && document.getElementById('dialogTitle').textContent === 'Account file verified'");
   await page.click('#messageDialog .dialog-close');
   for (const [legal, title] of [['terms-of-service.html', 'Terms of Service'], ['privacy-policy.html', 'Privacy Policy']]) {
     await page.setViewportSize({ width: 320, height: 1000 });
@@ -60,11 +60,18 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
     await page.evaluate(() => document.fonts.ready);
     await check(`${mode}: ${legal} renders without scripts`, `document.querySelector('h1').textContent === ${JSON.stringify(title)} && document.scripts.length === 0`);
     await check(`${mode}: ${legal} fits 320px`, 'document.documentElement.scrollWidth <= innerWidth + 1');
+    // WebKit, like Safari by default, leaves links out of Tab: Safari reaches them with Option+Tab or with "Press Tab to
+    // highlight each item on a webpage", and Windows WebKit has no such key. So after a key press, as a keyboard user
+    // makes, the header link is focused directly and must draw its focus ring. The Firefox check presses a real Tab.
     await page.keyboard.press('Tab');
+    await check(`${mode}: ${legal} keyboard focus`, `(() => {
+      const link = document.querySelector('.legal-header a');
+      link.focus();
+      const style = getComputedStyle(link);
+      return document.activeElement === link && link.matches(':focus-visible') && style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0;
+    })()`);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
-    const keyboardFocused = await page.evaluate(() => document.activeElement.matches('.legal-header a') && document.activeElement.matches(':focus-visible'));
-    (keyboardFocused ? checks : failedChecks).push(`${mode}: ${legal} keyboard focus`);
-    await screenshot(mode + '-' + legal.replace('.html', '') + '.png');
+    await screenshot(`${mode}-${legal.replace('.html', '')}.png`);
     await page.click('.legal-header a[href="index.html"]');
     await page.waitForFunction(() => document.getElementById('accountHandle')?.textContent === 'DownloadCitizen');
     checks.push(`${mode}: ${legal} dashboard backlink`);

@@ -38,7 +38,7 @@ test("CCU reconciliation preserves free steps and stops cumulative inference aft
   assert.equal(result.history[0].cumulativeValue.amount, "100");
   assert.equal(result.history[1].cost, null);
   assert.equal(result.history[1].cumulativeValue, null);
-  assert.deepEqual(result.history[0].sourceEventKeys, ["a".repeat(64) + ":1"]);
+  assert.deepEqual(result.history[0].sourceEventKeys, [`${"a".repeat(64)}:1`]);
 });
 
 test("CCU reconciliation refuses events when the pledge has no stable RSI pledge ID", () => {

@@ -16,7 +16,7 @@ try{
     ||process.env.ProgramFiles:process.env.ProgramFiles;if(process.platform!=='win32'||!root)throw new Error('Provide an explicit browser executable');browser=path.join(root,
     ...(args.browser==='edge'?['Microsoft','Edge','Application','msedge.exe']:['Google','Chrome','Application','chrome.exe']));}else browser=path.resolve(args.browser);
   if(!(await stat(path.join(source,'index.html'))).isFile()||!(await stat(browser)).isFile())throw new Error('Source/browser unavailable');
-}catch(error){console.error(error.message+'\n'+help);process.exit(2);}
+}catch(error){console.error(`${error.message}\n${help}`);process.exit(2);}
 await mkdir(out,{recursive:true});
 const files=[];
 async function inventory(relative=''){for(const item of await readdir(path.join(source,relative),{withFileTypes:true})){const name=path.join(relative,item.name);if(item.isDirectory())await inventory(name);else if(item.isFile())files.push({
@@ -47,7 +47,7 @@ try{
   report.exceptions=session.exceptions;report.remoteRequests=session.remote;
   if(session.exceptions.length||session.remote.length)throw new Error('Page exception or remote request attempt occurred');
 }catch(error){report.failures.push(String(error.stack||error));console.error(error.message);}finally{if(session)try{await session.close();}catch(error){report.failures.push(String(error.stack||error));}}
-await writeFile(path.join(out,'asset-loading.json'),JSON.stringify(report,null,2)+'\n');
+await writeFile(path.join(out,'asset-loading.json'),`${JSON.stringify(report,null,2)}\n`);
 const message=`${report.failures.length?'FAIL':'PASS'} asset inventory: initial ${report.initial?.files.length??0} files/${report.initial?.bytes??0}B; community mark initially ${report.initialTargetRequested?'requested':'deferred'}; after `
   + `footer ${report.targetRequestedAfterFooter?'loaded':'not loaded'}`;
-await writeFile(path.join(out,'run.log'),message+'\n');console.log(message);process.exitCode=report.failures.length?1:0;
+await writeFile(path.join(out,'run.log'),`${message}\n`);console.log(message);process.exitCode=report.failures.length?1:0;

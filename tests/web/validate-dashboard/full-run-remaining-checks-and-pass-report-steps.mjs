@@ -41,7 +41,7 @@ await checkCcuLeadImage();
 await checkHangarLinkImport();
 if (captureScreenshots) await writeFile(
   path.join(testDirectory, 'work-temp-export-results.json'),
-  JSON.stringify({actualDownloads:exportReceipts.length,downloads:exportReceipts,downloadDirectory:path.relative(repositoryRoot,downloadDirectory),cleanup:'Temporary download folder removed after browser shutdown'}, null, 2)+'\n'
+  `${JSON.stringify({actualDownloads:exportReceipts.length,downloads:exportReceipts,downloadDirectory:path.relative(repositoryRoot,downloadDirectory),cleanup:'Temporary download folder removed after browser shutdown'}, null, 2)}\n`
 );
 
 assert(exceptions.length === 0, `Browser exceptions: ${exceptions.join(" | ")}`);

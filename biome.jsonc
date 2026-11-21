@@ -23,7 +23,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "a11y": {
         // An SVG file here is shown through an image element that carries the alternative text, or is decoration.
         // The files themselves carry no text about themselves.

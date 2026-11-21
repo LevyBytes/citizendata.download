@@ -25,7 +25,7 @@ assert.equal(report.notRun.length, 0);
 assert.equal(report.coverageFailures.length, 0);
 const samples = report.states[0].results;
 assert.equal(samples.length, 15);
-const byId = id => samples.find(sample => sample.selector === '#' + id);
+const byId = id => samples.find(sample => sample.selector === `#${id}`);
 for (const id of ['black-white', 'large-gray', 'bold-gray', 'layer']) assert.equal(byId(id)?.status, 'passed', id);
 for (const id of ['low', 'normal-gray', 'alpha', 'placeholder']) assert.equal(byId(id)?.status, 'failed', id);
 for (const id of ['gradient', 'opacity', 'pseudo', 'svg-overlay', 'image-overlay', 'opaque-child', 'inset']) assert.equal(byId(id)?.status, 'manual', id);
@@ -44,5 +44,5 @@ const receipt = {
   expectedManualCases: 7, expectedMeasuredPasses: 4, expectedInactiveExclusions: 1,
   note: 'These intentional failures should make the checker exit 1. This verifier checks the saved report, not the checker process exit status.'
 };
-await writeFile(path.join(folder, 'fixture-verification.json'), JSON.stringify(receipt, null, 2) + '\n');
+await writeFile(path.join(folder, 'fixture-verification.json'), `${JSON.stringify(receipt, null, 2)}\n`);
 console.log('PASS browser negative fixture: 4 intentional contrast failures, 4 known passes, 7 manual cases, alpha math, placeholder, inactive exclusion, and zero runtime/network errors');

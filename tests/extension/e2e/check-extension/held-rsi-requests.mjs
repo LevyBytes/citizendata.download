@@ -21,7 +21,7 @@ export const afterRequests = (account, count) => () => account.requests.length >
 // A hold that is never reached fails with its reason instead of hanging.
 export async function reach(held, description, timeoutMs = 30000) {
   let timer;
-  const late = new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`Timed out waiting for ${description}.`)), timeoutMs); });
+  const late = new Promise((_resolve, reject) => { timer = setTimeout(() => reject(new Error(`Timed out waiting for ${description}.`)), timeoutMs); });
   try { await Promise.race([held.reached, late]); } finally { clearTimeout(timer); }
 }
 

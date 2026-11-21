@@ -19,11 +19,11 @@ export async function checkImageZipWithLaterBuildsAndOtherAccounts({ withImages,
     return result;
   };
   await reloadDashboard();
-  await loadFixture('image-download-rebuilt-fixture.json', withImages + "documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000aa';");
+  await loadFixture('image-download-rebuilt-fixture.json', `${withImages}documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000aa';`);
   const reopened = await openZip();
   assert(reopened.title === "Image package verified" && reopened.fileStatus === zip.name && reopened.loaded, `An Images ZIP was refused for a later build of the same account: ${JSON.stringify(reopened)}`);
   // With the ZIP open, a build result of the same account under yet another identifier keeps it open.
-  await loadFixture('image-download-rebuilt-again-fixture.json', withImages + "documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000bb';documentCopy.pledges[0].images.push(image('c0'));");
+  await loadFixture('image-download-rebuilt-again-fixture.json', `${withImages}documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000bb';documentCopy.pledges[0].images.push(image('c0'));`);
   assert(await evaluate(`document.getElementById('imageFileStatus').textContent===${JSON.stringify(zip.name)} && !document.getElementById('mediaZipLoadedState').hidden`), "Opening a later build of the same account closed the open Images ZIP.");
   // That build has one image the ZIP does not hold. The plan is made again for it, and the next image download
   // fetches that one image and writes a ZIP that names the build now open.
@@ -52,7 +52,7 @@ export async function checkImageZipWithLaterBuildsAndOtherAccounts({ withImages,
   );
   // Another account's file is still refused.
   await reloadDashboard();
-  await loadFixture('image-download-other-account-fixture.json', withImages + "documentCopy.account.handle='SomeoneElse';documentCopy.profile.handle='SomeoneElse';documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000cc';");
+  await loadFixture('image-download-other-account-fixture.json', `${withImages}documentCopy.account.handle='SomeoneElse';documentCopy.profile.handle='SomeoneElse';documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000cc';`);
   const refused = await openZip();
   assert(refused.title === "Package rejected" && refused.message === "This Images ZIP belongs to a different Account JSON." && refused.fileStatus === "No Images ZIP loaded", `An Images ZIP of another account was not refused: ${JSON.stringify(refused)}`);
 }

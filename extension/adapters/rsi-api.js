@@ -97,15 +97,10 @@
   let activeSourceUrls = null;
 
   async function withRsiToken(operation) {
-    let rsiToken = null;
-    try {
-      const cookie = await chrome.cookies.get({ url: `${RSI_ORIGIN}/`, name: "Rsi-Token" });
-      rsiToken = typeof cookie?.value === "string" && cookie.value ? cookie.value : null;
-      if (!rsiToken) throw new Error("Sign in to RSI, then click Build JSON again.");
-      return await operation(rsiToken);
-    } finally {
-      rsiToken = null;
-    }
+    const cookie = await chrome.cookies.get({ url: `${RSI_ORIGIN}/`, name: "Rsi-Token" });
+    const rsiToken = typeof cookie?.value === "string" && cookie.value ? cookie.value : null;
+    if (!rsiToken) throw new Error("Sign in to RSI, then click Build JSON again.");
+    return await operation(rsiToken);
   }
 
   function recordSourceUrl(candidate) {
@@ -120,7 +115,7 @@
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const startedAt = Date.now();
     const requestedUrl = new URL(url);
-    let requestBody = null;
+    let requestBody;
     try { requestBody = typeof options?.body === "string" ? JSON.parse(options.body) : null; } catch { requestBody = null; }
     const graphqlPage = Array.isArray(requestBody) ? requestBody[0]?.variables?.page : null;
     const page = Number(requestedUrl.searchParams.get("page") ?? requestBody?.page ?? graphqlPage);
@@ -152,7 +147,7 @@
       }
       return response;
     } catch (error) {
-      if (error?.name === "AbortError") throw new Error("RSI_REQUEST_TIMEOUT");
+      if (error?.name === "AbortError") throw new Error("RSI_REQUEST_TIMEOUT", { cause: error });
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -331,7 +326,7 @@
       html,
       context
     });
-    if (!response?.ok || !Object.prototype.hasOwnProperty.call(response, "raw")) throw new Error(response?.message ?? "RSI_MARKUP_PARSE_FAILED");
+    if (!response?.ok || !Object.hasOwn(response, "raw")) throw new Error(response?.message ?? "RSI_MARKUP_PARSE_FAILED");
     return response;
   }
 

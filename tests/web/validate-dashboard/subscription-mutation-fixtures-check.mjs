@@ -18,8 +18,8 @@ export async function checkSubscriptionMutationFixtures() {
     }];`]
   ]) {
     // Each empty/unknown document replaces a real active tier, so stale UI is exercised.
-    await loadFixture('subscription-before-'+name+'.json');
-    await loadFixture('subscription-'+name+'.json',mutation);
+    await loadFixture(`subscription-before-${name}.json`);
+    await loadFixture(`subscription-${name}.json`,mutation);
     assert(await evaluate(`(() => {
       return ['subscriptionSummaryIcon','subscriptionStatusIcon'].every(id=>document.getElementById(id).hidden)
         && ['subscriptionTier','subscriptionSpent','subscriptionDetailSpent'].every(id=>document.getElementById(id).textContent==='')
