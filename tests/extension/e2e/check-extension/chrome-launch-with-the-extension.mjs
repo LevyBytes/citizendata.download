@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { launchReport, launchWithFallback } from "../../../support/chrome-test-launch.mjs";
 import { ChromePipe } from "../chrome-pipe.mjs";
 import { answerPausedRequest, downloadEvents } from "./answers-to-browser-requests.mjs";
 import { chrome, extensionId, extensionOrigin, setChrome, setExtensionId, setExtensionOrigin, setSettings, settings } from "./browser-pages-and-account-in-use.mjs";
@@ -7,12 +8,11 @@ import { downloads, executable, options, profile } from "./options-and-run-folde
 import { TOKEN } from "./origins-keys-and-stand-in-image.mjs";
 
 export async function launchChromeWithTheExtension() {
-  setChrome(await ChromePipe.launch({
-    executable,
-    profile,
-    headless: !options.headed,
-    // No name resolves, so nothing leaves this machine even if a request were to escape interception.
-    extraArguments: ["--host-resolver-rules=MAP * ~NOTFOUND"]
+  // No name resolves, so nothing leaves this machine even if a request were to escape interception.
+  const extraArguments = ["--host-resolver-rules=MAP * ~NOTFOUND"];
+  const headless = !options.headed;
+  setChrome(await launchWithFallback((renderingFlags) => ChromePipe.launch({ executable, profile, headless, renderingFlags, extraArguments }), {
+    report: (name, flags, why = null) => console.log(`${launchReport(executable, name, [...flags, ...(headless ? ["--headless=new"] : []), ...extraArguments])}${why ? ` (${why})` : ""}`)
   }));
   chrome.on((message) => {
     if (message.method === "Browser.downloadWillBegin") downloadEvents.push({ guid: message.params.guid, name: message.params.suggestedFilename, state: "started" });

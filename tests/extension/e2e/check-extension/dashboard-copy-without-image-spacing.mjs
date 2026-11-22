@@ -12,7 +12,8 @@ await cp(path.join(repositoryRoot, "docs"), docsRoot, { recursive: true });
 {
   const policyPath = path.join(docsRoot, "scripts", "media-materializer.js");
   let source = await readFile(policyPath, "utf8");
-  for (const [shipped, unspaced] of [["const minimumStartDelay = policy.minimumInterRequestDelayMs;", "const minimumStartDelay = 0;"], ["const maximumStartDelay = policy.maximumInterRequestDelayMs ?? minimumStartDelay;", "const maximumStartDelay = 0;"]]) {
+  // The gap between image starts is drawn from this baseline times the pace's factor (§14); at 0 there is none.
+  for (const [shipped, unspaced] of [["const gapBaseline = { startGapMinimumMs: policy.minimumInterRequestDelayMs, startGapMaximumMs: policy.maximumInterRequestDelayMs };", "const gapBaseline = { startGapMinimumMs: 0, startGapMaximumMs: 0 };"]]) {
     assert.equal(source.split(shipped).length, 2, `The dashboard no longer writes its image spacing as this check expects: ${shipped}`);
     source = source.replace(shipped, unspaced);
   }

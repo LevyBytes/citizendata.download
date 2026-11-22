@@ -1,8 +1,8 @@
 (function exposeDashboardModel(root, factory) {
-  const api = factory();
+  const api = factory(root);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.CitizenDataDashboardModel = api;
-})(typeof globalThis === "object" ? globalThis : this, () => {
+})(typeof globalThis === "object" ? globalThis : this, (root) => {
   "use strict";
 
   const COLLECTION_SECTIONS = Object.freeze({
@@ -15,8 +15,8 @@
     hangarLog: Object.freeze({ operation: "Reading Hangar Log history", label: "Hangar Log", summary: "Reading pledge creation, upgrade, gift, reclaim, and reward history." }),
     pledges: Object.freeze({ operation: "Reading your current Hangar", label: "Current Hangar", summary: "Reading current Hangar pledges and their contained items." }),
     buybacks: Object.freeze({ operation: "Reading Buy Back Pledges", label: "Buybacks", summary: "Reading Buy Back Pledges and their contained items." }),
-    buybackDetails: Object.freeze({ operation: "Reading buy-back prices", label: "Buy-back prices", summary: "Reading one buy-back page for each item, for its price and contents." }),
-    buybackUpgradePrices: Object.freeze({ operation: "Reading CCU buy-back prices", label: "CCU buy-back prices", summary: "Reading the price RSI asks now for each different CCU buy-back." }),
+    buybackDetails: Object.freeze({ operation: "Reading buyback prices", label: "Buyback prices", summary: "Reading one buyback page for each item, for its price and contents." }),
+    buybackUpgradePrices: Object.freeze({ operation: "Reading CCU buyback prices", label: "CCU buyback prices", summary: "Reading the price RSI asks now for each different CCU buyback." }),
     "referrals.legacy.recruits": Object.freeze({ operation: "Reading legacy referral recruits", label: "Legacy recruits", summary: "Reading recruits from the legacy referral ladder." }),
     "referrals.current.prospects": Object.freeze({ operation: "Reading current referral prospects", label: "Current prospects", summary: "Reading prospects from the current referral ladder." }),
     "referrals.current.recruits": Object.freeze({ operation: "Reading current referral recruits", label: "Current recruits", summary: "Reading recruits from the current referral ladder." }),
@@ -31,10 +31,209 @@
     return COLLECTION_SECTIONS[section] ?? Object.freeze({ operation: "Building your account backup", label: "Account backup", summary: "Collecting the next authorized account data section." });
   }
 
+  // The texts of PARSER_HARDENING.md §11.3, word for word (D17).
+  const TEXTS = Object.freeze({
+    limited: "Potential website issue or rate limiting. Slowing down.",
+    slow: "RSI is answering slowly. Slowing down.",
+    probeRefused: "Refused even without your login. Your connection or RSI's public pages may be limited.",
+    probeAnswered: "Works without your login. Your account, session or RSI's account pages may be limited.",
+    statusIssue: "RSI reports a problem.",
+    statusNotChecked: "RSI status page not checked.",
+    statusUnreadable: "RSI status page could not be read.",
+    probeFailed: "Couldn't reach RSI. Your connection or RSI may be down.",
+    signedOut: "Signed out of RSI. Your data is kept. Sign in, then continue.",
+    accountChanged: "Another RSI account is signed in. Your data is kept. Switch back, then continue.",
+    browserCheck: "RSI wants a browser check. Your data is kept. Complete it on the RSI site, then continue.",
+    lifetime: "Time limit reached. Your data is kept. Continue when ready.",
+    imagesLeft: "Images kept failing. Download again later for the rest.",
+    startRefused: "RSI refused or didn't answer the account check.",
+    statusOk: "RSI status page: no problems.",
+    schemaChanged: "RSI changed a schema. Please report it on GitHub.",
+    partialOperation: "Account backup saved with skipped sections",
+    buildAgain: "Ready to build again"
+  });
+  const PROBE_TEXTS = Object.freeze({ refused: TEXTS.probeRefused, answered: TEXTS.probeAnswered, failed: TEXTS.probeFailed, "not-run": TEXTS.startRefused });
+
+  function isPrintable(value, maximum) {
+    return typeof value === "string" && value.length > 0 && value.length <= maximum && [...value].every((character) => character.codePointAt(0) >= 32 && character.codePointAt(0) !== 127);
+  }
+
+  // Sentences joined by one space; an empty one leaves no doubled space.
+  function sentences(...parts) {
+    return parts.filter((part) => typeof part === "string" && part.length > 0).join(" ");
+  }
+
+  // {components}: each safe entry as "name (state)", joined by ", ".
+  function componentsText(components) {
+    return (Array.isArray(components) ? components : []).filter((entry) => isPrintable(entry?.name, 60) && isPrintable(entry?.state, 20)).slice(0, 10).map((entry) => `${entry.name} (${entry.state})`).join(", ");
+  }
+
+  // W-5.
+  function statusIssueText(components) {
+    const list = componentsText(components);
+    return list ? `RSI reports a problem: ${list}.` : TEXTS.statusIssue;
+  }
+
+  // The status part of a diagnosis: W-23, W-5 or one of the two W-6 variants.
+  function statusText(result) {
+    if (result?.status === "ok") return TEXTS.statusOk;
+    if (result?.status === "issue") return statusIssueText(result.components);
+    if (result?.status === "unknown") return result.reason === "no-permission" ? TEXTS.statusNotChecked : TEXTS.statusUnreadable;
+    return "";
+  }
+
+  // {diagnosis} (§9.4): the text for the probe, then the text for the status; empty without a diagnosis.
+  function diagnosisText(diagnosis) {
+    if (!diagnosis || typeof diagnosis !== "object") return "";
+    return sentences(PROBE_TEXTS[diagnosis.probe] ?? "", statusText(diagnosis));
+  }
+
+  // {time}: the time left as m:ss. A countdown is the sentence before its time, the rest after it, and the sentence
+  // that replaces it once the time has passed.
+  function countdownTime(untilMs, nowMs) {
+    const seconds = Math.max(0, Math.ceil((untilMs - nowMs) / 1000));
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+  function countdown(until, lead, tail, after) {
+    return Number.isFinite(Date.parse(until)) ? Object.freeze({ until, lead, tail, after }) : null;
+  }
+  function countdownRunning(value, nowMs = Date.now()) {
+    return Boolean(value) && Date.parse(value.until) > nowMs;
+  }
+  function countdownText(value, nowMs = Date.now()) {
+    if (!value) return "";
+    return countdownRunning(value, nowMs) ? `${value.lead}${countdownTime(Date.parse(value.until), nowMs)}${value.tail}` : value.after;
+  }
+
+  // W-8, W-9, W-20, W-25 and W-31, each with its countdown.
+  function waitingCountdown(until) {
+    return countdown(until, "RSI refused. Retrying in ", ".", "RSI refused. Retrying now.");
+  }
+  function continueCountdown(until, diagnosis) {
+    const lead = sentences("RSI kept refusing, so the run stopped. Your data is kept.", diagnosisText(diagnosis));
+    return countdown(until, `${lead} Continue in `, ".", `${lead} Continue when ready.`);
+  }
+  function refusedDialogCountdown(until, diagnosis) {
+    const lead = diagnosisText(diagnosis);
+    return countdown(until, sentences(lead, "Try again in "), ".", sentences(lead, "Try again now."));
+  }
+  function coolingDownCountdown(until) {
+    return countdown(until, "Try again in ", ".", "Try again now.");
+  }
+  function buildAgainCountdown(until, refusedStart) {
+    const lead = refusedStart ? "RSI refused the start." : "The last run stopped before anything was saved.";
+    return countdown(until, `${lead} Build again in `, ".", `${lead} Build when ready.`);
+  }
+
+  // The repository's issues, the address the dashboard already links (#supportIssues).
+  const ISSUES_ADDRESS = "https://github.com/LevyBytes/citizendata.download/issues";
+
+  // The notices that RSI changed a page (§11.4), one per detected change, each with a stable key. An entry whose code
+  // is not a code or whose section the catalog does not know is not shown. The links carry the section id, the code
+  // and the HTTP status, and nothing else.
+  function changeNotices(entries) {
+    const notices = [];
+    for (const entry of (Array.isArray(entries) ? entries : []).slice(-4)) {
+      const code = typeof entry?.code === "string" && /^[A-Z0-9_]{1,80}$/u.test(entry.code) ? entry.code : null;
+      const sectionId = typeof entry?.section === "string" && Object.hasOwn(COLLECTION_SECTIONS, entry.section) ? entry.section : null;
+      if (!code || !sectionId) continue;
+      const setAside = entry.setAside === true;
+      const dependents = (Array.isArray(entry.dependents) ? entry.dependents : []).filter((section) => typeof section === "string" && Object.hasOwn(COLLECTION_SECTIONS, section)).map((section) => COLLECTION_SECTIONS[section].label);
+      const sentences = ["This version can't read it.", setAside ? "Skipped; the build continues." : "The build stopped here."];
+      if (dependents.length > 0) sentences.push(`Also skipped: ${dependents.join(", ")}.`);
+      const httpStatus = Number.isSafeInteger(entry.httpStatus) && entry.httpStatus >= 100 && entry.httpStatus <= 599 ? entry.httpStatus : null;
+      const body = [`Section: ${sectionId}`, `Code: ${code}`, `HTTP status: ${httpStatus ?? "none"}`, "Add anything else you noticed. Do not paste account data."].join("\n");
+      const at = typeof entry.at === "string" && !Number.isNaN(Date.parse(entry.at)) ? entry.at : "";
+      notices.push(Object.freeze({
+        key: `${sectionId}|${code}|${setAside ? "set-aside" : "stopped"}|${httpStatus ?? "none"}|${at}`,
+        title: `RSI CHANGED A PAGE: ${COLLECTION_SECTIONS[sectionId].label}`,
+        prose: sentences.join(" "),
+        technical: `Code: ${code}`,
+        request: "Please confirm an existing GitHub issue, or report a new one.",
+        searchLink: `${ISSUES_ADDRESS}?q=${encodeURIComponent(`is:issue ${code}`)}`,
+        newIssueLink: `${ISSUES_ADDRESS}/new?title=${encodeURIComponent(`RSI page changed: ${sectionId} (${code})`)}&body=${encodeURIComponent(body)}`
+      }));
+    }
+    return notices;
+  }
+
+  // W-26: the labels of the sections set aside, or the fallback.
+  function setAsideText(sections, firstBuild) {
+    const labels = (Array.isArray(sections) ? sections : []).map((section) => COLLECTION_SECTIONS[section]?.label ?? null).filter(Boolean);
+    const list = labels.length ? labels.join(", ") : "one or more account sections";
+    return firstBuild ? `Partial backup. Not read: ${list}.` : `Partial backup. Not read: ${list}. Your last complete backup stays in use.`;
+  }
+
+  // The warning text of an account, roster or image run: W-5, W-1 or W-2 (§11.1, rows 1 to 4).
+  function warningText(warning, statusPage) {
+    if ((warning === "limited" || warning === "slow") && statusPage?.status === "issue") return statusIssueText(statusPage.components);
+    if (warning === "limited") return TEXTS.limited;
+    if (warning === "slow") return TEXTS.slow;
+    return "";
+  }
+
+  // The caution tape (§11.1): the first row that applies gives its text; with none there is no tape. mediaState is the
+  // image run's { active, warning, statusPage, stoppedWithRemaining }, wired to the image run in WP11.
+  function cautionPresentation(status, mediaState = null, nowMs = Date.now()) {
+    const shown = (value) => Object.freeze({ active: value.length > 0, text: value });
+    const job = status?.activeJob && typeof status.activeJob === "object" ? status.activeJob : null;
+    if (job?.status === "running") {
+      const value = warningText(job.pace?.warning, job.pace?.statusPage);
+      if (value) return shown(value);
+    }
+    if (mediaState?.active === true && mediaState.warning) {
+      const value = warningText(mediaState.warning, mediaState.statusPage);
+      if (value) return shown(value);
+    }
+    const runningOrPaused = job?.status === "running" || job?.status === "paused";
+    const coolingDown = Date.parse(status?.retryNotBefore) > nowMs;
+    if (!runningOrPaused && mediaState?.active !== true && coolingDown && status?.startDiagnosis) {
+      const value = diagnosisText(status.startDiagnosis);
+      if (value) return shown(value);
+    }
+    if (!runningOrPaused && coolingDown && job?.status === "failed" && job.failure?.code === "RSI_RATE_LIMITED") return shown(TEXTS.limited);
+    if (mediaState?.stoppedWithRemaining === true) return shown(TEXTS.imagesLeft);
+    return shown("");
+  }
+
+  // An accepted status (§11.2, row 7): an object, a safe revision when there is one, and an active job, when there is
+  // one, with a known state, a pace of a known warning and a list for its log.
+  const JOB_STATES = Object.freeze(["pending", "running", "paused", "complete", "partial", "failed", "cancelled"]);
+  function validateStatus(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    if (raw.statusRevision !== undefined && !(Number.isSafeInteger(raw.statusRevision) && raw.statusRevision >= 0)) return null;
+    const job = raw.activeJob;
+    if (job === null || job === undefined) return raw;
+    if (typeof job !== "object" || Array.isArray(job) || !JOB_STATES.includes(job.status)) return null;
+    if (job.pace !== undefined && job.pace !== null && (typeof job.pace !== "object" || ![undefined, null, "limited", "slow"].includes(job.pace.warning))) return null;
+    if (job.activityLog !== undefined && !Array.isArray(job.activityLog)) return null;
+    if (job.failure !== undefined && job.failure !== null && typeof job.failure !== "object") return null;
+    return raw;
+  }
+
+  const RSI_CODE = /^[A-Za-z0-9_-]{1,64}$/u;
+  const NOT_PLAIN = /[^\p{L}\p{N} .,;:!?'()[\]_/-]/gu;
+
+  // A stop's technical detail (criterion 7): its code and message, then the HTTP status, RSI's code and RSI's message
+  // the extension bounded, each checked again here; the panel shows the result only as text.
+  function stopTechnicalDetail(failure) {
+    const code = typeof failure?.code === "string" ? failure.code.slice(0, 80) : "RUN_FAILED";
+    const message = typeof failure?.message === "string" ? failure.message.slice(0, 500) : "The account backup stopped.";
+    const signal = failure?.detail?.signal;
+    const httpStatus = Number.isSafeInteger(signal?.httpStatus) && signal.httpStatus >= 100 && signal.httpStatus <= 599 ? signal.httpStatus : null;
+    const rsiCode = typeof signal?.rsiCode === "string" && RSI_CODE.test(signal.rsiCode) ? signal.rsiCode : null;
+    const rsiMessage = typeof signal?.rsiMessage === "string" ? [...signal.rsiMessage.replace(NOT_PLAIN, " ").replace(/\s+/gu, " ").trim()].slice(0, 160).join("") : "";
+    const parts = [code === message ? code : `${code}: ${message}`];
+    if (httpStatus !== null) parts.push(`HTTP status ${httpStatus}`);
+    if (rsiCode) parts.push(`RSI code ${rsiCode}`);
+    if (rsiMessage) parts.push(`RSI message: ${rsiMessage}`);
+    return parts.join(" | ");
+  }
+
   function continuableFailurePresentation(activeJob, section) {
     const code = typeof activeJob?.failure?.code === "string" ? activeJob.failure.code.slice(0, 80) : "RUN_FAILED";
     const message = typeof activeJob?.failure?.message === "string" ? activeJob.failure.message.slice(0, 500) : "The account backup stopped.";
-    const technicalMessage = code === message ? code : `${code}: ${message}`;
+    const technicalMessage = stopTechnicalDetail(activeJob?.failure);
     const diagnostic = `${code} ${message}`;
     const pageMismatch = /RSI_BUYBACKS_PAGE_MISMATCH_REQUESTED_([0-9]+)_OBSERVED_([0-9]+)/u.exec(diagnostic);
     if (pageMismatch) {
@@ -51,26 +250,90 @@
     });
   }
 
-  function collectionStatusPresentation(publicStatus, options = {}) {
-    const bridgeConnected = options.bridgeConnected === true;
-    const connecting = options.connecting === true;
-    const activeJob = publicStatus?.activeJob && typeof publicStatus.activeJob === "object" ? publicStatus.activeJob : null;
-    const jobStatus = activeJob?.status ?? publicStatus?.status ?? null;
-    const section = collectionSectionPresentation(activeJob?.currentSection);
-    const roster = options.jobKind === "organizationData" || activeJob?.jobKind === "organizationData" || activeJob?.currentSection?.startsWith?.("organizations.members.");
-    if (connecting) return Object.freeze({ badge: "CONNECTING", operation: roster ? "Preparing Organization Data" : "Verifying your signed in RSI account", summary: roster ? "CitizenData is preparing the selected organization roster job." : "CitizenData is establishing the read only backup run.", tone: "warning", active: true, terminal: false });
-    if (!bridgeConnected) return Object.freeze({ badge: "DISCONNECTED", operation: "Extension connection unavailable", summary: "The dashboard cannot currently communicate with CitizenData.", tone: "quiet", active: false, terminal: false });
-    if (publicStatus?.requiresRebind === true) return Object.freeze({ badge: "RECONNECT REQUIRED", operation: section.operation, summary: "The durable run is paused until this dashboard session is explicitly reconnected.", tone: "warning", active: true, terminal: false });
-    if (jobStatus === "running") return Object.freeze({ badge: "COLLECTING", operation: section.operation, summary: section.summary, tone: "active", active: true, terminal: false });
-    if (jobStatus === "paused") return Object.freeze({ badge: "PAUSED", operation: section.operation, summary: "The durable run is preserved and is not issuing RSI requests.", tone: "warning", active: false, terminal: false });
-    if (jobStatus === "complete") return Object.freeze({ badge: "COMPLETED", operation: roster ? "Organization Data complete" : "Account backup complete", summary: roster ? "The selected rosters are ready in one Organization JSON." : "The canonical account document passed validation and is open in this dashboard.", tone: "success", active: false, terminal: true });
-    if (jobStatus === "failed" && publicStatus?.continuable === true) {
-      const failure = continuableFailurePresentation(activeJob, section);
-      return Object.freeze({ badge: "READY TO CONTINUE", operation: roster ? `Continue Organization Data from ${section.label}` : `Continue backup from ${section.label}`, summary: failure.summary, historyMessage: failure.historyMessage, technicalMessage: failure.technicalMessage, tone: "warning", active: false, terminal: true });
+  const SESSION_STOPS = Object.freeze({ RSI_SIGNED_OUT: TEXTS.signedOut, RSI_ACCOUNT_CHANGED: TEXTS.accountChanged, ACCOUNT_CHANGED: TEXTS.accountChanged, RSI_CHECK_IN_BROWSER: TEXTS.browserCheck, RUN_LIFETIME_REACHED: TEXTS.lifetime });
+  const NO_CONTROLS = Object.freeze({ pause: false, resume: false, resumeLabel: "Resume", cancel: false, rebind: false, skip: false });
+  const isContractStop = (failure) => failure?.detail?.signal?.kind === "contract" || /_CONTRACT_CHANGED$/u.test(failure?.code ?? "");
+
+  // Build Status (§11.2): the first row that matches gives one whole presentation. context holds what the dashboard
+  // knows itself: { bridgeConnected, connecting, protocolMismatch, extensionVersion, media, jobKind, nowMs }. Account,
+  // roster and image presentations are built apart, so no wording, progress or control crosses from one to another.
+  function buildPresentation(status, context = {}) {
+    const nowMs = Number.isFinite(context.nowMs) ? context.nowMs : Date.now();
+    const job = status?.activeJob && typeof status.activeJob === "object" ? status.activeJob : null;
+    const roster = context.jobKind === "organizationData" || job?.jobKind === "organizationData" || job?.currentSection?.startsWith?.("organizations.members.") === true;
+    const jobKind = roster ? "roster" : "account";
+    const section = collectionSectionPresentation(job?.currentSection);
+    const make = (row, fields) => Object.freeze({
+      row, jobKind, tone: "quiet", active: false, terminal: false, countdown: null, historyMessage: null, technicalMessage: null,
+      controls: NO_CONTROLS, unavailableUntil: null, ...fields, key: `${row}|${fields.jobKind ?? jobKind}|${fields.badge}|${fields.operation}`
+    });
+    const media = context.media && typeof context.media === "object" ? context.media : null;
+
+    if (context.protocolMismatch === true) {
+      const version = typeof context.extensionVersion === "string" ? context.extensionVersion.slice(0, 32) : "unknown";
+      return make(1, { jobKind: null, badge: "UPDATE REQUIRED", operation: "Extension and dashboard do not match", summary: `CitizenData extension ${version} uses a different connection version than this page. Update the extension, then reload this page.`, tone: "warning" });
     }
-    if (jobStatus === "failed") return Object.freeze({ badge: "FAILED", operation: roster ? "Organization Data stopped" : `Backup stopped in ${section.label}`, summary: activeJob?.failure?.message ?? "The run stopped with an explicit recoverable failure.", tone: "failure", active: false, terminal: true });
-    if (jobStatus === "cancelled") return Object.freeze({ badge: "CANCELLED", operation: roster ? "Organization Data cancelled" : "Account backup cancelled", summary: roster ? "The Organization Data job was cancelled." : "The account collection was cancelled.", tone: "quiet", active: false, terminal: true });
-    return Object.freeze({ badge: "CONNECTED", operation: "Ready to build your backup", summary: "CitizenData is connected and no account collection is active.", tone: "active", active: false, terminal: false });
+    if (media?.phase === "running") return make(2, { jobKind: "media", badge: "DOWNLOADING", operation: media.operation ?? "Downloading offline images", summary: media.detail ?? "", tone: "active", active: true });
+    if (media?.phase === "ready") return make(3, { jobKind: "media", badge: "READY TO SAVE", operation: media.operation ?? "Offline image ZIP ready", summary: media.detail ?? "", tone: "warning" });
+    if (media && ["completed", "cancelled", "failed", "idle"].includes(media.phase)) {
+      return make(4, { jobKind: "media", badge: media.badge ?? "COMPLETED", operation: media.operation ?? "Offline images", summary: sentences(media.detail ?? "", media.stoppedWithRemaining === true ? TEXTS.imagesLeft : ""), tone: media.tone ?? "quiet", terminal: media.phase !== "idle" });
+    }
+    if (context.connecting === true) return make(5, { badge: "CONNECTING", operation: roster ? "Preparing Organization Data" : "Verifying your signed in RSI account", summary: roster ? "CitizenData is preparing the selected organization roster job." : "CitizenData is establishing the read only backup run.", tone: "warning", active: true });
+    if (context.bridgeConnected !== true) return make(6, { jobKind: null, badge: "DISCONNECTED", operation: "Extension connection unavailable", summary: "The dashboard cannot currently communicate with CitizenData." });
+    if (status?.requiresRebind === true) return make(8, { badge: "RECONNECT REQUIRED", operation: section.operation, summary: "The durable run is paused until this dashboard session is explicitly reconnected.", tone: "warning", active: true, controls: { ...NO_CONTROLS, rebind: true } });
+
+    const jobStatus = job?.status ?? null;
+    const running = { ...NO_CONTROLS, pause: true, cancel: true, skip: job?.currentSection === "buybackUpgradePrices" };
+    if (jobStatus === "running") {
+      const waitingUntil = job.pace?.waitingUntil;
+      if (Date.parse(waitingUntil) > nowMs) return make(9, { badge: "COLLECTING", operation: section.operation, summary: countdownText(waitingCountdown(waitingUntil), nowMs), countdown: waitingCountdown(waitingUntil), tone: "active", active: true, controls: running });
+      if (job.pace?.warning === "limited" || job.pace?.warning === "slow") return make(10, { badge: "COLLECTING", operation: section.operation, summary: section.summary, tone: "active", active: true, controls: running });
+      return make(11, { badge: "COLLECTING", operation: section.operation, summary: section.summary, tone: "active", active: true, controls: running });
+    }
+    if (jobStatus === "paused") return make(12, { badge: "PAUSED", operation: section.operation, summary: "The durable run is preserved and is not issuing RSI requests.", tone: "warning", controls: { ...NO_CONTROLS, resume: true, cancel: true } });
+
+    const coolingUntil = Date.parse(status?.retryNotBefore) > nowMs ? status.retryNotBefore : null;
+    if (status?.hasActiveJob !== true && status?.startDiagnosis && coolingUntil) {
+      const refused = buildAgainCountdown(coolingUntil, true);
+      return make(13, { badge: "CONNECTED", operation: TEXTS.buildAgain, summary: countdownText(refused, nowMs), countdown: refused, tone: "warning", unavailableUntil: coolingUntil });
+    }
+    if (jobStatus === "partial") {
+      return make(14, { badge: "COMPLETED WITH OMISSIONS", operation: TEXTS.partialOperation, summary: setAsideText(job.setAsideSections, job.mode === "baseline"), tone: "warning", terminal: true });
+    }
+    if (jobStatus === "complete") return make(15, { badge: "COMPLETED", operation: roster ? "Organization Data complete" : "Account backup complete", summary: roster ? "The selected rosters are ready in one Organization JSON." : "The canonical account document passed validation and is open in this dashboard.", tone: "success", terminal: true });
+
+    const failure = job?.failure ?? null;
+    const continueLabel = roster ? "Continue Organization Data" : "Continue backup";
+    const continueOperation = roster ? `Continue Organization Data from ${section.label}` : `Continue backup from ${section.label}`;
+    if (jobStatus === "failed" && status?.continuable === true) {
+      const details = continuableFailurePresentation(job, section);
+      const controls = { ...NO_CONTROLS, resume: true, resumeLabel: continueLabel };
+      const base = { badge: "READY TO CONTINUE", operation: continueOperation, historyMessage: details.historyMessage, technicalMessage: details.technicalMessage, tone: "warning", terminal: true, controls };
+      if (failure?.code === "RSI_RATE_LIMITED") {
+        const until = Number.isFinite(Date.parse(status?.retryNotBefore)) ? status.retryNotBefore : null;
+        const waiting = continueCountdown(until ?? new Date(nowMs).toISOString(), failure.detail?.diagnosis);
+        return make(16, { ...base, summary: countdownText(waiting, nowMs), countdown: waiting, unavailableUntil: coolingUntil });
+      }
+      if (Object.hasOwn(SESSION_STOPS, failure?.code)) return make(17, { ...base, summary: SESSION_STOPS[failure.code] });
+      if (isContractStop(failure)) return make(18, { ...base, summary: TEXTS.schemaChanged });
+      return make(19, { ...base, summary: details.summary });
+    }
+    if (jobStatus === "failed" && (failure?.code === "RSI_RATE_LIMITED" || failure?.code === "RUN_LIFETIME_REACHED")) {
+      const stopped = buildAgainCountdown(coolingUntil ?? new Date(nowMs).toISOString(), false);
+      return make(20, { badge: "CONNECTED", operation: TEXTS.buildAgain, summary: countdownText(stopped, nowMs), countdown: stopped, tone: "warning", unavailableUntil: coolingUntil });
+    }
+    if (jobStatus === "failed" && isContractStop(failure)) return make(21, { badge: "FAILED", operation: roster ? "Organization Data stopped" : `Backup stopped in ${section.label}`, summary: TEXTS.schemaChanged, tone: "failure", terminal: true });
+    if (jobStatus === "failed") {
+      const message = typeof failure?.message === "string" ? failure.message.slice(0, 500) : "The run stopped with an explicit recoverable failure.";
+      return make(22, { badge: "FAILED", operation: roster ? "Organization Data stopped" : `Backup stopped in ${section.label}`, summary: message, tone: "failure", terminal: true });
+    }
+    if (jobStatus === "cancelled") return make(22, { badge: "CANCELLED", operation: roster ? "Organization Data cancelled" : "Account backup cancelled", summary: roster ? "The Organization Data job was cancelled." : "The account collection was cancelled.", terminal: true });
+    return make(23, { jobKind: null, badge: "CONNECTED", operation: "Ready to build your backup", summary: "CitizenData is connected and no account collection is active.", tone: "active" });
+  }
+
+  // The earlier name, for the callers that ask for the account and roster presentation.
+  function collectionStatusPresentation(publicStatus, options = {}) {
+    return buildPresentation(publicStatus, options);
   }
 
   function collectionProgress(activeJob) {
@@ -108,11 +371,42 @@
     });
   }
 
+  // The probe's result in W-19's words, each only where the evidence shows it: "answered", a recognised dossier; "refused",
+  // an HTTP answer in the limit or transient class; "no answer", nothing came back (a network failure or a time-out,
+  // which carry no HTTP status, or no request sent). Any other answer is shown as its HTTP status, such as "HTTP 404".
+  function smartCheckProbeWord(outcome, httpStatus) {
+    const answeredWith = Number.isSafeInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? httpStatus : null;
+    if (outcome === "answered") return "answered";
+    if (outcome === "refused") return answeredWith === null ? "no answer" : "refused";
+    if (outcome === "failed") return answeredWith === null ? "no answer" : `HTTP ${answeredWith}`;
+    return null;
+  }
+
   function safeActivityPresentation(activity) {
     if (!activity || typeof activity !== "object" || Array.isArray(activity)) return null;
     const section = collectionSectionPresentation(activity.section);
     const at = typeof activity.at === "string" && !Number.isNaN(Date.parse(activity.at)) ? activity.at : null;
     if (activity.kind === "section-started") return Object.freeze({ at, tone: "normal", message: `Starting ${section.label}.` });
+    const code = typeof activity.code === "string" && /^[A-Z0-9_]{1,80}$/u.test(activity.code) ? activity.code
+      : typeof activity.signal?.code === "string" && /^[A-Z0-9_]{1,80}$/u.test(activity.signal.code) ? activity.signal.code : "RSI_REFUSED";
+    // W-17: RSI refused, and the run waits.
+    if (activity.kind === "rate-limited") {
+      const seconds = Number.isSafeInteger(activity.waitMs) && activity.waitMs >= 0 ? Math.round(activity.waitMs / 1000) : 0;
+      return Object.freeze({ at, tone: "warning", message: `RSI refused ${section.label} · ${code} · retry in ${seconds} s.` });
+    }
+    // W-18: a section set aside, and the build goes on (§10.2).
+    if (activity.kind === "section-set-aside") return Object.freeze({ at, tone: "warning", message: `Skipped ${section.label} · ${code}. The build continues.` });
+    // W-24: one retry before braking.
+    if (activity.kind === "free-retry") return Object.freeze({ at, tone: "warning", message: `Retrying ${section.label} once · ${code}.` });
+    // W-19: the smart check, worded as far as its evidence goes. A status read alone names the status only.
+    if (activity.kind === "smart-check") {
+      const probe = smartCheckProbeWord(activity.probe ?? (activity.check === "public-page" ? activity.outcome : null), activity.httpStatus);
+      const statusOutcome = activity.status ?? (activity.check === "status-page" ? activity.outcome : null);
+      const statusWord = { ok: "ok", issue: "problem", unknown: "unavailable" }[statusOutcome] ?? null;
+      if (probe && statusWord) return Object.freeze({ at, tone: "warning", message: `Check · without login: ${probe} · RSI status: ${statusWord}.` });
+      if (statusWord) return Object.freeze({ at, tone: "warning", message: `Check · RSI status: ${statusWord}.` });
+      return null;
+    }
     if (activity.kind === "section-completed") {
       const records = Number.isSafeInteger(activity.recordsTotal) && activity.recordsTotal >= 0 ? activity.recordsTotal : 0;
       const requests = Number.isSafeInteger(activity.requestsTotal) && activity.requestsTotal >= 0 ? activity.requestsTotal : 0;
@@ -123,11 +417,37 @@
     const parts = [`${method} ${route}`];
     if (Number.isSafeInteger(activity.page) && activity.page > 0) parts.push(`page ${activity.page}${Number.isSafeInteger(activity.pageCount) && activity.pageCount > 0 ? ` of ${activity.pageCount}` : ""}`);
     if (activity.kind === "request-started") return Object.freeze({ at, tone: "normal", message: `Requesting ${parts.join(" · ")}.` });
+    // W-16: a request that timed out or failed on the network.
+    if (activity.kind === "request-failed") {
+      if (activity.error === "TIMEOUT") return Object.freeze({ at, tone: "warning", message: `Timed out: ${parts.join(" · ")}.` });
+      if (activity.error === "NETWORK") return Object.freeze({ at, tone: "warning", message: `Network error: ${parts.join(" · ")}.` });
+      return null;
+    }
     if (activity.kind !== "request-completed") return null;
     if (Number.isSafeInteger(activity.responseStatus)) parts.push(`HTTP ${activity.responseStatus}`);
     if (Number.isSafeInteger(activity.recordsReceived) && activity.recordsReceived >= 0) parts.push(`${activity.recordsReceived} record${activity.recordsReceived === 1 ? "" : "s"}`);
     if (Number.isSafeInteger(activity.elapsedMs) && activity.elapsedMs >= 0) parts.push(`${activity.elapsedMs} ms`);
     return Object.freeze({ at, tone: "normal", message: `Received ${parts.join(" · ")}.` });
+  }
+
+  // The log's rows, oldest first, each with its key: the activity's seq, or for an older extension a bounded composite.
+  // The give-up's public-page check and the status-page check that follows it are one W-19 line.
+  function activityRows(log) {
+    const entries = (Array.isArray(log) ? log : []).slice(-20);
+    const rows = [];
+    for (let index = 0; index < entries.length; index += 1) {
+      let entry = entries[index];
+      const next = entries[index + 1];
+      if (entry?.kind === "smart-check" && entry.check === "public-page" && next?.kind === "smart-check" && next.check === "status-page" && next.at === entry.at) {
+        entry = { ...entry, probe: entry.outcome, status: next.outcome };
+        index += 1;
+      }
+      const row = safeActivityPresentation(entry);
+      if (!row) continue;
+      const key = Number.isSafeInteger(entry.seq) ? `seq:${entry.seq}` : `line:${String(entry.kind).slice(0, 40)}:${row.at ?? ""}:${index}:${row.message.slice(0, 80)}`;
+      rows.push(Object.freeze({ ...row, key }));
+    }
+    return rows;
   }
 
   function asArray(value) {
@@ -310,7 +630,7 @@
 
   function getBillingTotal(document) {
     const total = document?.financial?.billingTotal;
-    if (!total || total.source !== "billingPageTotal" || typeof total.amount !== "string" || typeof total.currency !== "string") return null;
+    if (total?.source !== "billingPageTotal" || typeof total.amount !== "string" || typeof total.currency !== "string") return null;
     return total;
   }
 
@@ -336,8 +656,14 @@
     return parts.sign === "-" ? `-$${formatted.slice(1)}` : `$${formatted}`;
   }
 
-  function buildDefaultPlan() {
-    const selectedSections = ["profile", "financial.balances", "financial.billingTotal", "financial.ledgers", "financial.orders", "financial.subscriptions", "hangarLog", "pledges", "buybacks", "referrals.legacy.recruits", "referrals.current.prospects", "referrals.current.recruits", "organizations.memberships", "buybackDetails", "buybackUpgradePrices"];
+  // The plan the dashboard proposes: every account section in the settings' canonical order (identity, then Hangar
+  // Log), at the plan floor, which is the lowest section interval of the dashboard's settings or the extension's
+  // floor when the extension names a higher one. The settings (scripts/request-pacing-settings.js) load first.
+  function buildDefaultPlan(capabilities = null) {
+    const pacing = root.CITIZENDATA_REQUEST_PACING;
+    const ownFloorMs = Math.min(...Object.values(pacing.accountBuild.sections).map((section) => section.intervalMs));
+    const extensionFloorMs = capabilities?.pacing?.accountPlanFloorMs;
+    const selectedSections = [...pacing.accountBuild.sectionOrder];
     return {
       selectedSections,
       maximumRecordsBySection: {
@@ -357,7 +683,7 @@
         buybackDetails: 10000,
         buybackUpgradePrices: 10000
       },
-      minimumInterRequestDelayMs: 900
+      minimumInterRequestDelayMs: Number.isSafeInteger(extensionFloorMs) ? Math.max(ownFloorMs, extensionFloorMs) : ownFloorMs
     };
   }
 
@@ -454,5 +780,5 @@
       .toLocaleLowerCase();
   }
 
-  return Object.freeze({ asArray, buildDefaultPlan, collectionProgress, collectionSectionPresentation, collectionStatusPresentation, formatExactMoney, formatExactNumber, getBalance, getBillingTotal, getMainMembership, initials, inventoryLeadMediaIndex, inventoryMediaEntries, inventorySearchText, isPlaceholderImage, mediaLoadError, membersForOrganization, paginate, personLinks, referralSearchText, referralTimestamp, safeActivityPresentation, sortReferralRecords, validateAccountDocument });
+  return Object.freeze({ TEXTS, activityRows, asArray, buildDefaultPlan, buildPresentation, cautionPresentation, changeNotices, collectionProgress, coolingDownCountdown, refusedDialogCountdown, collectionSectionPresentation, collectionStatusPresentation, countdownRunning, countdownText, diagnosisText, validateStatus, formatExactMoney, formatExactNumber, getBalance, getBillingTotal, getMainMembership, initials, inventoryLeadMediaIndex, inventoryMediaEntries, inventorySearchText, isPlaceholderImage, mediaLoadError, membersForOrganization, paginate, personLinks, referralSearchText, referralTimestamp, safeActivityPresentation, sortReferralRecords, stopTechnicalDetail, validateAccountDocument });
 });

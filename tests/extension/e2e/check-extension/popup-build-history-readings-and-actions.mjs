@@ -13,7 +13,8 @@ export const historyState = () => extensionPage.evaluate(`Promise.all([chrome.ru
   summary: document.getElementById('historySummary').textContent,
   rows: [...document.querySelectorAll('#historyList li')].map((row) => ({ when: row.querySelector('.history-'
     + 'when').firstChild.textContent, detail: row.querySelector('small').textContent, buttons: [...row.querySelectorAll('button')].map((button) => button.textContent) })),
-  question: document.getElementById('historyOffQuestion').hidden ? null : document.getElementById('historyOffText').textContent,
+  // What is shown, not the attribute: the hidden attribute must hide the question's group although its class sets display.
+  question: getComputedStyle(document.getElementById('historyOffQuestion')).display === 'none' ? null : document.getElementById('historyOffText').textContent,
   recoveryNote: !document.getElementById('historyRecoveryNote').hidden,
   storage: document.getElementById('storageState').textContent,
   notice: document.getElementById('notice').textContent

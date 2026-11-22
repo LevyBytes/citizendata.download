@@ -5,7 +5,7 @@ export async function checkOpenedFileIsHandedOverAndAnswersAreTold() {
   const base = "Your file passed the canonical schema and SHA-256 integrity checks. It is open on this device; nothing was uploaded or saved by the website.";
   const connect = (answer, latest = "{ok:false,code:'NO_BUILD',message:'The extension holds no finished build.'}", organizationsAnswer = "{ok:true,kept:true,rosters:1}") => evaluate(`(async()=>{
     const session=crypto.randomUUID(),nonce='k'.repeat(40);
-    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:1,type,requestId,bridgeSessionId:session,nonce,payload}")};
+    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:2,type,requestId,bridgeSessionId:session,nonce,payload}")};
     const kept=structuredClone(window.CITIZENDATA_DEMO_DATA);kept.account.handle='KeptCitizen';kept.profile.handle='KeptCitizen';
     const stamped=await window.CitizenDataAccountDocument.stampIntegrity(kept);
     window.__keep={asked:0,payloads:[],order:[],organizations:[]};

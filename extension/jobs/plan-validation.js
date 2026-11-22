@@ -1,11 +1,15 @@
 (function initializeCitizenDataPlanValidation(root, factory) {
   "use strict";
 
-  const api = factory();
+  const api = factory(root);
   root.CitizenDataPlanValidation = api;
   if (typeof module === "object" && module?.exports) module.exports = api;
-})(globalThis, function createCitizenDataPlanValidation() {
+})(globalThis, function createCitizenDataPlanValidation(root) {
   "use strict";
+
+  // The request pacing settings (shared/request-pacing-settings.js) load before this file.
+  const PACING = root.CITIZENDATA_REQUEST_PACING;
+  if (!PACING) throw new Error("request-pacing-settings.js must load before plan-validation.js.");
 
   const ALLOWED_SECTIONS = Object.freeze([
     "profile",
@@ -24,8 +28,11 @@
     "referrals.legacy.recruits",
     "organizations.memberships"
   ]);
-  const MINIMUM_DELAY_MS = 900;
-  const ORGANIZATION_ROSTER_MINIMUM_DELAY_MS = 10000;
+  // The plan floors are derived from the settings: the lowest account section interval, and the roster interval.
+  const MINIMUM_DELAY_MS = Math.min(...Object.values(PACING.accountBuild.sections).map((section) => section.intervalMs));
+  const ORGANIZATION_ROSTER_MINIMUM_DELAY_MS = PACING.organizationRosters.intervalMs;
+  // The one canonical order of the account sections: identity, then Hangar Log, then the rest.
+  const SECTION_ORDER = PACING.accountBuild.sectionOrder;
   const MAXIMUM_DELAY_MS = 120000;
   const MAXIMUM_SECTION_RECORDS = 100000;
   const MAXIMUM_ORGANIZATION_ROSTER_RECORDS = 50000;
@@ -48,6 +55,11 @@
     return `organizations.members.${sid}`;
   }
 
+  function isCanonicalSubsequence(sections) {
+    const positions = sections.map((section) => SECTION_ORDER.indexOf(section));
+    return positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1]));
+  }
+
   function validatePlan(input) {
     if (!isPlainObject(input)) return { ok: false, code: "INVALID_PLAN", message: "The proposed plan must be an object." };
     const keys = Object.keys(input).sort();
@@ -66,6 +78,11 @@
     }
     if (rosterSections.length && rosterSections.length !== input.selectedSections.length) {
       return { ok: false, code: "ROSTER_PLAN_NOT_SEPARATE", message: "Organization rosters require a separate run containing only selected organization rosters." };
+    }
+    // An account plan names its sections in the canonical order; a continuation may leave finished ones out.
+    // A roster plan keeps the order the user checked.
+    if (!rosterSections.length && !isCanonicalSubsequence(input.selectedSections)) {
+      return { ok: false, code: "NONCANONICAL_SECTION_ORDER", message: "Account sections must follow the extension's section order: account identity first, then Hangar Log." };
     }
     if (!Number.isSafeInteger(input.minimumInterRequestDelayMs) || input.minimumInterRequestDelayMs < MINIMUM_DELAY_MS || input.minimumInterRequestDelayMs > MAXIMUM_DELAY_MS) {
       return { ok: false, code: "INVALID_PACING", message: `Pacing must be between ${MINIMUM_DELAY_MS} and ${MAXIMUM_DELAY_MS} milliseconds.` };
@@ -103,6 +120,7 @@
     MINIMUM_DELAY_MS,
     ORGANIZATION_ROSTER_MINIMUM_DELAY_MS,
     MAXIMUM_DELAY_MS,
+    SECTION_ORDER,
     MAXIMUM_SECTION_RECORDS,
     MAXIMUM_ORGANIZATION_ROSTER_RECORDS,
     MAXIMUM_ORGANIZATIONS_PER_ROSTER_RUN,

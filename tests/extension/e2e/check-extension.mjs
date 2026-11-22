@@ -23,17 +23,24 @@ import { hangarLinkExport } from "./check-extension/scenario-hangar-link-export.
 import { hostedDashboard } from "./check-extension/scenario-hosted-dashboard.mjs";
 import { keptImages } from "./check-extension/scenario-kept-images.mjs";
 import { largeAccount } from "./check-extension/scenario-large-account.mjs";
+import { ledgersRetryAfter } from "./check-extension/scenario-ledgers-retry-after.mjs";
 import { localCopyApproval } from "./check-extension/scenario-local-copy-approval.mjs";
 import { openedFileKept } from "./check-extension/scenario-opened-file-kept.mjs";
+import { paceStateAfterUpdate } from "./check-extension/scenario-pace-state-after-update.mjs";
+import { pauseCancelRaces } from "./check-extension/scenario-pause-cancel-races.mjs";
 import { pauseResumeCancel } from "./check-extension/scenario-pause-resume-cancel.mjs";
 import { popupClearAllData } from "./check-extension/scenario-popup-clear-all-data.mjs";
+import { protocolMismatch } from "./check-extension/scenario-protocol-mismatch.mjs";
 import { popupRecoveryImport } from "./check-extension/scenario-popup-recovery-import.mjs";
 import { reloadAndReconnect } from "./check-extension/scenario-reload-and-reconnect.mjs";
 import { revokeLocalApproval } from "./check-extension/scenario-revoke-local-approval.mjs";
 import { results, scenario } from "./check-extension/scenario-runner.mjs";
+import { sectionOrderAndPartial } from "./check-extension/scenario-section-order-and-partial.mjs";
 import { skipCcuPrices } from "./check-extension/scenario-skip-ccu-prices.mjs";
+import { throttledMalformedRows } from "./check-extension/scenario-throttled-malformed-rows.mjs";
 import { updateBackup } from "./check-extension/scenario-update-backup.mjs";
 import { watchdogRestartAndResultRecovery } from "./check-extension/scenario-watchdog-restart-and-result-recovery.mjs";
+import { workerRestartPoints } from "./check-extension/scenario-worker-restart-points.mjs";
 import { extensionErrors } from "./check-extension/service-worker-stop-storage-heap-and-errors.mjs";
 
 let exitCode = 0;
@@ -48,6 +55,13 @@ try {
   await scenario("kept-images", keptImages);
   await scenario("pause-resume-cancel", pauseResumeCancel);
   await scenario("skip-ccu-prices", skipCcuPrices);
+  await scenario("ledgers-retry-after", ledgersRetryAfter);
+  await scenario("worker-restart-points", workerRestartPoints);
+  await scenario("pace-state-after-update", paceStateAfterUpdate);
+  await scenario("pause-cancel-races", pauseCancelRaces);
+  await scenario("section-order-and-partial", sectionOrderAndPartial);
+  await scenario("throttled-malformed-rows", throttledMalformedRows);
+  await scenario("protocol-mismatch", protocolMismatch);
   await scenario("reload-and-reconnect", reloadAndReconnect);
   await scenario("watchdog-restart-and-result-recovery", watchdogRestartAndResultRecovery);
   await scenario("hosted-dashboard", hostedDashboard);

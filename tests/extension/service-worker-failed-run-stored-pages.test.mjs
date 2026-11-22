@@ -7,12 +7,16 @@ import { kept, resultOf } from "./service-worker-fixture-running-build-requests-
 test("a failed run keeps its stored pages for the continuation, and an incomplete run is removed once a later run ends", async () => {
   const harness = await createExtensionHarness();
   const tab = harness.openTab();
-  harness.rsi.failNext((request) => request.path === "/api/account/buybackPledges" && request.page === 2, { status: 503 });
+  // A 401 signs the session out and stops the run; a 410 would set the section aside (§10.1), and a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === "/api/account/buybackPledges" && request.page === 2, { status: 401 });
   await tab.build();
   assert.equal((await harness.finishJob()).status, "failed");
   const failed = kept(harness);
-  // The first page of buy-backs is stored once, and the partial result was staged with the failure.
-  assert.deepEqual(failed.pages.map((page) => [page.section, page.step, JSON.parse(page.text).raw.length]), [["buybacks", 1, 100]]);
+  // The first page of buy-backs is stored once, and the partial result was staged with the failure. Billing page 1,
+  // read before Buybacks, is kept beside them for the run's later billing sections (§7.3, D23).
+  const sectionPages = failed.pages.filter((page) => page.section !== "kept.billingPage1");
+  assert.deepEqual(sectionPages.map((page) => [page.section, page.step, JSON.parse(page.text).raw.length]), [["buybacks", 1, 100]]);
+  assert.deepEqual(failed.pages.filter((page) => page.section === "kept.billingPage1").map((page) => JSON.parse(page.text).url), ["https://robertsspaceindustries.com/account/billing?page=1&pagesize=100"]);
   assert.deepEqual(failed.stagedRuns[0].results.filter((result) => result.outcome.status !== "complete").map((result) => [result.section, result.outcome.status, result.value.length]), [["buybacks", "partial", 100]]);
   assert.equal(failed.jobs[0].storedStepsBySection.buybacks, 1);
 
@@ -36,7 +40,8 @@ test("a failed run keeps its stored pages for the continuation, and an incomplet
   await tab.request("ACKNOWLEDGE_RESULT", { runId: harness.state().lastCompletedRunId });
   tab.reload();
   harness.rsi.addPledges(30);
-  harness.rsi.failNext((request) => request.path === "/account/pledges" && request.page === 4, { status: 500 });
+  // A 401 signs the session out and stops the run; a 410 would set the section aside (§10.1), and a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === "/account/pledges" && request.page === 4, { status: 401 });
   await tab.build();
   assert.equal((await harness.finishJob()).status, "failed");
   assert.equal(kept(harness).pages.filter((page) => page.section === "pledges").length, 2);

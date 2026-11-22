@@ -151,7 +151,7 @@
         const waiters = waiting.get(file.assetId) ?? [];
         waiters.push({ resolve, reject });
         waiting.set(file.assetId, waiters);
-        timer ??= root.setTimeout(flush, BATCH_DELAY_MS);
+        if (timer === null) timer = root.setTimeout(flush, BATCH_DELAY_MS);
       });
     }
 

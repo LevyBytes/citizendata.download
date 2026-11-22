@@ -38,7 +38,7 @@ async function checkResultFinishedWithoutADashboard() {
   // A bridge from a different extension release, same protocol, connects normally and delivers a result that finished while no dashboard was open.
   await evaluate(`(async()=>{
     const session=crypto.randomUUID(),nonce='r'.repeat(40);
-    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:1,type,requestId,bridgeSessionId:session,nonce,payload}")};
+    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:2,type,requestId,bridgeSessionId:session,nonce,payload}")};
     const recovered=structuredClone(window.CITIZENDATA_DEMO_DATA);
     recovered.account.handle='RecoveredCitizen';recovered.profile.handle='RecoveredCitizen';recovered.profile.displayName='Recovered Citizen';
     const result=await window.CitizenDataAccountDocument.stampIntegrity(recovered);

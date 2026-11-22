@@ -18,6 +18,45 @@
     return typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
   }
 
+  // The text a reader of the page sees, read without layout: a document parsed for the extractors is never rendered,
+  // so innerText would give its whole text, script included. Every text node counts except those inside script,
+  // style, noscript, template or head, or inside an element hidden by the hidden attribute, aria-hidden="true" or an
+  // inline display: none or visibility: hidden. Block elements end with a space. The walk stops after
+  // VISIBLE_TEXT_LIMIT characters or VISIBLE_NODE_LIMIT nodes, so a large page is never read whole.
+  const VISIBLE_TEXT_LIMIT = 100_000;
+  const VISIBLE_NODE_LIMIT = 50_000;
+  const UNSEEN_ELEMENTS = new Set(["script", "style", "noscript", "template", "head"]);
+  const BLOCK_ELEMENTS = new Set(["address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "td", "th", "tr", "ul"]);
+  const isTextNode = (node) => node?.nodeType === 3 || (node?.nodeType === undefined && !Array.isArray(node?.childNodes) && typeof node?.textContent === "string");
+  const isElementNode = (node) => node?.nodeType === 1 || (node?.nodeType === undefined && Array.isArray(node?.childNodes));
+
+  function unseenElement(node) {
+    if (UNSEEN_ELEMENTS.has(String(node.localName ?? "").toLowerCase())) return true;
+    const attribute = (name) => typeof node.getAttribute === "function" ? node.getAttribute(name) : null;
+    if (attribute("hidden") !== null && attribute("hidden") !== undefined) return true;
+    if (attribute("aria-hidden") === "true") return true;
+    return /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b/iu.test(attribute("style") ?? "");
+  }
+
+  function visibleText(root) {
+    if (!root) return "";
+    if (isTextNode(root)) return root.textContent.slice(0, VISIBLE_TEXT_LIMIT);
+    let text = "";
+    let visited = 0;
+    const pending = [root];
+    while (pending.length > 0 && text.length < VISIBLE_TEXT_LIMIT && visited < VISIBLE_NODE_LIMIT) {
+      const node = pending.pop();
+      visited += 1;
+      if (typeof node === "string") text += node;
+      else if (isTextNode(node)) text += node.textContent;
+      else if (isElementNode(node) && (node === root || !unseenElement(node))) {
+        if (BLOCK_ELEMENTS.has(String(node.localName ?? "").toLowerCase())) pending.push(" ");
+        for (let index = node.childNodes.length - 1; index >= 0; index -= 1) pending.push(node.childNodes[index]);
+      }
+    }
+    return text.slice(0, VISIBLE_TEXT_LIMIT);
+  }
+
   function content(node, selectors) {
     for (const selector of selectors) {
       const match = node?.querySelector?.(selector);
@@ -97,7 +136,7 @@
 
   function extractSessionIdentity(document, { baseUrl = "https://robertsspaceindustries.com/en/account/pledges" } = {}) {
     const parsed = requireDocument(document);
-    const pageText = clean(parsed.body?.innerText ?? parsed.body?.textContent);
+    const pageText = clean(visibleText(parsed.body));
     const restricted = /restricted area/iu.test(pageText)
       && /authorized personnel only/iu.test(pageText)
       && /you must be authenticated to reach this area/iu.test(pageText);
@@ -622,5 +661,28 @@
     });
   }
 
-  return Object.freeze({ EXTRACTOR_VERSION, extractBuybackDetail, extractBuybacks, extractHangarLog, extractOrganizationMembers, extractOrganizationMemberships, extractPledges, extractProfile, extractReferralRows, extractSessionIdentity });
+  // Page identity (PARSER_HARDENING.md §5.3): the marker the page RSI sent for a fragment type must hold. Each is a
+  // selector the extractors already read on a working page. Fragment types without a marker are not checked here.
+  const PROFILE_ROOT = ".public-profile, #public-profile, .account-profile";
+  const BILLING_MARKER = Object.freeze({ selector: ".credits .credit-line" });
+  const PAGE_MARKERS = Object.freeze({
+    profile: Object.freeze({ selector: PROFILE_ROOT, label: Object.freeze({ selector: ".info .entry .label", text: /handle name/iu }) }),
+    "financial.balances": BILLING_MARKER,
+    "financial.billingTotal": BILLING_MARKER,
+    "financial.orders": BILLING_MARKER,
+    "financial.subscriptions": BILLING_MARKER,
+    pledges: Object.freeze({ selector: ".list-items" }),
+    "organizations.memberships": Object.freeze({ selector: PROFILE_ROOT })
+  });
+
+  // true when the fragment type's marker is present, false when it is not, null for a type without a marker.
+  function pageRecognized(document, fragmentType) {
+    const marker = Object.hasOwn(PAGE_MARKERS, fragmentType) ? PAGE_MARKERS[fragmentType] : null;
+    if (!marker) return null;
+    const roots = [...requireDocument(document).querySelectorAll(marker.selector)];
+    if (!marker.label) return roots.length > 0;
+    return roots.some((node) => [...node.querySelectorAll(marker.label.selector)].some((label) => marker.label.text.test(label.textContent ?? "")));
+  }
+
+  return Object.freeze({ EXTRACTOR_VERSION, PAGE_MARKERS, pageRecognized, extractBuybackDetail, extractBuybacks, extractHangarLog, extractOrganizationMembers, extractOrganizationMemberships, extractPledges, extractProfile, extractReferralRows, extractSessionIdentity });
 });

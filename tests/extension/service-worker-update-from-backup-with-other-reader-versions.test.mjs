@@ -57,6 +57,7 @@ test("a saved backup whose readers carried other version numbers is the basis of
   assert.equal(thirdRequests.filter((request) => request.path === "/account/pledges").length, Math.ceil(harness.rsi.state.pledges.length / 10));
   assert.equal(thirdRequests.filter((request) => request.path === "/api/account/buybackPledges").length, Math.ceil(harness.rsi.state.buybacks.length / 100));
   assert.deepEqual(thirdRequests.filter((request) => request.path.startsWith("/pledge/buyback/")), [], "no buy-back page is read again");
+  await import("../../extension/shared/request-pacing-settings.js");
   await import("../../extension/adapters/catalog.js");
   const version = (section) => globalThis.CitizenDataAdapterCatalog.get(section).version;
   assert.deepEqual([third.sync.sectionOutcomes.pledges.parserVersion, third.sync.sectionOutcomes.buybacks.parserVersion], [version("pledges"), version("buybacks")]);

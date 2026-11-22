@@ -8,7 +8,9 @@ import { ChromePipeConnection } from "./chrome-pipe-connection.mjs";
 import { ChromeSession } from "./chrome-session.mjs";
 
 export class ChromePipe extends ChromePipeConnection {
-  static async launch({ executable, profile, headless = true, extraArguments = [] }) {
+  // `renderingFlags` are the launch profile's (tests/support/chrome-test-launch.mjs). A launch whose browser exits before
+  // answering rejects with that exit code.
+  static async launch({ executable, profile, headless = true, renderingFlags = ["--disable-gpu"], extraArguments = [] }) {
     const browserArguments = [
       "--remote-debugging-pipe",
       "--enable-unsafe-extension-debugging",
@@ -18,7 +20,7 @@ export class ChromePipe extends ChromePipeConnection {
       "--disable-background-networking",
       "--disable-component-update",
       "--disable-sync",
-      "--disable-gpu",
+      ...renderingFlags,
       ...(headless ? ["--headless=new"] : []),
       ...extraArguments,
       "about:blank"

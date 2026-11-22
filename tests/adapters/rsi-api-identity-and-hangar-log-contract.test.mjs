@@ -4,7 +4,7 @@ import { harness } from "./rsi-api-in-a-sandbox.mjs";
 
 test("identity and Hangar Log use fixed authenticated POST contracts", async () => {
   const { api, calls, messages } = harness([
-    { data: { member: { id: 7, nickname: "VerifiedCitizen", displayname: "Verified Citizen", avatar: "/avatar.jpg" } } },
+    { success: 1, data: { member: { id: 7, nickname: "VerifiedCitizen", displayname: "Verified Citizen", avatar: "/avatar.jpg" } } },
     { success: 1, data: { rendered: "<div class=\"pledge-log-entry\">row</div>", page: 1, pagecount: 2 } },
     { success: 1, data: { rendered: "<div class=\"pledge-log-entry\">row</div>", page: 2, pagecount: 2 } }
   ]);

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { chromeExecutable } from "../../../support/chrome-test-launch.mjs";
 
 const help = "Usage: node tests/extension/e2e/check-extension.mjs --out <evidence directory> [--browser <Chrome executable>] [--headed] [--only <scenario,...>] [--large] [--open-file <account JSON> [--open-orgs <Orgs JSON>] [--open-zip <Images ZIP>]] "
   + "[--import-recovery <recovery JSON>]";
@@ -12,14 +13,6 @@ if (process.argv.includes("--help")) {
 }
 
 export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const defaultBrowsers = [
-  process.env.CHROME_PATH,
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/usr/bin/google-chrome",
-  "/usr/bin/chromium"
-].filter(Boolean);
 export let options;
 try {
   options = parseArgs({ options: {
@@ -31,7 +24,8 @@ try {
   console.error(`${error.message}\n${help}`);
   process.exit(2);
 }
-export const executable = options.browser ? path.resolve(options.browser) : defaultBrowsers.find((candidate) => existsSync(candidate));
+// Chrome is taken from --browser, then CHROME_PATH, then the usual install locations (tests/support/chrome-test-launch.mjs).
+export const executable = chromeExecutable(options.browser ? path.resolve(options.browser) : null);
 if (!executable || !existsSync(executable)) {
   console.error(`Chrome was not found. Pass --browser <Chrome executable>.\n${help}`);
   process.exit(2);

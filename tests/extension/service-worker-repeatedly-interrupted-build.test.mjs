@@ -53,7 +53,14 @@ test("a build interrupted again and again by Chrome records what an uninterrupte
   const [interrupted, uninterrupted] = [requested(harness.rsi), requested(steady.rsi)];
   assert.deepEqual([...interrupted.keys()].sort(), [...uninterrupted.keys()].sort());
   const repeated = [...interrupted].map(([key, count]) => [key, count - uninterrupted.get(key)]).filter(([, extra]) => extra !== 0);
-  assert.ok(repeated.every(([, extra]) => extra === 1), JSON.stringify(repeated));
+  // Billing page 1 is kept with the run's pages for the later billing sections (§7.3, D23), so a restarted worker reads
+  // it back: like any page, it is asked for again only when its own step was in flight.
+  const BILLING_PAGE_1 = "GET /account/billing 1";
+  assert.ok((interrupted.get(BILLING_PAGE_1) ?? 0) <= 2, `Billing page 1 was read ${interrupted.get(BILLING_PAGE_1)} times`);
+  // A worker restarted in CCU buyback prices has lost the run's open store session, so its context call is refused,
+  // the session is opened again and the context told again: one call more beside the step taken again.
+  const STORE_CONTEXT = "POST /api/ship-upgrades/setContextToken ";
+  assert.ok(repeated.every(([key, extra]) => key === STORE_CONTEXT ? extra >= 1 && extra <= 2 : extra === 1), JSON.stringify(repeated));
   assert.ok(repeated.length > 0 && repeated.length <= stops * 3, `${repeated.length} requests were repeated over ${stops} stops`);
   assert.deepEqual(kept(harness).pages, []);
 });

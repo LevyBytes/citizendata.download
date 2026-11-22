@@ -35,6 +35,9 @@
   "host_permissions": [
     "https://robertsspaceindustries.com/*"
   ],
+  "optional_host_permissions": [
+    "https://status.robertsspaceindustries.com/*"
+  ],
   "content_scripts": [
     {
       "matches": [

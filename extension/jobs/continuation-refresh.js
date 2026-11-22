@@ -1,11 +1,21 @@
 (function initializeCitizenDataContinuationRefresh(root, factory) {
   "use strict";
 
-  const api = factory();
+  const api = factory(root.CITIZENDATA_REQUEST_PACING);
   root.CitizenDataContinuationRefresh = api;
   if (typeof module === "object" && module?.exports) module.exports = api;
-})(globalThis, function createCitizenDataContinuationRefresh() {
+})(globalThis, function createCitizenDataContinuationRefresh(pacing) {
   "use strict";
+
+  // The canonical Account Data order of the settings file (§4.8).
+  const SECTION_ORDER = Object.freeze([...(pacing?.accountBuild?.sectionOrder ?? [])]);
+
+  // The sections in canonical order when every one is an Account Data section; otherwise, as for an organization
+  // roster's checklist, in the order given.
+  function canonicalOrder(sections) {
+    if (!sections.every((section) => SECTION_ORDER.includes(section))) return [...sections];
+    return [...sections].sort((left, right) => SECTION_ORDER.indexOf(left) - SECTION_ORDER.indexOf(right));
+  }
 
   function hasProfileBadgeCoverage(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)
@@ -66,7 +76,8 @@
       : selected.length;
 
     return Object.freeze({
-      selectedSections: Object.freeze([...refreshSections, ...remainingSections]),
+      // A refresh section joins the unfinished ones at its canonical place; no finished section is read again for it.
+      selectedSections: Object.freeze(canonicalOrder([...refreshSections, ...remainingSections])),
       refreshSections: Object.freeze(refreshSections),
       remainingSections: Object.freeze(remainingSections),
       resumeSection,

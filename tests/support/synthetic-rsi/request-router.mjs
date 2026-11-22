@@ -1,6 +1,6 @@
 import { BUYBACKS_PER_PAGE, LOG_ROWS_PER_PAGE, MEDIA } from "./page-sizes-and-ship-names.mjs";
 import { escapeHtml } from "./text-date-and-money-formats.mjs";
-import { fragment, html, json } from "./answer-shapes-and-paging.mjs";
+import { EMPTY_LEDGER_ANSWER, fragment, html, json } from "./answer-shapes-and-paging.mjs";
 import { renderBuyback } from "./pledge-buyback-and-order-markup.mjs";
 import { graphqlAndMemberAnswers } from "./graphql-and-organization-member-answers.mjs";
 import { accountPages } from "./profile-organization-billing-pledge-and-buyback-pages.mjs";
@@ -32,6 +32,7 @@ export function requestRouter(account) {
     );
     if (path === "/api/account/buybackPledges") return fragment(state.buybacks, page, BUYBACKS_PER_PAGE, renderBuyback);
     const ledger = { "/api/account/creditLog": "storeCredit", "/api/account/uecLog": "uec", "/api/account/recLog": "rec" }[path];
+    if (ledger && state.ledgers[ledger].length === 0 && page === 1) return json(structuredClone(EMPTY_LEDGER_ANSWER));
     if (ledger) return fragment(
       state.ledgers[ledger], page, LOG_ROWS_PER_PAGE,
       (row) => `<div class="pledge-log-entry"><p>${row.when} <span class="important">${row.amount < 0 ? `<del>${Math.abs(row.amount).toFixed(2)}</del>` : `<ins>${row.amount.toFixed(2)}</ins>`}</span> - ${escapeHtml(row.detail)}</p></div>`

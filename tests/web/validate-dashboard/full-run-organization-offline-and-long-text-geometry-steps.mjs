@@ -51,7 +51,8 @@ for (const width of [1780, 1280, 1000, 980, 640, 390]) {
 
 for (const [width, height] of [[640, 320], [390, 400], [320, 480]]) {
   await setViewport(width, height);
-  await evaluate("(()=>{window.__emitCitizenDataStatus(structuredClone(window.__citizendataActiveStatus));document.querySelector('#parserOverlay').classList.remove('minimized');return true})()");
+  // A status never shows the panel (PARSER_HARDENING.md §11.2); Build does, as the user's action.
+  await evaluate("(()=>{window.__emitCitizenDataStatus(structuredClone(window.__citizendataActiveStatus));document.querySelector('#buildButton').click();document.querySelector('#parserOverlay').classList.remove('minimized');return true})()");
   await waitFor("!document.querySelector('#parserOverlay').hidden && !document.querySelector('#collectionActivity').hidden");
   await checkFloatingGeometry('#parserOverlay', `expanded active status at ${width}x${height}`);
   if (captureScreenshots) await captureElement('#parserOverlay', `work-temp-active-status-${width}x${height}.png`);

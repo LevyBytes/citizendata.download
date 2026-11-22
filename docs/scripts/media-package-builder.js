@@ -105,8 +105,13 @@
         startedAt: options.startedAt ?? generatedAt,
         endedAt: options.endedAt ?? generatedAt,
         requestCount: Number.isSafeInteger(options.requestCount) ? options.requestCount : materialized.assets.filter((asset) => asset.status !== "reused").length,
-        retryCount: materialized.assets.reduce((total, asset) => total + Math.max(0, (asset.attempts ?? 1) - 1), 0),
+        // Today's retries, and the attempts RSI refused, which an image's attempts do not count (§14).
+        retryCount: materialized.assets.reduce((total, asset) => total + Math.max(0, (asset.attempts ?? 1) - 1), 0) + (Number.isSafeInteger(materialized.refusedAttempts) && materialized.refusedAttempts > 0 ? materialized.refusedAttempts : 0),
         effectiveMinimumInterRequestDelayMs: policy.minimumInterRequestDelayMs,
+        // The run's pacing summary (§4.7): the controller and settings that paced it, and what the image hosts answered.
+        ...(materialized.pacing ? { pacing: JSON.parse(JSON.stringify(materialized.pacing)) } : {}),
+        // Where the image history came from, what it held, the samples used, and the history with this run (§14).
+        ...(materialized.paceHistory ? { paceHistory: JSON.parse(JSON.stringify(materialized.paceHistory)) } : {}),
         warnings: complete ? [] : ["Some images could not be downloaded. Successful images remain usable."],
         promoted: complete
       },
@@ -151,4 +156,3 @@
 
   return Object.freeze({ buildArchive, download, mediaMapScript, safeStem, save, sha256 });
 });
-

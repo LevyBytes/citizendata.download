@@ -1,6 +1,8 @@
 export const RSI_ORIGIN = "https://robertsspaceindustries.com";
 export const HOSTED_ORIGIN = "https://citizendata.download";
 export const MEDIA_ORIGIN = "https://media.robertsspaceindustries.com";
+// RSI's status page and feed, answered by the synthetic account (PARSER_HARDENING.md §9.3).
+export const STATUS_ORIGIN = "https://status.robertsspaceindustries.com";
 // A 1 by 1 PNG. Each image address is answered with it followed by the address, so no two images share content.
 export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 export const TOKEN = "synthetic-session-token-0123456789";

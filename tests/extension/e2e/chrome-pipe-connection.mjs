@@ -20,11 +20,11 @@ export class ChromePipeConnection {
         this.#dispatch(message);
       }
     });
-    child.on("exit", () => {
+    child.on("exit", (exitCode) => {
       this.closed = true;
       for (const request of this.pending.values()) {
         clearTimeout(request.timer);
-        request.reject(new Error(`Chrome exited before answering ${request.method}.\n${this.stderr}`));
+        request.reject(Object.assign(new Error(`Chrome exited with ${exitCode} before answering ${request.method}.\n${this.stderr}`), { exitCode }));
       }
       this.pending.clear();
     });

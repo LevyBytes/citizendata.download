@@ -75,3 +75,14 @@ test("safe activity presentation uses only closed progress fields", () => {
   assert.equal(Model.safeActivityPresentation({ kind: "request-completed", method: "DELETE", route: "/api/path?token=secret" }).message, "Received REQUEST allowed RSI route.");
   assert.equal(Model.safeActivityPresentation({ kind: "unknown" }), null);
 });
+
+test("a stop's technical detail names the HTTP status, RSI's code and RSI's message, continuable or not (criterion 7)", () => {
+  const signal = { kind: "limit", code: "RSI_API_HTTP_429", httpStatus: 429, rsiCode: "ErrRateLimited", rsiMessage: "Too many requests <b>now</b>" };
+  const failure = { code: "RSI_RATE_LIMITED", message: "RSI is limiting requests.", detail: { signal } };
+  const expected = "RSI_RATE_LIMITED: RSI is limiting requests. | HTTP status 429 | RSI code ErrRateLimited | RSI message: Too many requests b now /b";
+  assert.equal(Model.stopTechnicalDetail(failure), expected);
+  const continuable = Model.collectionStatusPresentation({ status: "failed", continuable: true, requiresRebind: false, activeJob: { status: "failed", currentSection: "storeCredit", failure } }, { bridgeConnected: true });
+  assert.equal(continuable.badge, "READY TO CONTINUE");
+  assert.equal(continuable.technicalMessage, expected);
+  assert.equal(Model.stopTechnicalDetail({ code: "RSI_SIGNED_OUT", message: "RSI_SIGNED_OUT" }), "RSI_SIGNED_OUT");
+});

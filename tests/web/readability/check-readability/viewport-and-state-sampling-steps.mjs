@@ -20,7 +20,7 @@ for (const viewport of plan.viewports) {
     const tools = contrastTools();
     setPalette(colors.map(pair => {
       const foreground = tools.parseColor(pair.foregroundValue), base = tools.parseColor(pair.backgroundValue), over = pair.overValue ? tools.parseColor(pair.overValue) : null;
-      if (!foreground || !base || (base.a < 1 && (!over || over.a !== 1))) return { ...pair, status: 'manual', reason: 'unsupported/missing palette value or no explicit opaque backdrop', scope: 'explicit solid-only contract' };
+      if (!foreground || !base || (base.a < 1 && over?.a !== 1)) return { ...pair, status: 'manual', reason: 'unsupported/missing palette value or no explicit opaque backdrop', scope: 'explicit solid-only contract' };
       const background = base.a === 1 ? base : tools.composite(base, over), ratio = tools.ratio(foreground, background);
       return { ...pair, ratio, status: ratio >= (pair.minimum || 4.5) ? 'passed' : 'failed', scope: 'explicit solid-only contract; does not pass rendered complex backgrounds' };
     }));

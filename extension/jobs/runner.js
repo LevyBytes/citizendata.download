@@ -1,24 +1,107 @@
 (function initializeCitizenDataRunner(root, factory) {
   "use strict";
 
-  const api = factory(root.CitizenDataAuthorization, root.CitizenDataDatabase);
+  const api = factory(root.CitizenDataAuthorization, root.CitizenDataDatabase, root.CITIZENDATA_REQUEST_PACING, root.CitizenDataPaceController, root.CitizenDataPaceHistory);
   root.CitizenDataRunner = api;
-  if (typeof module === "object" && module?.exports) module.exports = factory(require("../shared/authorization.js"), require("../storage/database.js"));
-})(globalThis, function createCitizenDataRunner(Authorization, Database) {
+  if (typeof module === "object" && module?.exports) module.exports = factory(require("../shared/authorization.js"), require("../storage/database.js"), require("../shared/request-pacing-settings.js").settings, require("../shared/pace-controller.js"), require("../shared/pace-history.js"));
+})(globalThis, function createCitizenDataRunner(Authorization, Database, Pacing, PaceController, PaceHistory) {
   "use strict";
 
-  const TERMINAL = new Set(["cancelled", "failed", "complete"]);
+  // The request pacing settings, the pace controller and the pace history (shared/) load before this file.
+  if (!Pacing) throw new Error("request-pacing-settings.js must load before runner.js.");
+  if (!PaceController || !PaceHistory) throw new Error("pace-controller.js and pace-history.js must load before runner.js.");
+
+  // `partial`: a run that ended with a section set aside (§10.3).
+  const TERMINAL = new Set(["cancelled", "failed", "complete", "partial"]);
   const MAXIMUM_REQUESTS_PER_JOB = 4096;
   const MAXIMUM_REQUESTS_PER_SECTION = 2048;
-  const MAXIMUM_BASELINE_JITTER_MS = 200;
+  // The baseline pace: the lowest account section interval, and the largest jitter a section has at it.
+  const BASELINE_INTERVAL_MS = Math.min(...Object.values(Pacing.accountBuild.sections).map((section) => section.intervalMs));
+  const MAXIMUM_BASELINE_JITTER_MS = Math.max(...Object.values(Pacing.accountBuild.sections).map((section) => section.jitterMs ?? 0));
   const ACTIVITY_LIMIT = 20;
+  // The separate allowances of actual requests (§7.13). Each has its own counter; none borrows from another.
+  // Appends activities to a job's log, each numbered by the job's own sequence (§12.5). The sequence goes on from the
+  // highest of the stored sequence and the numbers the log holds, so a job stored before the sequence, or a log
+  // carried into a continuation, is never numbered again from below.
+  function appendActivities(job, entries) {
+    let sequence = activitySequenceOf(job);
+    const numbered = entries.map((entry) => {
+      sequence += 1;
+      return { ...entry, seq: sequence };
+    });
+    return { activityLog: [...(job.activityLog ?? []), ...numbered].slice(-ACTIVITY_LIMIT), activitySequence: sequence };
+  }
+
+  function activitySequenceOf(job) {
+    const stored = Number.isSafeInteger(job.activitySequence) && job.activitySequence > 0 ? job.activitySequence : 0;
+    return (Array.isArray(job.activityLog) ? job.activityLog : []).reduce((highest, entry) => Math.max(highest, Number.isSafeInteger(entry?.seq) ? entry.seq : 0), stored);
+  }
+
+  const REQUEST_ALLOWANCES = Object.freeze(["baseline", "retries", "canaryAndSessionChecks", "probes", "statusChecks"]);
+
+  function emptyAllowanceCounts() {
+    return Object.fromEntries(REQUEST_ALLOWANCES.map((name) => [name, 0]));
+  }
+
+  const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
+  const isPlainRecord = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+  // Null when `value` names every allowance once, each a finite count of at least 0; otherwise what is wrong.
+  function allowancesProblem(value, name) {
+    if (!isPlainRecord(value)) return `${name} is not a set of allowances.`;
+    const unknown = Object.keys(value).find((key) => !REQUEST_ALLOWANCES.includes(key));
+    if (unknown !== undefined) return `${name} names an unknown allowance.`;
+    const wrong = REQUEST_ALLOWANCES.find((key) => !isCount(value[key]));
+    return wrong === undefined ? null : `${name}.${wrong} is missing or not a whole number of at least 0.`;
+  }
+
+  // Null when a job's request counters (§7.13) are whole numbers of at least 0, with every allowance counted;
+  // otherwise what is wrong. The message names fields only, never a stored value.
+  function requestCountersProblem(job) {
+    if (!isCount(job.actualRequestCount)) return "actualRequestCount is missing or not a whole number of at least 0.";
+    const byAllowance = allowancesProblem(job.actualRequestsByAllowance, "actualRequestsByAllowance");
+    if (byAllowance) return byAllowance;
+    if (!isPlainRecord(job.actualRequestsBySection) || !Object.values(job.actualRequestsBySection).every(isCount)) return "actualRequestsBySection holds a count that is not a whole number of at least 0.";
+    if (job.retriedHttpRequestCount !== undefined && !isCount(job.retriedHttpRequestCount)) return "retriedHttpRequestCount is not a whole number of at least 0.";
+    return allowancesProblem(job.maximumActualRequests, "maximumActualRequests");
+  }
+  // The most requests one logical step sends: the CCU step's five, one after another.
+  const MAXIMUM_REQUESTS_PER_STEP = 5;
+  const REFUSAL_KINDS = new Set(["limit", "transient", "ambiguous"]);
+  const IDENTIFY_ROUTE = "/api/spectrum/auth/identify";
+  // The sections that read the billing page (D23).
+  const BILLING_SECTIONS = new Set(["financial.balances", "financial.billingTotal", "financial.orders", "financial.subscriptions"]);
+  // Billing page 1 as the client read it, kept with the run's stored pages until the run's pages are deleted (§7.3, D23).
+  const KEPT_BILLING_SECTION = "kept.billingPage1";
+  // The fixed message of each code a run stops with for the time being (§7.4).
+  const STOP_MESSAGES = Object.freeze({
+    RSI_RATE_LIMITED: "RSI kept refusing requests.",
+    RUN_LIFETIME_REACHED: "The run reached its time limit.",
+    RSI_SIGNED_OUT: "The RSI session is signed out.",
+    RSI_ACCOUNT_CHANGED: "A different RSI account is signed in.",
+    RSI_CHECK_IN_BROWSER: "RSI asks for a check in the browser."
+  });
+  // The user's matters, by the signal's reason (§7.6).
+  const USER_STOP_CODES = Object.freeze({ "signed-out": "RSI_SIGNED_OUT", "account-changed": "RSI_ACCOUNT_CHANGED", "check-in-browser": "RSI_CHECK_IN_BROWSER" });
+
+  // The fixed route of a request family: the dossier's address names the account, so its handle is left out.
+  function routeTemplate(route) {
+    return /^\/en\/citizens\/[^/]+$/u.test(route) ? "/en/citizens/{handle}" : route;
+  }
+
+  // JSON with object keys sorted, as the settings fingerprint is written (§4.7).
+  function canonicalJson(value) {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+    return JSON.stringify(value);
+  }
 
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   }
 
   function safeRequestStartedActivity(value) {
-    if (!value || value.kind !== "request-started" || !["GET", "POST"].includes(value.method)
+    if (value?.kind !== "request-started" || !["GET", "POST"].includes(value.method)
       || typeof value.route !== "string" || !/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,200}$/u.test(value.route)
       || value.page !== null && (!Number.isSafeInteger(value.page) || value.page < 1)
       || value.pageCount !== null && (!Number.isSafeInteger(value.pageCount) || value.pageCount < 1)
@@ -31,6 +114,97 @@
       pageCount: value.pageCount,
       at: value.at
     };
+  }
+
+  const SAFE_ROUTE = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,200}$/u;
+
+  function nullableCount(value, minimum = 0) {
+    return value === null || Number.isSafeInteger(value) && value >= minimum;
+  }
+
+  // A request line of a step, with every field bounded; null when any field is out of its shape.
+  function safeRequestCompletedActivity(value) {
+    if (value?.kind !== "request-completed" || !["GET", "POST"].includes(value.method) || typeof value.route !== "string" || !SAFE_ROUTE.test(value.route)
+      || !nullableCount(value.page, 1) || !nullableCount(value.pageCount, 1) || !Number.isSafeInteger(value.responseStatus) || value.responseStatus < 100 || value.responseStatus > 599
+      || !nullableCount(value.recordsReceived ?? null) || !nullableCount(value.recordsTotal ?? null) || !nullableCount(value.retryAfterMs ?? null)
+      || !nullableCount(value.elapsedMs ?? null) || typeof value.at !== "string" || Number.isNaN(Date.parse(value.at))) return null;
+    return {
+      kind: "request-completed",
+      method: value.method,
+      route: value.route,
+      page: value.page,
+      pageCount: value.pageCount,
+      responseStatus: value.responseStatus,
+      recordsReceived: value.recordsReceived ?? null,
+      recordsTotal: value.recordsTotal ?? null,
+      retryAfterMs: value.retryAfterMs ?? null,
+      elapsedMs: value.elapsedMs ?? null,
+      at: value.at
+    };
+  }
+
+  // A request that timed out or failed on the network (§5.5).
+  function safeRequestFailedActivity(value) {
+    if (value?.kind !== "request-failed" || !["GET", "POST"].includes(value.method) || typeof value.route !== "string" || !SAFE_ROUTE.test(value.route)
+      || !nullableCount(value.page, 1) || !["TIMEOUT", "NETWORK"].includes(value.error) || !nullableCount(value.elapsedMs ?? null)
+      || typeof value.at !== "string" || Number.isNaN(Date.parse(value.at))) return null;
+    return { kind: "request-failed", method: value.method, route: value.route, page: value.page, error: value.error, elapsedMs: value.elapsedMs ?? null, at: value.at };
+  }
+
+  // The request lines of a step that may enter the activity log: completed and failed requests, each validated.
+  // A smart-check line (§8.2, §9): the request without cookies or the status feed, and what it gave.
+  const SMART_CHECK_OUTCOMES = Object.freeze({ "public-page": ["answered", "refused", "failed"], "status-page": ["ok", "issue", "unknown"] });
+  function safeSmartCheckActivity(value) {
+    if (value?.kind !== "smart-check" || typeof value.at !== "string" || Number.isNaN(Date.parse(value.at))) return null;
+    if (typeof value.section !== "string" || !/^[A-Za-z0-9._-]{1,120}$/u.test(value.section)) return null;
+    if (!Object.hasOwn(SMART_CHECK_OUTCOMES, value.check) || !SMART_CHECK_OUTCOMES[value.check].includes(value.outcome)) return null;
+    const httpStatus = Number.isSafeInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599 ? value.httpStatus : null;
+    return { kind: "smart-check", at: value.at, section: value.section, check: value.check, outcome: value.outcome, httpStatus };
+  }
+
+  function safeRequestActivities(values) {
+    // Lines of a refused attempt are written by the runner itself; the adapter's lines are its requests.
+    return (Array.isArray(values) ? values : []).flatMap((value) => {
+      const safe = value?.kind === "request-completed" ? safeRequestCompletedActivity(value) : value?.kind === "request-failed" ? safeRequestFailedActivity(value) : value?.kind === "smart-check" ? safeSmartCheckActivity(value) : null;
+      return safe ? [safe] : [];
+    });
+  }
+
+  // A signal as an activity line shows it: its class, code, status and wait, the request it answered, never RSI's
+  // message.
+  function safeSignal(value) {
+    if (!value || !["limit", "transient", "ambiguous", "user", "contract"].includes(value.kind) || typeof value.code !== "string" || !/^[A-Z0-9_]{1,80}$/u.test(value.code)) return null;
+    const route = typeof value.route === "string" && SAFE_ROUTE.test(value.route) ? value.route : null;
+    return {
+      kind: value.kind,
+      code: value.code,
+      httpStatus: Number.isSafeInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599 ? value.httpStatus : null,
+      retryAfterMs: Number.isSafeInteger(value.retryAfterMs) && value.retryAfterMs >= 0 ? value.retryAfterMs : null,
+      method: value.method === "GET" || value.method === "POST" ? value.method : null,
+      route,
+      page: Number.isSafeInteger(value.page) && value.page > 0 ? value.page : null,
+      fromCanary: value.fromCanary === true
+    };
+  }
+
+  // A refused attempt's line: a free retry (rule 8) or a refusal with its wait, factor and attempt (§7.4).
+  function safePaceActivity(value) {
+    if (!value || !["free-retry", "rate-limited"].includes(value.kind) || typeof value.at !== "string" || Number.isNaN(Date.parse(value.at))) return null;
+    if (typeof value.section !== "string" || !/^[A-Za-z0-9._-]{1,120}$/u.test(value.section)) return null;
+    const signal = safeSignal(value.signal);
+    if (!signal || !Number.isSafeInteger(value.waitMs) || value.waitMs < 0 || value.waitMs > 86400000) return null;
+    const line = { kind: value.kind, at: value.at, section: value.section, signal, waitMs: value.waitMs };
+    if (value.kind === "free-retry") return line;
+    if (typeof value.factor !== "number" || !Number.isFinite(value.factor) || value.factor < 1 || !Number.isSafeInteger(value.attempt) || value.attempt < 1) return null;
+    return { ...line, factor: Math.round(value.factor * 1000) / 1000, attempt: value.attempt };
+  }
+
+  const MAXIMUM_CONTRACT_FINDINGS = 100;
+
+  // The staged run's contract findings with one more, each finding once by its key, the newest kept.
+  function withContractFinding(findings, finding) {
+    if (!finding || typeof finding.findingKey !== "string" || !/^[a-f0-9]{64}$/u.test(finding.findingKey)) return findings ?? [];
+    return [...(findings ?? []).filter((entry) => entry?.findingKey !== finding.findingKey), clone(finding)].slice(-MAXIMUM_CONTRACT_FINDINGS);
   }
 
   function merge(target, patch) {
@@ -89,13 +263,29 @@
       httpRequestCount: 0,
       lastActivity: null,
       activityLog: [],
+      activitySequence: 0,
       updateSignals: {},
       accountVerifiedAt: null,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
       failure: null,
-      warnings: []
+      warnings: [],
+      // The pace of this run (shared/pace-controller.js). Every run starts slower than the fastest baseline (§6.4,
+      // rule 1); no pace is carried over from another run.
+      pace: PaceController.initialPace(Pacing),
+      // A request slot kept for a later invocation of the worker (§6.3), or null.
+      pendingStep: null,
+      // Every request actually sent, retries, canaries, probes and status checks included (§7.13). The step caps above
+      // count logical steps; these bound what is sent. The maximum comes from the plan and the adapters, and is set
+      // by the runner before the first request.
+      actualRequestCount: 0,
+      actualRequestsBySection: {},
+      actualRequestsByAllowance: emptyAllowanceCounts(),
+      maximumActualRequests: clone(input.maximumActualRequests ?? null),
+      retriedHttpRequestCount: 0,
+      // This run's record in the retained pace history (shared/pace-history.js).
+      paceHistory: { historyKey: PaceHistory.runKey(input.runId), settingsFingerprint: input.settingsFingerprint ?? null }
     };
   }
 
@@ -118,6 +308,9 @@
     const schedule = options.schedule ?? (async () => {});
     const sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     const onStatus = options.onStatus ?? (async () => {});
+    // Told the time a waiting job's status refresh is due, or null when none is, so the host can keep it across worker
+    // restarts (§7.5).
+    const onStatusRefresh = options.onStatusRefresh ?? (async () => {});
     const assembleDocument = options.assembleDocument;
     // Decides what the build history gains and loses when a finished build replaces the saved one. Optional.
     const planHistory = options.planHistory ?? null;
@@ -148,8 +341,158 @@
 
     // What a control request writes to the stored job while a step is in flight: its status, and the sections the
     // user asked to skip. A step that saves its own progress keeps both.
-    function controlled(stored) {
-      return { status: stored.status, ...(Array.isArray(stored.skipSections) ? { skipSections: stored.skipSections } : {}) };
+    // What the stored record owns over a copy being written: the status, the sections to skip, and what a status-feed
+    // read added meanwhile (§7.5): the newer status page, its smart-check line, and the diagnostic requests reserved.
+    function controlled(stored, next = null) {
+      const owned = { status: stored.status, ...(Array.isArray(stored.skipSections) ? { skipSections: stored.skipSections } : {}) };
+      if (!next) return owned;
+      const kept = {};
+      const storedPage = stored.pace?.statusPage ?? null;
+      if (next.pace && storedPage && !(Date.parse(next.pace.statusPage?.checkedAt) >= Date.parse(storedPage.checkedAt))) {
+        kept.pace = { ...next.pace, statusPage: storedPage };
+      }
+      Object.assign(kept, keepMergedLines(stored, next));
+      const reserved = {};
+      for (const name of ["probes", "statusChecks"]) {
+        const more = (stored.actualRequestsByAllowance?.[name] ?? 0) - (next.actualRequestsByAllowance?.[name] ?? 0);
+        if (more > 0) reserved[name] = more;
+      }
+      if (Object.keys(reserved).length > 0) {
+        kept.actualRequestsByAllowance = { ...next.actualRequestsByAllowance, ...Object.fromEntries(Object.entries(reserved).map(([name, more]) => [name, (next.actualRequestsByAllowance?.[name] ?? 0) + more])) };
+        kept.actualRequestCount = (next.actualRequestCount ?? 0) + Object.values(reserved).reduce((total, more) => total + more, 0);
+      }
+      return { ...kept, ...owned };
+    }
+
+    // The smart-check lines a status merge stored after this copy was read keep their numbers; this copy's own new lines
+    // are numbered after them. The lines both hold are the common start; without one nothing is changed.
+    function keepMergedLines(stored, next) {
+      const key = (line) => JSON.stringify(line);
+      const storedKeys = new Set((stored.activityLog ?? []).map(key));
+      const nextKeys = new Set((next.activityLog ?? []).map(key));
+      const common = (next.activityLog ?? []).filter((line) => storedKeys.has(key(line)));
+      if (common.length === 0) return {};
+      const base = Math.max(...common.map((line) => line.seq ?? 0));
+      const merged = (stored.activityLog ?? []).filter((line) => line.kind === "smart-check" && line.seq > base && !nextKeys.has(key(line)));
+      if (merged.length === 0) return {};
+      let sequence = Math.max(activitySequenceOf(stored), ...merged.map((line) => line.seq));
+      const own = (next.activityLog ?? []).filter((line) => line.seq > base && !storedKeys.has(key(line))).map((line) => {
+        sequence += 1;
+        return { ...line, seq: sequence };
+      });
+      const earlier = (next.activityLog ?? []).filter((line) => line.seq <= base);
+      return { activityLog: [...earlier, ...merged, ...own].slice(-ACTIVITY_LIMIT), activitySequence: sequence };
+    }
+
+    // The most requests of an allowance a job may send: the job's bound, and the authorization's when it names one.
+    // Both are checked counts before the first request of a tick (normalizeStoredState, checkedAuthorizationBounds);
+    // a bound that is not a count is none at all, never an unlimited one.
+    function allowanceBound(job, authorization, allowance) {
+      const own = job.maximumActualRequests?.[allowance];
+      const authorized = authorization?.maximumActualRequests?.[allowance] ?? own;
+      return isCount(own) && isCount(authorized) ? Math.min(own, authorized) : 0;
+    }
+
+    // Whether a request of an allowance may still be sent.
+    function allowanceLeft(job, authorization, allowance) {
+      return (job.actualRequestsByAllowance?.[allowance] ?? 0) < allowanceBound(job, authorization, allowance);
+    }
+
+    function reserveRequests(job, allowances) {
+      const counts = { ...(job.actualRequestsByAllowance ?? {}) };
+      for (const allowance of allowances) counts[allowance] = (counts[allowance] ?? 0) + 1;
+      return { ...job, actualRequestCount: (job.actualRequestCount ?? 0) + allowances.length, actualRequestsByAllowance: counts };
+    }
+
+    // RSI's status feed while a warning shows (§7.5): read when no result as recent as the cache period is stored, and
+    // never while one read of this job is under way. Its request is reserved first. The read does not hold up a wait or
+    // a step; the repository merges its result into the stored job, which the runner's next write keeps.
+    const statusReads = new Set();
+    // When this worker last set out to read the status feed for a job, so a read in flight or refused by its allowance
+    // is not tried again before the next cache period.
+    const statusAttempts = new Map();
+    // A real status request reserves its allowance in the job transaction immediately before the checker fetches.
+    // A cache hit or another worker's pending lease never calls this hook and therefore consumes no allowance.
+    async function reserveStatusRequest(job, authorization) {
+      const outcome = await exclusive(() => repository.updateRun({
+        jobId: job.jobId,
+        authorizationId: authorization?.authorizationId ?? null,
+        decide: ({ job: stored, authorization: storedAuthorization }) => {
+          const currentAuthorization = storedAuthorization ?? authorization;
+          if (stored?.status !== "running" || !stored.pace?.warning || !allowanceLeft(stored, currentAuthorization, "statusChecks")) return { outcome: { reserved: false } };
+          return { job: reserveRequests(stored, ["statusChecks"]), outcome: { reserved: true } };
+        }
+      }));
+      return outcome?.reserved === true;
+    }
+
+    async function startStatusRead(job, adapter, authorization) {
+      if (!job.pace?.warning || typeof adapter?.checkStatusPage !== "function" || typeof repository.mergeStatusPage !== "function" || statusReads.has(job.jobId)) return job;
+      const checkedAtMs = Date.parse(job.pace.statusPage?.checkedAt);
+      if (Number.isFinite(checkedAtMs) && nowMs() - checkedAtMs < Pacing.smartCheck.statusPageCacheMs) return job;
+      statusAttempts.set(job.jobId, nowMs());
+      if (!allowanceLeft(job, authorization, "statusChecks")) return job;
+      statusReads.add(job.jobId);
+      void Promise.resolve()
+        .then(() => adapter.checkStatusPage({ beforeRequest: () => reserveStatusRequest(job, authorization) }))
+        .then((statusPage) => repository.mergeStatusPage({
+          jobId: job.jobId,
+          runId: job.runId,
+          statusPage,
+          activity: safeSmartCheckActivity({ kind: "smart-check", at: statusPage?.checkedAt, section: job.plan.selectedSections[job.sectionIndex] ?? "run", check: "status-page", outcome: statusPage?.status, httpStatus: statusPage?.httpStatus }),
+          activityLimit: ACTIVITY_LIMIT
+        }))
+        .catch(() => false)
+        .finally(() => statusReads.delete(job.jobId));
+      return job;
+    }
+
+    // When a job's status feed result is next due while its warning shows: one cache period after the later of the
+    // stored result and this worker's last attempt; null without a warning.
+    function statusRefreshDue(job) {
+      if (!job.pace?.warning) return null;
+      const last = Math.max(Date.parse(job.pace.statusPage?.checkedAt) || 0, statusAttempts.get(job.jobId) ?? 0);
+      return last > 0 ? last + Pacing.smartCheck.statusPageCacheMs : nowMs();
+    }
+
+    // A job that waits for its next request slot (§7.5): while a warning shows, the status feed is read when it is due,
+    // with no account request and no change to the slot. The job wakes at the earlier of the slot and the next status
+    // refresh, which the host is told so a worker restart keeps it.
+    async function waitWithStatusRefresh(job, eligibleAt) {
+      let waiting = job;
+      const adapter = adapterFor(job.plan.selectedSections[job.sectionIndex]);
+      // Without a status reader there is no refresh to wake for.
+      const canRead = typeof adapter?.checkStatusPage === "function" && typeof repository.mergeStatusPage === "function";
+      const due = canRead ? statusRefreshDue(job) : null;
+      if (due !== null && due <= nowMs()) {
+        statusAttempts.set(job.jobId, nowMs());
+        waiting = await startStatusRead(job, adapter, await repository.getAuthorization(job.authorizationId));
+      }
+      const next = canRead ? statusRefreshDue(waiting) : null;
+      const refreshAt = next !== null && next < eligibleAt ? next : null;
+      await onStatusRefresh({ jobId: job.jobId, at: refreshAt === null ? null : new Date(refreshAt).toISOString() });
+      return { ok: true, waiting: true, eligibleAt: refreshAt ?? eligibleAt };
+    }
+
+    // The smart check at the give-up (§8.2, §9): one in-step wait after the last refused attempt, the account's public
+    // dossier without cookies, then the status feed. Without the adapter's check, or past its allowances, there is no
+    // diagnosis.
+    async function smartCheck(job, adapter, authorization, section) {
+      if (typeof adapter?.smartCheck !== "function" || !allowanceLeft(job, authorization, "probes")) return { job, diagnosis: null, lines: [] };
+      await sleep(Pacing.brakes.maximumInStepWaitMs);
+      const reserved = await saveStepStatus(reserveRequests(job, ["probes"]), "activity", {});
+      if (TERMINAL.has(reserved.status)) return { job: reserved, diagnosis: null, lines: [] };
+      try {
+        const checked = await adapter.smartCheck({ handle: job.accountId, beforeStatusRequest: () => reserveStatusRequest(reserved, authorization) });
+        const at = new Date(nowMs()).toISOString();
+        const lines = [
+          safeSmartCheckActivity({ kind: "smart-check", at, section, check: "public-page", outcome: checked?.probe?.probe, httpStatus: checked?.probe?.httpStatus }),
+          safeSmartCheckActivity({ kind: "smart-check", at: checked?.status?.checkedAt ?? at, section, check: "status-page", outcome: checked?.status?.status, httpStatus: checked?.status?.httpStatus })
+        ].filter(Boolean);
+        return { job: await repository.getJob(job.jobId) ?? reserved, diagnosis: checked?.diagnosis ?? null, lines };
+      } catch {
+        return { job: reserved, diagnosis: null, lines: [] };
+      }
     }
 
     // A pause, resume, cancel, or skip can arrive while a step is in flight. The step owns its progress fields; the
@@ -158,7 +501,7 @@
       const saved = await exclusive(async () => {
         const stored = await repository.getJob(job.jobId);
         if (stored && TERMINAL.has(stored.status)) return stored;
-        const next = stored ? { ...job, ...controlled(stored) } : job;
+        const next = stored ? { ...job, ...controlled(stored, job) } : job;
         await repository.saveJob(next);
         return next;
       });
@@ -166,7 +509,7 @@
       return saved;
     }
 
-    function terminalRunReceipt(job, authorization, status, endedAt) {
+    function terminalRunReceipt(job, authorization, status, endedAt, pacing = null) {
       if (!authorization) return null;
       return {
         runId: job.runId,
@@ -175,8 +518,15 @@
         endedAt,
         selectedSections: [...job.plan.selectedSections],
         authorization: Authorization.runAuthorizationReceipt(authorization),
-        organizationMemberAuthorization: clone(job.organizationMemberAuthorization ?? null)
+        organizationMemberAuthorization: clone(job.organizationMemberAuthorization ?? null),
+        ...(pacing ? { pacing } : {})
       };
+    }
+
+    // The run's pacing summary for its receipt (§4.7), from the pace history records, or null without them.
+    function pacingOf(records, job) {
+      if (!job.paceHistory || !Array.isArray(records)) return null;
+      return PaceHistory.runSummary(withRunHistory(records, job, (run) => run));
     }
 
     // The stored pages of an unfinished section, checked and decoded, or null when they cannot be trusted: a page is
@@ -277,10 +627,107 @@
       return (Array.isArray(results) ? results : []).filter((parsed) => parsed && allowed.has(parsed.section) && parsed.outcome);
     }
 
-    // A job that was cancelled while its step was in flight stays cancelled.
-    async function fail(job, code, message) {
+    // A job that was cancelled while its step was in flight stays cancelled. `detail` holds what RSI answered, and
+    // `requestActivities` are the failed step's request lines, which the activity log keeps (F2).
+    // The actual request allowances of a job (§7.13): the plan's steps at their most requests, and the separate
+    // allowances of the settings for retries, canaries and session checks, probes and status checks.
+    function allowanceMaximums(job) {
+      const roster = job.plan.selectedSections.some((section) => section.startsWith("organizations.members."));
+      return {
+        baseline: jobStepLimit(job) * MAXIMUM_REQUESTS_PER_STEP,
+        retries: roster ? Pacing.requestBounds.rosterRetries : Pacing.requestBounds.accountRetries,
+        canaryAndSessionChecks: Pacing.requestBounds.canaryAndSessionChecks,
+        probes: Pacing.requestBounds.probes,
+        statusChecks: Pacing.requestBounds.statusChecks
+      };
+    }
+
+    // A stored job's pace and pending slot are checked before any arithmetic or request (§6.2, §7.14). A job stored
+    // before the pace controller gets the first pace once; a state this controller cannot read stops continuably.
+    async function normalizeStoredState(job) {
+      let next = job;
+      if (next.pace === undefined) {
+        next = {
+          ...next,
+          pace: PaceController.initialPace(Pacing),
+          pendingStep: null,
+          warnings: [...(next.warnings ?? []), "PACE_STATE_MIGRATED"]
+        };
+      }
+      const invalid = PaceController.validatePaceState(next.pace, Pacing)
+        ?? (next.pendingStep === undefined || next.pendingStep === null ? null : PaceController.validatePendingStep(next.pendingStep, Pacing));
+      if (invalid) return { stopped: await stopContinuable(job, "PACE_STATE_INVALID", { message: invalid }, [], "The run's stored pace could not be read.") };
+      if (next.pendingStep === undefined) next = { ...next, pendingStep: null };
+      // A job stored before the request counters (§7.13) has none of them: it starts them at 0, and takes its
+      // allowances from its plan. Counters or allowances that are present but out of shape stop the run continuably
+      // before any request; nothing is reset or taken as unlimited.
+      const counterFields = ["actualRequestCount", "actualRequestsBySection", "actualRequestsByAllowance"];
+      if (counterFields.every((field) => next[field] === undefined)) {
+        next = { ...next, actualRequestCount: 0, actualRequestsBySection: {}, actualRequestsByAllowance: emptyAllowanceCounts(), retriedHttpRequestCount: next.retriedHttpRequestCount ?? 0 };
+      }
+      if (next.maximumActualRequests === undefined || next.maximumActualRequests === null) next = { ...next, maximumActualRequests: allowanceMaximums(next) };
+      const counters = requestCountersProblem(next);
+      if (counters) return { stopped: await stopContinuable(job, "REQUEST_COUNTERS_INVALID", { message: counters }, [], "The run's stored request counts could not be read.") };
+      if (!next.paceHistory) next = { ...next, paceHistory: { historyKey: PaceHistory.runKey(next.runId), settingsFingerprint: null } };
+      if (!next.paceHistory.settingsFingerprint) next = { ...next, paceHistory: { ...next.paceHistory, settingsFingerprint: await digest(canonicalJson(Pacing)) } };
+      if (next === job) return { job };
+      const saved = await exclusive(async () => {
+        const stored = await repository.getJob(job.jobId);
+        if (stored && TERMINAL.has(stored.status)) return stored;
+        const merged = stored ? { ...next, ...controlled(stored, next) } : next;
+        await repository.saveJob(merged);
+        return merged;
+      });
+      return { job: saved };
+    }
+
+    // This run's pace history after `change`: its record, started when the run has none yet.
+    function withRunHistory(records, job, change) {
+      const existing = (records ?? []).find((record) => record.historyKey === job.paceHistory.historyKey);
+      const run = existing ?? PaceHistory.startRun({
+        runId: job.runId,
+        accountId: job.accountId,
+        runKind: job.plan.selectedSections.some((section) => section.startsWith("organizations.members.")) ? "roster" : "account",
+        settingsFingerprint: job.paceHistory.settingsFingerprint,
+        settingsVersion: Pacing.version,
+        startedAt: job.createdAt,
+        startedFactor: PaceController.initialPace(Pacing).factor
+      });
+      return change(run);
+    }
+
+    // The attempts of a step's request lines: accepted answers, and the class of the one that ended a refused step.
+    function recordLines(run, job, section, lines, signal = null, retried = false) {
+      let next = run;
+      const terminal = lines.filter((line) => line.kind === "request-completed" || line.kind === "request-failed");
+      terminal.forEach((line, index) => {
+        const requestFamily = PaceController.requestFamily(section, line.method, routeTemplate(line.route));
+        const accepted = line.kind === "request-completed" && line.responseStatus >= 200 && line.responseStatus < 300 && !(signal && index === terminal.length - 1);
+        const outcome = accepted ? "accepted" : signal?.kind ?? "ambiguous";
+        next = PaceHistory.recordAttempt(next, { section, requestFamily, outcome, code: accepted ? "OK" : signal?.code ?? "RSI_READ_FAILED", httpStatus: line.kind === "request-completed" ? line.responseStatus : null, elapsedMs: line.elapsedMs ?? null, factor: job.pace.factor, retried }, Pacing);
+        if (accepted) next = PaceHistory.recordAccepted(next, { requestFamily, elapsedMs: line.elapsedMs, factor: job.pace.factor, canary: line.route === IDENTIFY_ROUTE }, Pacing);
+      });
+      return next;
+    }
+
+    // The run's history record closed, and the runs past the detailed limit folded into the aggregates (§6.8).
+    function closedHistory(records, job, endedAt) {
+      const run = withRunHistory(records, job, (value) => value);
+      const others = (records ?? []).filter((record) => record.historyKey !== run.historyKey);
+      return PaceHistory.finishRun([...others, run], job.runId, { endedAt }, Pacing);
+    }
+
+    // A stop for the time being (§7.4): fail() with a fixed message and the detail kept, so Continue can follow.
+    async function stopContinuable(job, code, detail, requestActivities = [], message = STOP_MESSAGES[code]) {
+      return fail(job, code, message, detail, requestActivities);
+    }
+
+    async function fail(job, code, message, detail = null, requestActivities = [], finding = null) {
       const endedAt = new Date(nowMs()).toISOString();
-      const failed = { ...job, status: "failed", updatedAt: endedAt, completedAt: endedAt, failure: { code, message } };
+      const lines = safeRequestActivities(requestActivities);
+      const appended = lines.length ? appendActivities(job, lines) : null;
+      const failed = { ...job, status: "failed", updatedAt: endedAt, completedAt: endedAt, pendingStep: null, ...(appended ? { ...appended, lastActivity: appended.activityLog.at(-1) } : {}), failure: { code, message, ...(detail ? { detail: clone(detail) } : {}) } };
+      const pendingSection = job.pendingStep?.section ?? null;
       let partialResults = [];
       try {
         partialResults = clone(await partialResultsFor(job));
@@ -294,12 +741,17 @@
         authorizationId: job.authorizationId,
         runId: job.runId,
         withStagedRun: true,
-        decide: ({ job: stored, authorization, stagedRun }) => {
+        withPaceHistory: Boolean(job.paceHistory),
+        decide: ({ job: stored, authorization, stagedRun, paceHistory }) => {
           if (stored && TERMINAL.has(stored.status)) return { outcome: { superseded: stored } };
-          const runReceipt = terminalRunReceipt(failed, authorization, "failed", endedAt);
+          const runReceipt = terminalRunReceipt(failed, authorization, "failed", endedAt, pacingOf(paceHistory, job));
+          const history = job.paceHistory ? closedHistory(paceHistory, job, endedAt) : { put: [], remove: [] };
           return {
             job: failed,
-            ...(stagedRun ? { stagedRun: { ...stagedRun, results: replaceResults(stagedRun.results, partialResults), ...(runReceipt ? { runReceipt } : {}), status: "failed", updatedAt: endedAt } } : {}),
+            ...(pendingSection ? { removePageKeys: [Database.pendingPageKey(job.collectionId, pendingSection)] } : {}),
+            paceHistory: history.put,
+            removePaceHistory: history.remove,
+            ...(stagedRun ? { stagedRun: { ...stagedRun, results: replaceResults(stagedRun.results, partialResults), ...(finding ? { contractFindings: withContractFinding(stagedRun.contractFindings, finding) } : {}), ...(runReceipt ? { runReceipt } : {}), status: "failed", updatedAt: endedAt } } : {}),
             outcome: {}
           };
         }
@@ -321,16 +773,19 @@
       ]);
       savedBackup = null;
       if (!staged) throw new Error("The staged run is no longer stored.");
+      const paceRecords = job.paceHistory && typeof repository.listPaceHistory === "function" ? await repository.listPaceHistory() : null;
+      const runReceipt = terminalRunReceipt(completed, authorization, "complete", completedAt, pacingOf(paceRecords, job));
       const assembled = await assembleDocument({
         job: clone(completed),
         authorization,
-        staged,
+        staged: runReceipt ? { ...staged, runReceipt } : staged,
         previous: previousSnapshot?.document ?? null,
         completedAt
       });
       const document = assembled?.document ?? assembled;
       if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("The canonical document assembler returned an invalid account document.");
       const history = planHistory ? await planHistory({ accountId: job.accountId, previous: previousSnapshot?.document ?? null, document, completedAt }) : null;
+      const paceHistory = paceRecords ? closedHistory(paceRecords, job, completedAt) : null;
       // Once the document is the saved backup, the staged results it was assembled from are not kept a second time.
       const { results: _results, document: _document, ...stagedRecord } = staged;
       // Promotion is the point of no return, so a pause or cancel that arrived during assembly is honored first.
@@ -346,6 +801,7 @@
           stagedRun: { ...stagedRecord, updatedAt: completedAt },
           job: completed,
           history,
+          ...(paceHistory ? { paceHistory } : {}),
           promotedAt: completedAt
         });
         return null;
@@ -357,6 +813,328 @@
       return completed;
     }
 
+    // The two rules that decide a class from the canary (§7.7): an unclear canary is a limit, and the same unclear
+    // answer again right after a canary that answered normally is a changed contract.
+    function classify(signal, canary, lastSignal) {
+      if (!signal) return null;
+      if (signal.fromCanary === true && signal.kind === "ambiguous") return { ...signal, kind: "limit" };
+      if (canary && signal.fromCanary !== true && signal.kind === "ambiguous" && signal.code === lastSignal?.code) return { ...signal, kind: "contract" };
+      return signal;
+    }
+
+    // A refused attempt (§7.4): rule 8's one free retry, or a refusal with its wait; past the threshold the run gives
+    // up for the time being (§8), or stops before its authorization ends. No page, receipt or staged result is written.
+    async function refusedAttempt({ job, section, signal, result, authorization, maxFactor, pendingKey, adapter }) {
+      const at = new Date(nowMs()).toISOString();
+      const free = PaceController.freeRetry(job.pace, signal, { nowMs: nowMs(), random, settings: Pacing });
+      const refusal = free ? null : PaceController.onRefusal(job.pace, signal, { nowMs: nowMs(), random, settings: Pacing, maxFactor, expiresAtMs: Date.parse(authorization.expiresAt) });
+      const lines = safeRequestActivities(result?.requestActivities);
+      if (refusal?.action === "give-up") {
+        const checked = await smartCheck({ ...job, pace: refusal.pace }, adapter, authorization, section);
+        return { ok: false, job: await stopContinuable(checked.job, "RSI_RATE_LIMITED", { signal, diagnosis: checked.diagnosis }, [...lines, ...checked.lines]) };
+      }
+      if (refusal?.action === "lifetime") return { ok: false, job: await stopContinuable({ ...job, pace: refusal.pace }, "RUN_LIFETIME_REACHED", { signal }, lines) };
+      const pace = free ? free.pace : refusal.pace;
+      const waitMs = free ? free.waitMs : refusal.waitMs;
+      const line = safePaceActivity(free
+        ? { kind: "free-retry", at, section, signal, waitMs }
+        : { kind: "rate-limited", at, section, signal, waitMs, factor: pace.factor, attempt: pace.attempt });
+      const terminal = lines.filter((activity) => activity.kind === "request-completed" || activity.kind === "request-failed").length;
+      const waiting = {
+        ...job,
+        pace,
+        pendingStep: null,
+        pendingContract: null,
+        nextEligibleAt: pace.retryNotBefore,
+        retriedHttpRequestCount: (job.retriedHttpRequestCount ?? 0) + terminal,
+        ...appendActivities(job, [...lines, ...(line ? [line] : [])]),
+        lastActivity: line ?? lines.at(-1) ?? job.lastActivity ?? null,
+        updatedAt: at
+      };
+      const committed = await exclusive(() => repository.updateRun({
+        jobId: job.jobId,
+        authorizationId: job.authorizationId,
+        runId: job.runId,
+        withPaceHistory: true,
+        decide: ({ job: stored, authorization: storedAuthorization, paceHistory }) => {
+          if (stored && TERMINAL.has(stored.status)) return { outcome: { terminal: stored.status } };
+          const lease = Authorization.touchAuthorization(storedAuthorization ?? authorization, nowMs());
+          const next = stored ? { ...waiting, ...controlled(stored, waiting) } : waiting;
+          return {
+            job: next,
+            ...(job.pendingStep ? { removePageKeys: [pendingKey] } : {}),
+            paceHistory: [withRunHistory(paceHistory, job, (run) => recordLines(run, job, section, lines, signal, job.pace.attempt > 0))],
+            ...(lease.ok ? { authorization: lease.value } : {}),
+            outcome: { status: next.status, leaseCode: lease.ok ? null : lease.code }
+          };
+        }
+      }));
+      if (committed.terminal) return { ok: false, code: "JOB_TERMINAL", status: committed.terminal };
+      const stored = { ...waiting, status: committed.status };
+      if (committed.leaseCode) return { ok: false, job: await fail(stored, committed.leaseCode, "The one-run authorization could not renew its bounded idle lease.") };
+      await onStatus({ event: "activity", job: clone(stored), detail: clone({ section, activity: line }) });
+      return { ok: true, job: await startStatusRead(stored, adapter, authorization) };
+    }
+
+    // A step that stopped at a durable request slot (§6.3): its answers so far are kept as its checksummed pending
+    // phase, apart from the canonical pages, and the next slot's time is stored with them. No receipt or staged result.
+    async function storePendingPhase({ job, section, result, pending, pendingKey, authorization, logicalIntervalMs, logicalStaggerMs, logicalStartedAtMs, requestsInStep }) {
+      const at = new Date(nowMs()).toISOString();
+      const lines = safeRequestActivities(result.requestActivities);
+      const text = JSON.stringify(result.pendingPhase.journal);
+      const page = { pageKey: pendingKey, collectionId: job.collectionId, section, step: 0, pending: true, checkpoint: false, text, sha256: await digest(text), storedAt: at };
+      // Every request that started counts, one that later failed too; the next slot is timed from the starts.
+      const started = (pending?.requestsStarted ?? 0) + requestsInStep;
+      const finished = (pending?.requestsFinished ?? 0) + lines.filter((line) => line.kind === "request-completed" || line.kind === "request-failed").length;
+      const pendingStep = {
+        version: 1,
+        section,
+        attemptId: pending?.attemptId ?? `step-${job.requestCount + 1}-${logicalStartedAtMs}`,
+        phase: result.pendingPhase.phase,
+        nextRequestAt: new Date(result.pendingPhase.nextRequestAtMs).toISOString(),
+        logicalIntervalMs,
+        logicalStaggerMs,
+        requestsStarted: started,
+        requestsFinished: finished
+      };
+      const waiting = {
+        ...job,
+        pendingStep,
+        nextEligibleAt: pendingStep.nextRequestAt,
+        ...appendActivities(job, lines),
+        lastActivity: lines.at(-1) ?? job.lastActivity ?? null,
+        updatedAt: at
+      };
+      const committed = await exclusive(() => repository.updateRun({
+        jobId: job.jobId,
+        authorizationId: job.authorizationId,
+        runId: job.runId,
+        withPaceHistory: true,
+        decide: ({ job: stored, authorization: storedAuthorization, paceHistory }) => {
+          if (stored && TERMINAL.has(stored.status)) return { outcome: { terminal: stored.status } };
+          const lease = Authorization.touchAuthorization(storedAuthorization ?? authorization, nowMs());
+          const next = stored ? { ...waiting, ...controlled(stored, waiting) } : waiting;
+          return {
+            job: next,
+            page,
+            paceHistory: [withRunHistory(paceHistory, job, (run) => recordLines(run, job, section, lines))],
+            ...(lease.ok ? { authorization: lease.value } : {}),
+            outcome: { status: next.status, leaseCode: lease.ok ? null : lease.code }
+          };
+        }
+      }));
+      if (committed.terminal) return { ok: false, code: "JOB_TERMINAL", status: committed.terminal };
+      const stored = { ...waiting, status: committed.status };
+      if (committed.leaseCode) return { ok: false, job: await fail(stored, committed.leaseCode, "The one-run authorization could not renew its bounded idle lease.") };
+      return { ok: true, job: stored };
+    }
+
+    // A detected change of RSI's page as public status shows it (§10.6): at most 4, three sections set aside and a stop.
+    const MAXIMUM_DETECTED_CHANGES = 4;
+    function withDetectedChange(job, entry) {
+      return [...(job.detectedChanges ?? []), entry].slice(-MAXIMUM_DETECTED_CHANGES);
+    }
+
+    // The later sections of the plan that read `section` and have no saved copy of it to read instead: in a first build,
+    // a Buybacks list set aside leaves Buy-back prices and CCU buy-back prices nothing to read (§10.2). They are set
+    // aside with it, and so are the sections that read those in turn.
+    async function dependentSections(job, section) {
+      const saved = await savedBackupFor(job);
+      const setAside = new Set([section, ...(job.setAsideSections ?? []).map((entry) => entry.section)]);
+      const dependents = [];
+      for (const later of job.plan.selectedSections.slice(job.sectionIndex + 1)) {
+        if (setAside.has(later)) continue;
+        const inputs = adapterFor(later)?.inputs;
+        if (!Array.isArray(inputs)) continue;
+        const missing = inputs.some((name) => setAside.has(name) && (saved?.document ? valueAt(saved.document, name) : null) == null);
+        if (!missing) continue;
+        setAside.add(later);
+        dependents.push(later);
+      }
+      return dependents;
+    }
+
+    // The sections set aside because a section they read was (§10.2) are passed over when the run reaches them.
+    function passSetAside(job) {
+      const setAside = new Set((job.setAsideSections ?? []).map((entry) => entry.section));
+      let index = job.sectionIndex;
+      while (index < job.plan.selectedSections.length && setAside.has(job.plan.selectedSections[index])) index += 1;
+      return index === job.sectionIndex ? job : { ...job, sectionIndex: index };
+    }
+
+    // The end of a run: the ordinary promotion, or, with a section set aside, the partial result (§10.3).
+    function finish(job) {
+      return (job.setAsideSections ?? []).length > 0 ? completeWithOmissions(job) : complete(job);
+    }
+
+    // A `contract` answer (§10.1): the section is set aside, waits out the quiet period for one canary and one recheck,
+    // or stops the run. Profile is never set aside, and at most `setAside.maximumSections` sections are, not counting
+    // those set aside with INPUT_SET_ASIDE.
+    // A changed page (§10.1), in the plan's order: a refusal in the last quiet period first holds the section for one
+    // canary and one recheck at the period's end; otherwise, and at that recheck, Account identity or the limit of 3
+    // stops the run; otherwise the section is set aside.
+    async function contractChanged({ job, section, signal, result, authorization, pendingKey, nextEligibleAt }) {
+      const at = new Date(nowMs()).toISOString();
+      const finding = result?.contractFinding ?? null;
+      const settings = Pacing.setAside;
+      const counted = (job.setAsideSections ?? []).filter((entry) => entry.code !== "INPUT_SET_ASIDE").length;
+      const lines = safeRequestActivities(result?.requestActivities);
+      const refusalAtMs = Date.parse(job.pace.lastRefusalAt);
+      const quiet = !Number.isFinite(refusalAtMs) || nowMs() - refusalAtMs >= settings.quietMs;
+      const recheck = job.pendingContract?.section === section && job.pendingContract.signal?.code === signal.code;
+      if (!quiet && !recheck) {
+        // A refusal came in the last quiet period: nothing more is asked of this section until its end, and then one
+        // canary and one recheck.
+        const recheckAt = new Date(refusalAtMs + settings.quietMs).toISOString();
+        const waiting = {
+          ...job,
+          pendingContract: { section, signal: safeSignal(signal), finding: clone(finding), recheckAt },
+          pace: { ...job.pace, canaryDue: true },
+          pendingStep: null,
+          nextEligibleAt: recheckAt,
+          ...appendActivities(job, lines),
+          lastActivity: lines.at(-1) ?? job.lastActivity ?? null,
+          updatedAt: at
+        };
+        return commitContractStep({ job, waiting, section, lines, signal, authorization, pendingKey, event: "activity" });
+      }
+      // With no refusal in the quiet period, or at the recheck: Account identity, or a run that has set 3 sections aside
+      // already, stops with the signal in the failure.
+      if (section === "profile" || counted >= settings.maximumSections) {
+        const stopped = { ...job, pendingContract: null, detectedChanges: withDetectedChange(job, { section, code: signal.code, httpStatus: signal.httpStatus ?? null, setAside: false, dependents: [], at }) };
+        return { ok: false, job: await fail(stopped, result?.code ?? "ADAPTER_FAILED", result?.message ?? `The ${section} adapter failed.`, { signal }, result?.requestActivities, finding) };
+      }
+      const dependents = await dependentSections(job, section);
+      const entries = [{ section, code: signal.code, rsiCode: signal.rsiCode ?? null, at }, ...dependents.map((dependent) => ({ section: dependent, code: "INPUT_SET_ASIDE", rsiCode: null, at }))];
+      const setAsideLines = entries.map((entry) => ({ kind: "section-set-aside", section: entry.section, code: entry.code, at }));
+      const httpRequestsBySection = { ...(job.httpRequestsBySection ?? {}), [section]: (job.httpRequestsBySection?.[section] ?? 0) + lines.filter((line) => line.kind === "request-completed").length };
+      const requestTotalsBySection = { ...(job.requestTotalsBySection ?? {}), [section]: httpRequestsBySection[section], ...Object.fromEntries(dependents.map((dependent) => [dependent, 0])) };
+      const appended = appendActivities(job, [...lines, ...setAsideLines]);
+      const setAside = {
+        ...job,
+        sectionIndex: job.sectionIndex + 1,
+        cursorBySection: without(job.cursorBySection, section),
+        storedStepsBySection: without(job.storedStepsBySection, section),
+        requestCount: job.requestCount + 1,
+        httpRequestsBySection,
+        httpRequestCount: (job.httpRequestCount ?? 0) + lines.filter((line) => line.kind === "request-completed").length,
+        requestTotalsBySection,
+        resolvedRequestTotalsForSections: Object.values(requestTotalsBySection).filter((total) => Number.isSafeInteger(total) && total >= 0).length,
+        setAsideSections: [...(job.setAsideSections ?? []), ...entries],
+        detectedChanges: withDetectedChange(job, { section, code: signal.code, httpStatus: signal.httpStatus ?? null, setAside: true, dependents, at }),
+        pendingContract: null,
+        // The canary before this answer, if there was one, answered normally.
+        pace: { ...job.pace, canaryDue: false },
+        pendingStep: null,
+        nextEligibleAt,
+        ...appended,
+        lastActivity: appended.activityLog.at(-1) ?? job.lastActivity ?? null,
+        updatedAt: at
+      };
+      return commitContractStep({ job, waiting: setAside, section, lines, signal, authorization, pendingKey, event: "section-set-aside", entries, finding });
+    }
+
+    // One transaction for a contract answer: the job, the section's stored pages removed when it is set aside, the
+    // staged run's set-aside sections and finding, and the run's pace history. A cancel that came first wins.
+    async function commitContractStep({ job, waiting, section, lines, signal, authorization, pendingKey, event, entries = null, finding = null }) {
+      const committed = await exclusive(() => repository.updateRun({
+        jobId: job.jobId,
+        authorizationId: job.authorizationId,
+        runId: job.runId,
+        withStagedRun: Boolean(entries),
+        withPaceHistory: true,
+        decide: ({ job: stored, authorization: storedAuthorization, stagedRun, paceHistory }) => {
+          if (stored && TERMINAL.has(stored.status)) return { outcome: { terminal: stored.status } };
+          const lease = Authorization.touchAuthorization(storedAuthorization ?? authorization, nowMs());
+          const next = stored ? { ...waiting, ...controlled(stored, waiting) } : waiting;
+          const staged = entries ? stagedRun ?? { runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], createdAt: new Date(nowMs()).toISOString() } : null;
+          return {
+            job: next,
+            ...(entries ? { removePages: [{ collectionId: job.collectionId, section }] } : {}),
+            ...(job.pendingStep ? { removePageKeys: [pendingKey] } : {}),
+            ...(staged ? { stagedRun: { ...staged, setAsideSections: [...(staged.setAsideSections ?? []), ...clone(entries)], contractFindings: withContractFinding(staged.contractFindings, finding), updatedAt: waiting.updatedAt } } : {}),
+            paceHistory: [withRunHistory(paceHistory, job, (run) => recordLines(run, job, section, lines, signal, job.pace.attempt > 0))],
+            ...(lease.ok ? { authorization: lease.value } : {}),
+            outcome: { status: next.status, leaseCode: lease.ok ? null : lease.code }
+          };
+        }
+      }));
+      if (committed.terminal) return { ok: false, code: "JOB_TERMINAL", status: committed.terminal };
+      const stored = { ...waiting, status: committed.status };
+      if (committed.leaseCode) return { ok: false, job: await fail(stored, committed.leaseCode, "The one-run authorization could not renew its bounded idle lease.") };
+      if (entries) {
+        if (memory?.jobId === job.jobId) memory = null;
+        savedBackup = null;
+      }
+      await onStatus({ event, job: clone(stored), detail: clone({ section, ...(entries ? { setAside: entries } : {}) }) });
+      if (stored.status !== "running") return { ok: true, job: stored };
+      const next = passSetAside(stored);
+      if (next.sectionIndex >= next.plan.selectedSections.length) return { ok: true, job: await finish(next) };
+      return { ok: true, job: next === stored ? stored : await saveStepStatus(next, "activity", {}) };
+    }
+
+    // A run that ends with a section set aside (§10.3): no promotion. The staged run keeps its results, set-aside
+    // sections and findings with a partial run receipt until the dashboard confirms it saved the file; the saved
+    // backup stays as it was. The worker assembles the partial document from the staged run.
+    async function completeWithOmissions(job) {
+      const endedAt = new Date(nowMs()).toISOString();
+      const partial = { ...job, status: "partial", updatedAt: endedAt, completedAt: endedAt, cursorBySection: {}, storedStepsBySection: {}, pendingStep: null, pendingContract: null };
+      savedBackup = null;
+      const outcome = await exclusive(() => repository.updateRun({
+        jobId: job.jobId,
+        authorizationId: job.authorizationId,
+        runId: job.runId,
+        withStagedRun: true,
+        withPaceHistory: Boolean(job.paceHistory),
+        decide: ({ job: stored, authorization, stagedRun, paceHistory }) => {
+          // A pause or cancel that arrived first is honored; a resumed run comes back here.
+          if (stored && stored.status !== "running") return { outcome: { interrupted: stored } };
+          const runReceipt = terminalRunReceipt(partial, authorization, "partial", endedAt, pacingOf(paceHistory, job));
+          const history = job.paceHistory ? closedHistory(paceHistory, job, endedAt) : { put: [], remove: [] };
+          return {
+            job: partial,
+            removePages: [{ collectionId: job.collectionId, section: null }],
+            paceHistory: history.put,
+            removePaceHistory: history.remove,
+            ...(stagedRun ? { stagedRun: { ...stagedRun, ...(runReceipt ? { runReceipt } : {}), status: "partial", updatedAt: endedAt } } : {}),
+            ...(authorization ? { authorization: { ...authorization, consumedAt: endedAt } } : {}),
+            outcome: {}
+          };
+        }
+      }));
+      if (outcome.interrupted) return outcome.interrupted;
+      memory = null;
+      await onStatus({ event: "partial", job: clone(partial), detail: {} });
+      return partial;
+    }
+
+    // Billing page 1 as this run kept it, checked against its digest; none when it is not kept or does not match.
+    async function keptBillingPages(job) {
+      const record = await repository.getPage(Database.pageKey(job.collectionId, KEPT_BILLING_SECTION, 1));
+      if (typeof record?.text !== "string" || record.sha256 !== await digest(record.text)) return [];
+      try {
+        return [JSON.parse(record.text)];
+      } catch {
+        return [];
+      }
+    }
+
+    // Keeps the Billing page 1 a billing step returned, before that step's progress is stored, so a worker that ends
+    // at any later point reads it back instead of asking RSI again. An unchanged page is not written again.
+    async function keepBillingPages(job, pages) {
+      const page = Array.isArray(pages) ? pages.find((entry) => typeof entry?.url === "string" && typeof entry.html === "string") : null;
+      if (!page) return;
+      const text = JSON.stringify({ url: page.url, html: page.html, finalUrl: typeof page.finalUrl === "string" ? page.finalUrl : page.url, status: Number.isSafeInteger(page.status) ? page.status : 200 });
+      const pageKey = Database.pageKey(job.collectionId, KEPT_BILLING_SECTION, 1);
+      const sha256 = await digest(text);
+      if ((await repository.getPage(pageKey))?.sha256 === sha256) return;
+      const record = { pageKey, collectionId: job.collectionId, section: KEPT_BILLING_SECTION, step: 1, checkpoint: false, text, sha256, storedAt: new Date(nowMs()).toISOString() };
+      await exclusive(() => repository.updateRun({
+        jobId: job.jobId,
+        decide: ({ job: stored }) => stored && !TERMINAL.has(stored.status) ? { page: record, outcome: { kept: true } } : { outcome: { kept: false } }
+      }));
+    }
+
     // Performs at most one collection step. It returns `waiting` when the job's pacing delay has not elapsed.
     async function tick(jobId) {
       if (locks.has(jobId)) return { ok: false, code: "JOB_ALREADY_RUNNING" };
@@ -366,19 +1144,36 @@
         if (!job) return { ok: false, code: "JOB_NOT_FOUND" };
         if (TERMINAL.has(job.status)) return { ok: false, code: "JOB_TERMINAL", status: job.status };
         if (job.status !== "running") return { ok: false, code: "JOB_NOT_RUNNING", status: job.status };
+        const normalized = await normalizeStoredState(job);
+        if (normalized.stopped) return { ok: false, job: normalized.stopped };
+        job = normalized.job;
+        if (TERMINAL.has(job.status) || job.status !== "running") return { ok: false, code: TERMINAL.has(job.status) ? "JOB_TERMINAL" : "JOB_NOT_RUNNING", status: job.status };
         const now = nowMs();
         const eligibleAt = Date.parse(job.nextEligibleAt);
-        if (Number.isFinite(eligibleAt) && eligibleAt > now) return { ok: true, waiting: true, eligibleAt };
+        if (Number.isFinite(eligibleAt) && eligibleAt > now) return await waitWithStatusRefresh(job, eligibleAt);
 
         const authorization = await repository.getAuthorization(job.authorizationId);
         const checked = Authorization.validateAuthorization(authorization, {
           runId: job.runId,
           accountId: job.accountId
         }, now);
-        if (!checked.ok) return { ok: false, job: await fail(job, checked.code, "The one-run authorization is no longer valid.") };
+        if (!checked.ok) {
+          // An authorization that ends while the run is slowed is the planned stop of a slowed run (§7.11).
+          if (checked.code === "AUTHORIZATION_EXPIRED" && job.pace.factor > 1) return { ok: false, job: await stopContinuable(job, "RUN_LIFETIME_REACHED", null) };
+          return { ok: false, job: await fail(job, checked.code, "The one-run authorization is no longer valid.") };
+        }
+        // An authorization that names allowances must name each as a count; one from before the allowances names none.
+        const authorizedBounds = authorization.maximumActualRequests;
+        const authorizedProblem = authorizedBounds === undefined || authorizedBounds === null ? null : allowancesProblem(authorizedBounds, "authorization.maximumActualRequests");
+        if (authorizedProblem) return { ok: false, job: await stopContinuable(job, "REQUEST_COUNTERS_INVALID", { message: authorizedProblem }, [], "The run's stored request counts could not be read.") };
 
+        const passed = passSetAside(job);
+        if (passed !== job) {
+          job = await saveStepStatus(passed, "activity", {});
+          if (job.status !== "running") return { ok: false, code: TERMINAL.has(job.status) ? "JOB_TERMINAL" : "JOB_NOT_RUNNING", status: job.status };
+        }
         const section = job.plan.selectedSections[job.sectionIndex];
-        if (!section) return { ok: true, job: await complete(job) };
+        if (!section) return { ok: true, job: await finish(job) };
 
         if (job.requestCount >= jobStepLimit(job) || (job.requestsBySection?.[section] ?? 0) >= stepLimitFor(job, section, adapterFor(section))) {
           return { ok: false, job: await fail(job, "REQUEST_LIMIT_EXCEEDED", `The bounded request limit was reached while collecting ${section}.`) };
@@ -412,7 +1207,7 @@
           job = await saveStepStatus({
             ...job,
             lastActivity: activity,
-            activityLog: [...(job.activityLog ?? []), activity].slice(-ACTIVITY_LIMIT),
+            ...appendActivities(job, [activity]),
             updatedAt: activity.at
           }, "activity", { section, activity });
           // Paused or cancelled before the first request of this step: stop without contacting RSI.
@@ -421,22 +1216,60 @@
         }
 
         const stepStartedAtMs = nowMs();
-        const delay = job.plan.minimumInterRequestDelayMs;
-        const jitterMaximum = delay === 900 ? MAXIMUM_BASELINE_JITTER_MS : Math.floor(delay * 0.15);
-        const randomUnit = Math.max(0, Math.min(1, random()));
-        const jitter = delay === 900
-          ? Math.min(jitterMaximum, Math.floor((jitterMaximum + 1) * randomUnit))
-          : Math.floor(jitterMaximum * randomUnit);
-        const laneIntervalMs = delay + jitter;
+        const PACING = Pacing;
+        const baseline = (section.startsWith("organizations.members.") ? PACING.organizationRosters : PACING.accountBuild.sections[section]) ?? { intervalMs: BASELINE_INTERVAL_MS, jitterMs: MAXIMUM_BASELINE_JITTER_MS, lanes: 1 };
+        const laneIntervalMs = PaceController.stepIntervalMs({ baseline, planFloorMs: job.plan.minimumInterRequestDelayMs, pace: job.pace, settings: PACING, random });
+        const concurrentRequestStaggerMs = Math.floor((laneIntervalMs * PACING.accountBuild.staggerPercent) / 100);
+        const maxFactor = PaceController.maximumFactor(Math.max(job.plan.minimumInterRequestDelayMs, baseline.intervalMs), PACING);
+        // A step already under way in durable request slots goes on with its own interval, stagger and kept answers.
+        let pending = job.pendingStep?.section === section ? job.pendingStep : null;
+        const pendingKey = Database.pendingPageKey(job.collectionId, section);
+        let journal = null;
+        if (pending) {
+          const kept = typeof repository.getPage === "function" ? await repository.getPage(pendingKey) : null;
+          if (kept && typeof kept.text === "string" && kept.sha256 === await digest(kept.text)) {
+            journal = JSON.parse(kept.text);
+          } else {
+            // A pending phase that cannot be read back is dropped, and the step starts over.
+            pending = null;
+            job = await saveStepStatus({ ...job, pendingStep: null }, "activity", {});
+          }
+        }
+        const logicalIntervalMs = pending ? pending.logicalIntervalMs : laneIntervalMs;
+        const logicalStaggerMs = pending ? pending.logicalStaggerMs : concurrentRequestStaggerMs;
+        const logicalStartedAtMs = pending ? Number(/-(\d+)$/u.exec(pending.attemptId)?.[1] ?? stepStartedAtMs) : stepStartedAtMs;
+        // The time of the next step: a step that ends and a section set aside both wait this long (§7.2, §10.2).
+        const nextStepAt = () => new Date(Math.max(nowMs() + 250, logicalStartedAtMs + logicalIntervalMs)).toISOString();
+        const canary = !pending && job.pace.canaryDue === true;
+        // Only a step with a gap inside it can need a durable slot: two lanes, the profile's and the CCU step's requests
+        // one after another, or a canary before the step's own requests.
+        const gapsInside = baseline.lanes > 1 || section === "profile" || section === "buybackUpgradePrices" || canary;
+        const durable = pending !== null || gapsInside && logicalStaggerMs > PACING.brakes.maximumInStepWaitMs;
+        // The allowance each request of this step is counted under (§7.13).
+        const retrying = job.pace.attempt > 0 || job.pace.freeRetryAt !== null;
+        let requestsInStep = 0;
+        let allowanceReached = null;
         let requestActivityQueue = Promise.resolve();
         const onRequestActivity = (candidate) => {
           requestActivityQueue = requestActivityQueue.then(async () => {
             const activity = safeRequestStartedActivity(candidate);
             if (!activity) throw new TypeError("The adapter emitted an unsafe request-started activity.");
+            requestsInStep += 1;
+            const canaryRequest = canary && (activity.route === IDENTIFY_ROUTE || requestsInStep === 2 && activity.method === "GET" && activity.route === "/account/pledges");
+            const allowance = canaryRequest ? "canaryAndSessionChecks" : retrying ? "retries" : "baseline";
+            // The authorization's bound holds over the job's: a job never sends more than its run was authorized for.
+            const bound = allowanceBound(job, authorization, allowance);
+            if ((job.actualRequestsByAllowance?.[allowance] ?? 0) >= bound) {
+              allowanceReached = allowance;
+              throw new Error("ACTUAL_REQUEST_LIMIT_EXCEEDED");
+            }
             job = await saveStepStatus({
               ...job,
+              actualRequestCount: (job.actualRequestCount ?? 0) + 1,
+              actualRequestsBySection: { ...(job.actualRequestsBySection ?? {}), [section]: (job.actualRequestsBySection?.[section] ?? 0) + 1 },
+              actualRequestsByAllowance: { ...(job.actualRequestsByAllowance ?? {}), [allowance]: (job.actualRequestsByAllowance?.[allowance] ?? 0) + 1 },
               lastActivity: activity,
-              activityLog: [...(job.activityLog ?? []), activity].slice(-ACTIVITY_LIMIT),
+              ...appendActivities(job, [activity]),
               updatedAt: activity.at
             }, "activity", { section, activity });
             // The adapter awaits this before each request, so a cancelled job sends nothing further.
@@ -460,21 +1293,48 @@
           maximumRecords: job.plan.maximumRecordsBySection[section],
           checkpoint: await repository.getCheckpoint(`${job.accountId}:${section}`),
           authorization: clone(authorization),
-          concurrentRequestStaggerMs: Math.floor(laneIntervalMs / 2),
+          // The full stagger: a gap longer than an in-step wait becomes a durable request slot (§6.3).
+          concurrentRequestStaggerMs: logicalStaggerMs,
+          lanes: baseline.lanes,
+          canary,
+          canaryAfterSignal: canary ? clone(job.pace.lastSignal) : null,
+          // Billing page 1 stays cached while a later billing section of the plan will read it (§7.3, D23).
+          retainBillingPage: job.plan.selectedSections.slice(job.sectionIndex + 1).some((later) => BILLING_SECTIONS.has(later)),
+          // Billing page 1 as this run kept it, for a billing step: read once per run, also across a worker restart.
+          retainedPages: BILLING_SECTIONS.has(section) ? await keptBillingPages(job) : [],
+          requestSlots: durable ? { journal: journal ?? [] } : null,
           onRequestActivity
+        }).catch((error) => {
+          // A request refused past its allowance ends the step, however the adapter passes that on; the failure below
+          // says which allowance it was.
+          if (allowanceReached) return null;
+          throw error;
         });
         try {
           await requestActivityQueue;
         } catch (error) {
-          if (!TERMINAL.has(job.status)) throw error;
+          if (!TERMINAL.has(job.status) && !allowanceReached) throw error;
         }
         if (TERMINAL.has(job.status)) return { ok: false, code: "JOB_TERMINAL", status: job.status };
-        if (!result || result.ok !== true) {
-          return { ok: false, job: await fail(job, result?.code ?? "ADAPTER_FAILED", result?.message ?? `The ${section} adapter failed.`) };
+        if (allowanceReached) {
+          return { ok: false, job: await fail(job, "ACTUAL_REQUEST_LIMIT_EXCEEDED", `The ${allowanceReached} request allowance of this run was reached while collecting ${section}.`, { allowance: allowanceReached }, result?.requestActivities) };
+        }
+        if (result?.ok === true && result.pendingPhase) return await storePendingPhase({ job, section, result, pending, pendingKey, authorization, logicalIntervalMs, logicalStaggerMs, logicalStartedAtMs, requestsInStep });
+        if (result?.ok !== true) {
+          const signal = classify(result?.signal ?? null, canary, job.pace.lastSignal);
+          if (signal && REFUSAL_KINDS.has(signal.kind)) return await refusedAttempt({ job, section, signal, result, authorization, maxFactor, pendingKey, adapter });
+          if (signal?.kind === "user" && Object.hasOwn(USER_STOP_CODES, signal.reason)) {
+            return { ok: false, job: await stopContinuable(job, USER_STOP_CODES[signal.reason], { signal }, result?.requestActivities) };
+          }
+          if (signal?.kind === "contract") {
+            return await contractChanged({ job, section, signal, result, authorization, pendingKey, nextEligibleAt: nextStepAt() });
+          }
+          return { ok: false, job: await fail(job, result?.code ?? "ADAPTER_FAILED", result?.message ?? `The ${section} adapter failed.`, signal ? { signal } : null, result?.requestActivities, result?.contractFinding ?? null) };
         }
         if (!job.accountVerifiedAt && result.accountId !== job.accountId) {
           return { ok: false, job: await fail(job, "ACCOUNT_NOT_VERIFIED", "The first accepted adapter result did not verify the authorized account binding.") };
         }
+        if (BILLING_SECTIONS.has(section)) await keepBillingPages(job, result.retainedPages);
         if (result.accountId !== undefined && result.accountId !== job.accountId) {
           return { ok: false, job: await fail(job, "ACCOUNT_CHANGED", "The RSI account changed during collection.") };
         }
@@ -540,21 +1400,30 @@
         const storedStepsBySection = result.done ? without(job.storedStepsBySection, section) : { ...(job.storedStepsBySection ?? {}), ...(page ? { [section]: page.step } : {}) };
         const recordsBySection = { ...(job.recordsBySection ?? {}), [section]: cumulativeRecordCount };
         const requestsBySection = { ...(job.requestsBySection ?? {}), [section]: (job.requestsBySection?.[section] ?? 0) + 1 };
-        const activities = (Array.isArray(result.requestActivities) ? result.requestActivities : []).filter((activity) => activity?.kind === "request-completed");
-        const httpRequestIncrement = activities.length;
+        const activities = safeRequestActivities(result.requestActivities);
+        const httpRequestIncrement = activities.filter((activity) => activity.kind === "request-completed").length;
+        // The step's request family and response time for the controller (§7.8): its first request's family, and the
+        // median of its accepted answers' times; the retained history supplies the family's normal time (§6.8).
+        const accepted = activities.filter((activity) => activity.kind === "request-completed" && activity.responseStatus >= 200 && activity.responseStatus < 300 && Number.isSafeInteger(activity.elapsedMs));
+        const familyLine = accepted.find((activity) => activity.route !== IDENTIFY_ROUTE) ?? accepted[0] ?? null;
+        const stepFamily = familyLine ? PaceController.requestFamily(section, familyLine.method, routeTemplate(familyLine.route)) : PaceController.requestFamily(section, "GET", "/");
+        const times = accepted.map((activity) => activity.elapsedMs).sort((left, right) => left - right);
+        const stepElapsedMs = times.length ? times[Math.floor(times.length / 2)] : 0;
+        const retainedNormal = typeof repository.listPaceHistory === "function" ? PaceHistory.normalLatency(await repository.listPaceHistory(), stepFamily, Pacing, { exceptRunId: job.runId }) : [];
         const httpRequestsBySection = {
           ...(job.httpRequestsBySection ?? {}),
           [section]: (job.httpRequestsBySection?.[section] ?? 0) + httpRequestIncrement
         };
-        const activityLog = [...(job.activityLog ?? []), ...activities];
-        if (result.done) activityLog.push({
+        const added = [...activities];
+        if (result.done) added.push({
           kind: "section-completed",
           section,
           recordsTotal: cumulativeRecordCount,
           requestsTotal: httpRequestsBySection[section],
           at: receipt.completedAt
         });
-        const lastActivity = activityLog.at(-1) ?? job.lastActivity ?? null;
+        const appended = appendActivities(job, added);
+        const lastActivity = appended.activityLog.at(-1) ?? job.lastActivity ?? null;
         const requestTotalsBySection = { ...(job.requestTotalsBySection ?? {}) };
         if (result.done) requestTotalsBySection[section] = httpRequestsBySection[section];
         else if (section !== "financial.ledgers" && result.requestProgress?.totalKnown === true
@@ -588,9 +1457,20 @@
           resolvedRequestTotalsForSections,
           httpRequestsTotal,
           lastActivity,
-          activityLog: activityLog.slice(-ACTIVITY_LIMIT),
+          ...appended,
           accountVerifiedAt: job.accountVerifiedAt ?? receipt.completedAt,
-          nextEligibleAt: new Date(Math.max(nowMs() + 250, stepStartedAtMs + laneIntervalMs)).toISOString(),
+          nextEligibleAt: nextStepAt(),
+          pace: PaceController.onSuccess(job.pace, {
+            requestFamily: stepFamily,
+            elapsedMs: stepElapsedMs,
+            historicalNormal: retainedNormal,
+            nowMs: nowMs(),
+            settings: Pacing,
+            maxFactor
+          }),
+          pendingStep: null,
+          // A section that answered normally has no change of RSI's page waiting to be checked again.
+          pendingContract: null,
           updatedAt: receipt.completedAt
         };
 
@@ -604,10 +1484,12 @@
           authorizationId: job.authorizationId,
           runId: job.runId,
           withStagedRun: stagedChanges,
-          decide: ({ job: stored, authorization: storedAuthorization, stagedRun }) => {
+          withPaceHistory: true,
+          decide: ({ job: stored, authorization: storedAuthorization, stagedRun, paceHistory }) => {
             if (stored && TERMINAL.has(stored.status)) return { outcome: { terminal: stored.status } };
+            const runHistory = withRunHistory(paceHistory, job, (run) => PaceHistory.recordStep(recordLines(run, job, section, activities, null, retrying), { factor: progressed.pace.factor, slow: progressed.pace.warning === "slow" }));
             const lease = Authorization.touchAuthorization(storedAuthorization ?? authorization, nowMs());
-            const next = stored ? { ...progressed, ...controlled(stored) } : progressed;
+            const next = stored ? { ...progressed, ...controlled(stored, progressed) } : progressed;
             const staged = stagedChanges ? stagedRun ?? { runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], createdAt: new Date(now).toISOString() } : null;
             return {
               // A section that ended needs none of its pages again. A step that replaced the gathered rows makes the
@@ -615,6 +1497,9 @@
               removePages: result.done || page?.checkpoint ? [{ collectionId: job.collectionId, section }] : [],
               page,
               receipt,
+              // The step's pending phase, if it ran in durable request slots, is consumed with its result.
+              ...(pending ? { removePageKeys: [pendingKey] } : {}),
+              paceHistory: [runHistory],
               ...(lease.ok ? { authorization: lease.value } : {}),
               ...(staged ? {
                 stagedRun: {
@@ -638,9 +1523,11 @@
           return { ok: false, job: await fail(job, committed.leaseCode, "The one-run authorization could not renew its bounded idle lease.") };
         }
         await onStatus({ event: "progress", job: clone(job), detail: clone({ section, receipt, done: Boolean(result.done), activities, requestProgress: result.requestProgress ?? null }) });
+        if (job.status === "running") job = await startStatusRead(job, adapter, authorization);
         // Paused while this step was in flight: its progress is saved and the job waits for resume.
         if (job.status !== "running") return { ok: true, job };
-        if (job.sectionIndex >= job.plan.selectedSections.length) return { ok: true, job: await complete(job) };
+        const ahead = passSetAside(job);
+        if (ahead.sectionIndex >= ahead.plan.selectedSections.length) return { ok: true, job: await finish(ahead) };
         return { ok: true, job };
       } catch (error) {
         const job = await repository.getJob(jobId);
@@ -669,7 +1556,8 @@
             continue;
           }
           if (outcome.ok && outcome.job?.status === "running") {
-            await sleep(Math.max(0, Date.parse(outcome.job.nextEligibleAt) - nowMs()));
+            // While a warning shows, the next pass waits through waitWithStatusRefresh, which also wakes for the status.
+            if (!outcome.job.pace?.warning) await sleep(Math.max(0, Date.parse(outcome.job.nextEligibleAt) - nowMs()));
             continue;
           }
           // A resume that arrived while this pass was finishing must not be lost.
@@ -685,15 +1573,24 @@
 
     async function setControl(jobId, command, section = null) {
       const now = new Date(nowMs()).toISOString();
+      // Resume renews the idle lease of the paused run, in the same transaction (§12.4); no other control does.
+      const storedJob = command === "resume" ? await repository.getJob(jobId) : null;
       const outcome = await exclusive(() => repository.updateRun({
         jobId,
         runId: null,
-        decide: ({ job }) => {
+        authorizationId: storedJob?.status === "paused" ? storedJob.authorizationId : null,
+        decide: ({ job, authorization }) => {
           if (!job) return { outcome: { ok: false, code: "JOB_NOT_FOUND" } };
           if (TERMINAL.has(job.status)) return { outcome: { ok: false, code: "JOB_TERMINAL", status: job.status } };
           let next = null;
           if (command === "pause" && job.status === "running") next = { ...job, status: "paused", updatedAt: now };
-          else if (command === "resume" && job.status === "paused") next = { ...job, status: "running", updatedAt: now, nextEligibleAt: now };
+          else if (command === "resume" && job.status === "paused") {
+            const pace = job.pace && PaceController.validatePaceState(job.pace, Pacing) === null ? PaceController.onResume(job.pace) : job.pace;
+            const notBefore = Math.max(Date.parse(now), Date.parse(job.pace?.retryNotBefore ?? now) || 0, Date.parse(job.pendingStep?.nextRequestAt ?? now) || 0, Date.parse(job.pendingContract?.recheckAt ?? now) || 0);
+            next = { ...job, status: "running", updatedAt: now, nextEligibleAt: new Date(notBefore).toISOString(), ...(pace ? { pace } : {}) };
+            const lease = authorization ? Authorization.resumeLease(authorization, Date.parse(now)) : null;
+            if (lease?.ok) return { job: next, authorization: lease.value, outcome: { ok: true, job: next } };
+          }
           else if (command === "cancel" && ["running", "paused"].includes(job.status)) next = { ...job, status: "cancelled", updatedAt: now, completedAt: now, cursorBySection: {}, storedStepsBySection: {} };
           // Only the section being read now can be skipped: its next step ends it with what it has read.
           else if (command === "skip" && ["running", "paused"].includes(job.status) && job.plan.selectedSections[job.sectionIndex] === section) {
@@ -715,10 +1612,14 @@
           authorizationId: job.authorizationId,
           runId: job.runId,
           withStagedRun: true,
-          decide: ({ authorization, stagedRun }) => {
-            const runReceipt = terminalRunReceipt(job, authorization, "cancelled", now);
+          withPaceHistory: Boolean(job.paceHistory),
+          decide: ({ authorization, stagedRun, paceHistory }) => {
+            const runReceipt = terminalRunReceipt(job, authorization, "cancelled", now, pacingOf(paceHistory, job));
+            const history = job.paceHistory ? closedHistory(paceHistory, job, now) : { put: [], remove: [] };
             return {
               removePages: [{ collectionId: job.collectionId, section: null }],
+              paceHistory: history.put,
+              removePaceHistory: history.remove,
               ...(stagedRun ? { stagedRun: { ...stagedRun, results: [], ...(runReceipt ? { runReceipt } : {}), status: "cancelled", updatedAt: now } } : {}),
               ...(authorization ? { authorization: { ...authorization, revokedAt: now } } : {}),
               outcome: {}
@@ -731,8 +1632,8 @@
       return { ok: true, job };
     }
 
-    return Object.freeze({ tick, run, isRunning: (id) => loops.has(id), pause: (id) => setControl(id, "pause"), resume: (id) => setControl(id, "resume"), cancel: (id) => setControl(id, "cancel"), skipSection: (id, section) => setControl(id, "skip", section) });
+    return Object.freeze({ tick, run, actualRequestAllowances: (plan) => allowanceMaximums({ plan }), isRunning: (id) => loops.has(id), pause: (id) => setControl(id, "pause"), resume: (id) => setControl(id, "resume"), cancel: (id) => setControl(id, "cancel"), skipSection: (id, section) => setControl(id, "skip", section) });
   }
 
-  return Object.freeze({ ACTIVITY_LIMIT, MAXIMUM_BASELINE_JITTER_MS, MAXIMUM_REQUESTS_PER_JOB, MAXIMUM_REQUESTS_PER_SECTION, createJob, createSerialRunner, merge });
+  return Object.freeze({ ACTIVITY_LIMIT, MAXIMUM_BASELINE_JITTER_MS, MAXIMUM_CONTRACT_FINDINGS, MAXIMUM_REQUESTS_PER_JOB, MAXIMUM_REQUESTS_PER_SECTION, REQUEST_ALLOWANCES, STOP_MESSAGES, createJob, createSerialRunner, merge, safePaceActivity, safeSmartCheckActivity, withContractFinding });
 });

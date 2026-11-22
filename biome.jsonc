@@ -16,7 +16,13 @@
       "!docs/scripts/account-document.js",
       "!docs/scripts/organization-document.js",
       "!extension/shared/account-document.js",
-      "!extension/shared/organization-document.js"
+      "!extension/shared/organization-document.js",
+      "!docs/scripts/request-pacing-settings.js",
+      "!extension/shared/request-pacing-settings.js",
+      "!docs/scripts/pace-controller.js",
+      "!extension/shared/pace-controller.js",
+      "!docs/scripts/pace-history.js",
+      "!extension/shared/pace-history.js"
     ]
   },
   "formatter": { "enabled": false },

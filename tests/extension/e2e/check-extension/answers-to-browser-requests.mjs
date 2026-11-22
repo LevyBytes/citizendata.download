@@ -3,14 +3,20 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { chrome, rsi } from "./browser-pages-and-account-in-use.mjs";
 import { docsRoot } from "./dashboard-copy-without-image-spacing.mjs";
-import { gate } from "./held-rsi-requests.mjs";
-import { HOSTED_ORIGIN, MEDIA_ORIGIN, PNG, RSI_ORIGIN, mime } from "./origins-keys-and-stand-in-image.mjs";
+import { gate, refusal } from "./held-rsi-requests.mjs";
+import { HOSTED_ORIGIN, MEDIA_ORIGIN, PNG, RSI_ORIGIN, STATUS_ORIGIN, mime } from "./origins-keys-and-stand-in-image.mjs";
 
 export const unexpectedRequests = [];
 // Every image the dashboard asked RSI's image host for.
 export const mediaRequests = [];
 // Every download Chrome began, with the name it suggested and how it ended.
 export const downloadEvents = [];
+// A scenario's change to one file of the hosted dashboard as it is served: (pathname, bytes) => bytes.
+let hostedChange = null;
+export const changeHostedFile = (change) => { hostedChange = change; };
+// A scenario's change to the synthetic account's answers as Chrome receives them: (request, text) => text.
+let answerChange = null;
+export const changeRsiAnswers = (change) => { answerChange = change; };
 
 async function fulfil(requestId, status, contentType, body, location = null, extraHeaders = []) {
   await chrome.send("Fetch.fulfillRequest", {
@@ -25,16 +31,29 @@ async function fulfil(requestId, status, contentType, body, location = null, ext
 export async function answerPausedRequest({ requestId, request }) {
   const url = new URL(request.url);
   try {
-    if (url.origin === RSI_ORIGIN) {
+    if (url.origin === RSI_ORIGIN || url.origin === STATUS_ORIGIN) {
       const headers = Object.fromEntries(Object.entries(request.headers ?? {}).map(([name, value]) => [name.toLowerCase() === "x-rsi-token" ? "X-Rsi-Token" : name, value]));
+      // A limit the scenario holds answers in RSI's place, with its Retry-After.
+      const limit = refusal;
+      if (limit?.refuses(request)) {
+        await fulfil(requestId, limit.status, "text/html", "<html><body>Too Many Requests</body></html>", null, [{ name: "Retry-After", value: String(limit.retryAfterSeconds) }]);
+        return;
+      }
       const held = gate;
-      if (held && held.matches(request)) {
+      if (held?.matches(request)) {
         held.arrive();
         await held.released;
+        if (held.answer) {
+          const { status, contentType = "text/html", body = "", retryAfterSeconds = null } = held.answer;
+          await fulfil(requestId, status, contentType, body, null, retryAfterSeconds === null ? [] : [{ name: "Retry-After", value: String(retryAfterSeconds) }]);
+          return;
+        }
       }
       // A redirect is handed to Chrome to follow, as it follows RSI's own.
       const response = await rsi.fetch(request.url, { method: request.method, headers, body: request.postData, redirect: "manual" });
-      await fulfil(requestId, response.status, response.headers.get("content-type"), await response.text(), response.headers.get("location"));
+      const retryAfter = response.headers.get("retry-after");
+      const text = await response.text();
+      await fulfil(requestId, response.status, response.headers.get("content-type"), answerChange ? answerChange(request, text) : text, response.headers.get("location"), retryAfter === null ? [] : [{ name: "Retry-After", value: retryAfter }]);
       return;
     }
     if (url.origin === MEDIA_ORIGIN) {
@@ -46,7 +65,7 @@ export async function answerPausedRequest({ requestId, request }) {
     if (url.origin === HOSTED_ORIGIN) {
       const file = path.join(docsRoot, decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname));
       if (!file.startsWith(docsRoot + path.sep) || !existsSync(file)) await fulfil(requestId, 404, "text/plain", "Not found");
-      else await fulfil(requestId, 200, mime[path.extname(file).toLowerCase()] ?? "application/octet-stream", await readFile(file));
+      else await fulfil(requestId, 200, mime[path.extname(file).toLowerCase()] ?? "application/octet-stream", hostedChange ? hostedChange(url.pathname, await readFile(file)) : await readFile(file));
       return;
     }
     unexpectedRequests.push(request.url);

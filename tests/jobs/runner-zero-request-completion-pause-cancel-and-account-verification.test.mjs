@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assembleCanonical, authorizationRecord, profile } from "./runner-fixture-authorization-profile-and-assembly.mjs";
-import { databaseApi, localAccountId, runnerApi } from "./runner-under-test.mjs";
+import { atBaseline, databaseApi, localAccountId, runnerApi } from "./runner-under-test.mjs";
 
 test("cached adapter completion resolves zero actual HTTP requests", async () => {
   const clock = 15_000;
@@ -11,7 +11,7 @@ test("cached adapter completion resolves zero actual HTTP requests", async () =>
     authorizationId: "12121212-1212-4212-8212-121212121212",
     runId: "34343434-3434-4434-8434-343434343434"
   });
-  const job = runnerApi.createJob({ jobId: "job-cached", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() });
+  const job = atBaseline(runnerApi.createJob({ jobId: "job-cached", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() }));
   await repository.saveAuthorization(auth);
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], receipts: [] });
@@ -44,7 +44,7 @@ test("runner pause, resume, and cancel preserve durable state and revoke authori
   const repository = databaseApi.createMemoryRepository();
   const plan = { selectedSections: ["profile"], maximumRecordsBySection: { profile: 1 }, minimumInterRequestDelayMs: 2500 };
   const auth = authorizationRecord(clock);
-  const job = runnerApi.createJob({ jobId: "job-2", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, plan, now: new Date(clock).toISOString() });
+  const job = atBaseline(runnerApi.createJob({ jobId: "job-2", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, plan, now: new Date(clock).toISOString() }));
   await repository.saveAuthorization(auth);
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], receipts: [] });
@@ -62,7 +62,7 @@ test("runner refuses to stage data before the adapter verifies the authorized ac
   const repository = databaseApi.createMemoryRepository();
   const plan = { selectedSections: ["profile"], maximumRecordsBySection: { profile: 1 }, minimumInterRequestDelayMs: 2500 };
   const auth = authorizationRecord(clock);
-  const job = runnerApi.createJob({ jobId: "job-3", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() });
+  const job = atBaseline(runnerApi.createJob({ jobId: "job-3", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() }));
   await repository.saveAuthorization(auth);
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], receipts: [] });

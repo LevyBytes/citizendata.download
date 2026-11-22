@@ -8,6 +8,9 @@
   "use strict";
 
   const Delta = root.CitizenDataUpdateDelta;
+  // The classes of RSI's answers (adapters/rsi-answer-classification.js), which load before this file.
+  const Answers = root.CitizenDataRsiAnswers;
+  const { RsiReadError } = Answers;
 
   const RSI_ORIGIN = "https://robertsspaceindustries.com";
   const IDENTIFY_PATH = "/api/spectrum/auth/identify";
@@ -86,7 +89,10 @@
   }
 }`;
   const REFERRAL_PAGE_SIZE = 100;
-  const REQUEST_TIMEOUT_MS = 30000;
+  // The settings (shared/request-pacing-settings.js) load before this file.
+  const REQUEST_TIMEOUT_MS = root.CITIZENDATA_REQUEST_PACING.accountBuild.requestTimeoutMs;
+  // No wait inside a step is longer than this; a longer gap becomes a durable request slot (§6.3).
+  const MAXIMUM_IN_STEP_WAIT_MS = root.CITIZENDATA_REQUEST_PACING.brakes.maximumInStepWaitMs;
   const OFFSCREEN_PATH = "offscreen/parser.html";
   const HTML_CACHE_TTL_MS = 10 * 60 * 1000;
   const htmlCache = new Map();
@@ -95,12 +101,170 @@
   let activeRequestActivities = null;
   let activeRequestActivityListener = null;
   let activeSourceUrls = null;
+  // The answers of the step in progress, kept unread for the evidence of a changed contract (§5.7).
+  let activeEvidence = null;
+  // The step's journal while it runs in durable request slots (§6.3): the answers of its earlier slots, served again
+  // without a request, and every answer of this slot, for the runner to keep until the step ends. Null otherwise.
+  let activeJournal = null;
+  // The headers a served answer needs; no other header value is kept.
+  const JOURNAL_HEADERS = Object.freeze(["content-type", "content-length", "retry-after"]);
+
+  // Where a step stops: its next request is due later than an in-step wait may last.
+  class PhaseBoundary extends Error {
+    constructor(phase, nextRequestAtMs) {
+      super("RSI_STEP_PHASE_BOUNDARY");
+      this.name = "PhaseBoundary";
+      this.phase = phase;
+      this.nextRequestAtMs = nextRequestAtMs;
+    }
+  }
+
+  // A request's identity within one step: its method, its address and its body.
+  function journalKey(url, options) {
+    return `${String(options?.method ?? "GET").toUpperCase()} ${url} ${typeof options?.body === "string" ? options.body : ""}`;
+  }
+
+  // A kept answer, served as the response it was: its status, final address, the headers above and its text.
+  function journalResponse(entry) {
+    return {
+      ok: entry.status >= 200 && entry.status < 300,
+      status: entry.status,
+      url: entry.url,
+      headers: { get: (name) => Object.hasOwn(entry.headers, String(name).toLowerCase()) ? entry.headers[String(name).toLowerCase()] : null },
+      async text() { return entry.text; },
+      async json() { return JSON.parse(entry.text); },
+      clone() { return journalResponse(entry); }
+    };
+  }
+
+  // The kept answer of this request from an earlier slot, once; or null when it has not been answered yet.
+  function takeJournaled(key) {
+    const index = activeJournal.served.findIndex((entry) => entry.key === key);
+    if (index < 0) return null;
+    const [entry] = activeJournal.served.splice(index, 1);
+    return entry;
+  }
+  const EVIDENCE_BYTES = 2 * 1024 * 1024;
+  const EVIDENCE_NAME = /^[A-Za-z0-9_.$@-]{1,80}$/u;
+
+  // An answer kept for evidence: an unread copy of its body, and what the request and answer show of its shape.
+  function keepEvidence(response, meta, requestBody = null) {
+    if (!activeEvidence) return null;
+    const operations = (Array.isArray(requestBody) ? requestBody : [requestBody]).map((question) => question?.operationName).filter((name) => typeof name === "string" && EVIDENCE_NAME.test(name));
+    let copy;
+    try {
+      copy = typeof response.clone === "function" ? response.clone() : null;
+    } catch {
+      copy = null;
+    }
+    const entry = { meta, copy, contentType: response.headers.get("content-type"), contentLength: response.headers.get("content-length"), finalUrl: response.url || null, operationNames: [...new Set(operations)].slice(0, 32), topLevelKeys: [] };
+    activeEvidence.push(entry);
+    return entry;
+  }
+
+  // The names of an answer's top level: an object's keys, or the keys of a GraphQL list's answers.
+  function topLevelKeysOf(value) {
+    const objects = Array.isArray(value) ? value : [value];
+    const keys = objects.flatMap((item) => item !== null && typeof item === "object" && !Array.isArray(item) ? Object.keys(item) : []);
+    return [...new Set(keys)].filter((key) => EVIDENCE_NAME.test(key)).slice(0, 32);
+  }
+
+  // At most 2 MiB of a kept body, read from its copy: the bytes, or none when the body is longer.
+  async function evidenceBytes(copy) {
+    if (!copy) return { bytes: null, truncated: false };
+    if (copy.body && typeof copy.body.getReader === "function") {
+      const reader = copy.body.getReader();
+      const chunks = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > EVIDENCE_BYTES) {
+          await reader.cancel();
+          return { bytes: null, truncated: true };
+        }
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return { bytes, truncated: false };
+    }
+    const bytes = typeof copy.arrayBuffer === "function" ? new Uint8Array(await copy.arrayBuffer()) : typeof copy.text === "function" ? new TextEncoder().encode(await copy.text()) : null;
+    if (!bytes) return { bytes: null, truncated: false };
+    return bytes.byteLength > EVIDENCE_BYTES ? { bytes: null, truncated: true } : { bytes, truncated: false };
+  }
+
+  async function sha256OfBytes(bytes) {
+    const digest = await root.crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  // JSON with object keys sorted, for the finding's key.
+  function canonicalJson(value) {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+    return JSON.stringify(value);
+  }
+
+  // The privacy-safe finding of a changed contract (§5.7): what was asked, what came back and its shape, and a hash
+  // of at most 2 MiB of its bytes. No body, header value, cookie or account value enters it.
+  async function contractFinding(signal, section) {
+    const kept = activeEvidence ?? [];
+    const entry = [...kept].reverse().find((candidate) => candidate.meta.route === signal.route && (signal.page === null || candidate.meta.page === signal.page)) ?? kept.at(-1) ?? null;
+    const { bytes, truncated } = await evidenceBytes(entry?.copy ?? null);
+    // The answer's own length only when it is a whole number of digits: a missing header is not a length of 0.
+    const declaredLength = typeof entry?.contentLength === "string" && /^\d{1,16}$/u.test(entry.contentLength) ? Number(entry.contentLength) : null;
+    const byteLength = Number.isSafeInteger(declaredLength) ? declaredLength : bytes ? bytes.byteLength : null;
+    // Same-origin path and query only: no credentials, fragment or other origin.
+    let finalRoute = null;
+    const answered = typeof entry?.finalUrl === "string" && URL.canParse(entry.finalUrl) ? new URL(entry.finalUrl) : null;
+    if (answered?.origin === RSI_ORIGIN) finalRoute = `${answered.pathname}${answered.search}`.slice(0, 400);
+    const contentType = typeof entry?.contentType === "string" ? entry.contentType.slice(0, 120) : null;
+    const fields = {
+      section,
+      code: signal.code,
+      method: entry?.meta.method ?? signal.method ?? "GET",
+      route: entry?.meta.route ?? signal.route ?? "/",
+      page: entry?.meta.page ?? signal.page ?? null,
+      httpStatus: entry?.meta.httpStatus ?? signal.httpStatus ?? null,
+      contentType,
+      byteLength,
+      bodySha256: bytes ? await sha256OfBytes(bytes) : null,
+      bodyTruncated: truncated,
+      finalRoute,
+      pageMarkers: {},
+      topLevelKeys: entry?.topLevelKeys ?? [],
+      operationNames: entry?.operationNames ?? []
+    };
+    const keyed = [fields.section, fields.code, fields.method, fields.route, fields.page, fields.httpStatus, fields.contentType, fields.byteLength, fields.bodySha256, fields.bodyTruncated, fields.finalRoute, fields.pageMarkers, fields.topLevelKeys, fields.operationNames];
+    return {
+      findingKey: await sha256OfBytes(new TextEncoder().encode(canonicalJson(keyed))),
+      ...fields,
+      observedAt: new Date().toISOString(),
+      sourceUrls: Array.from(new Set(activeSourceUrls ?? [])).sort()
+    };
+  }
 
   async function withRsiToken(operation) {
     const cookie = await chrome.cookies.get({ url: `${RSI_ORIGIN}/`, name: "Rsi-Token" });
     const rsiToken = typeof cookie?.value === "string" && cookie.value ? cookie.value : null;
-    if (!rsiToken) throw new Error("Sign in to RSI, then click Build JSON again.");
+    if (!rsiToken) throw new RsiReadError({ kind: "user", code: "RSI_SIGNED_OUT", reason: "signed-out" }, { message: "Sign in to RSI, then click Build JSON again." });
     return await operation(rsiToken);
+  }
+
+  // An answer of a changed shape: RSI answered in full, and the content is not what the parser reads (§5.2 row 23).
+  function contractError(code, request = null, detail = {}) {
+    return new RsiReadError({ kind: "contract", code, ...(request ?? {}), ...detail });
+  }
+
+  // The request fields a signal names: method, route and page.
+  function requestFields(meta) {
+    return meta ? { method: meta.method, route: meta.route, page: meta.page } : {};
   }
 
   function recordSourceUrl(candidate) {
@@ -110,10 +274,9 @@
     if (url.protocol === "https:" && !url.username && !url.password) activeSourceUrls.push(url.href);
   }
 
+  // One request to RSI, given up after the settings' timeout. It returns the answer with the request's fields, the
+  // time it took and RSI's Retry-After; a time-out or a network failure is logged and raised as an RsiReadError.
   async function fetchWithTimeout(url, options) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const startedAt = Date.now();
     const requestedUrl = new URL(url);
     let requestBody;
     try { requestBody = typeof options?.body === "string" ? JSON.parse(options.body) : null; } catch { requestBody = null; }
@@ -125,15 +288,31 @@
       page: Number.isSafeInteger(page) && page > 0 ? page : null,
       pageCount: null
     };
+    // An answer an earlier slot of this step received is served again: no request, no request line.
+    const key = activeJournal ? journalKey(url, options) : null;
+    const journaled = key ? takeJournaled(key) : null;
+    if (journaled) {
+      recordSourceUrl(new URL(journaled.url || url).href);
+      return { response: journalResponse(journaled), meta: { ...journaled.meta } };
+    }
+    // The runner awaits each request's start before it is sent; a cancelled job sends nothing further.
+    if (activeRequestActivityListener) await activeRequestActivityListener({ kind: "request-started", ...requestIdentity, at: new Date().toISOString() });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const startedAt = Date.now();
+    if (activeJournal) activeJournal.lastStartMs = Math.max(activeJournal.lastStartMs ?? 0, startedAt);
     try {
-      if (activeRequestActivityListener) await activeRequestActivityListener({
-        kind: "request-started",
-        ...requestIdentity,
-        at: new Date(startedAt).toISOString()
-      });
       const response = await fetch(url, { ...options, signal: controller.signal });
       const parsedUrl = new URL(response.url || url);
       recordSourceUrl(parsedUrl.href);
+      const elapsedMs = Math.max(0, Date.now() - startedAt);
+      const retryAfterMs = Answers.parseRetryAfter(response.headers.get("retry-after"), Date.now());
+      // Every answer is kept for the step's later slots, so none is asked for twice: an answer that ends the step drops
+      // the journal with it, and one the step goes on past, like a refused CCU call, is served again from here.
+      if (activeJournal && typeof response.clone === "function") {
+        const headers = Object.fromEntries(JOURNAL_HEADERS.map((name) => [name, response.headers.get(name)]).filter(([, value]) => typeof value === "string"));
+        activeJournal.recorded.push({ key, status: response.status, url: response.url || url, headers, text: await response.clone().text(), startedAtMs: startedAt, meta: { ...requestIdentity, elapsedMs, retryAfterMs, httpStatus: response.status } });
+      }
       if (activeRequestActivities) {
         activeRequestActivities.push({
           kind: "request-completed",
@@ -141,17 +320,44 @@
           responseStatus: response.status,
           recordsReceived: null,
           recordsTotal: null,
-          elapsedMs: Math.max(0, Date.now() - startedAt),
+          retryAfterMs,
+          elapsedMs,
           at: new Date().toISOString()
         });
       }
-      return response;
+      return { response, meta: { ...requestIdentity, elapsedMs, retryAfterMs, httpStatus: response.status } };
     } catch (error) {
-      if (error?.name === "AbortError") throw new Error("RSI_REQUEST_TIMEOUT", { cause: error });
-      throw error;
+      const timedOut = error?.name === "AbortError";
+      if (!timedOut && error?.name !== "TypeError") throw error;
+      const elapsedMs = Math.max(0, Date.now() - startedAt);
+      if (activeRequestActivities) {
+        activeRequestActivities.push({ kind: "request-failed", method: requestIdentity.method, route: requestIdentity.route, page: requestIdentity.page, error: timedOut ? "TIMEOUT" : "NETWORK", elapsedMs, at: new Date().toISOString() });
+      }
+      // A time-out passes; a TypeError is a network failure, a refused redirect of a JSON call, or CORS after a
+      // redirect off RSI, so it is unclear (§5.2 rows 15 and 16).
+      throw new RsiReadError({
+        kind: timedOut ? "transient" : "ambiguous",
+        code: timedOut ? "RSI_REQUEST_TIMEOUT" : "RSI_NETWORK_OR_REDIRECT",
+        ...requestFields(requestIdentity),
+        elapsedMs
+      }, { cause: error });
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  // An answer that is not 2xx, raised with its class (§5.2 rows 2 to 6, 9 and 10).
+  function statusError(code, meta, fixedAddress) {
+    const kind = Answers.classifyStatus({ status: meta.httpStatus, fixedAddress });
+    return new RsiReadError({
+      kind: kind === "ok" ? "ambiguous" : kind,
+      code,
+      httpStatus: meta.httpStatus,
+      retryAfterMs: meta.retryAfterMs,
+      reason: kind === "user" ? "signed-out" : null,
+      ...requestFields(meta),
+      elapsedMs: meta.elapsedMs
+    });
   }
 
   function annotateActivity(route, page, detail) {
@@ -160,26 +366,44 @@
     if (activity) Object.assign(activity, detail);
   }
 
+  // The pages of one step: one, or two when the section has two lanes and a second page is known to exist.
   function pageBatch(input, knownPageCount = null) {
     const page = Number.isSafeInteger(input.cursor?.page) ? input.cursor.page : 1;
-    if (!Number.isSafeInteger(knownPageCount) || page >= knownPageCount) return [page];
+    const lanes = Number.isSafeInteger(input.lanes) && input.lanes > 0 ? input.lanes : 2;
+    if (lanes < 2 || !Number.isSafeInteger(knownPageCount) || page >= knownPageCount) return [page];
     return [page, page + 1];
   }
 
-  async function waitForConcurrentLane(input, index) {
+  // The gap before a step's next request: the stagger after the previous start. A gap no longer than an in-step wait
+  // may last is waited here, as it always was. A longer one is a durable request slot (§6.3): when the time has not
+  // come yet, the step stops at it, named by `phase`, the request it comes before.
+  async function waitForConcurrentLane(input, index, phase = "second-lane") {
     if (index === 0) return;
     const delayMs = Number.isSafeInteger(input?.concurrentRequestStaggerMs) && input.concurrentRequestStaggerMs >= 0
       ? input.concurrentRequestStaggerMs
       : 0;
-    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (delayMs <= 0) return;
+    if (!activeJournal || delayMs <= MAXIMUM_IN_STEP_WAIT_MS) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return;
+    }
+    const dueAtMs = (activeJournal.lastStartMs ?? Date.now()) + delayMs;
+    const remainingMs = dueAtMs - Date.now();
+    if (remainingMs <= 0) return;
+    if (remainingMs <= MAXIMUM_IN_STEP_WAIT_MS) {
+      await new Promise((resolve) => setTimeout(resolve, remainingMs));
+      return;
+    }
+    throw new PhaseBoundary(phase, dueAtMs);
   }
 
   // Runs the requests of one step side by side, the second a moment after the first. When one fails, a request that
-  // has not been sent yet is not sent: a step that failed asks RSI for nothing more.
-  async function runLanes(input, items, lane) {
+  // has not been sent yet is not sent: a step that failed asks RSI for nothing more. When a later lane is a durable
+  // slot, the lanes already sent finish first, so their answers are kept.
+  async function runLanes(input, items, lane, phase = "second-lane") {
     let failed = false;
-    return Promise.all(items.map(async (item, index) => {
-      await waitForConcurrentLane(input, index);
+    const runs = items.map(async (item, index) => {
+      await waitForConcurrentLane(input, index, phase);
       if (failed) throw new Error("RSI_STEP_ABANDONED");
       try {
         return await lane(item, index);
@@ -187,7 +411,15 @@
         failed = true;
         throw error;
       }
-    }));
+    });
+    try {
+      return await Promise.all(runs);
+    } catch (error) {
+      if (!(error instanceof PhaseBoundary)) throw error;
+      const outcomes = await Promise.allSettled(runs);
+      const other = outcomes.find((outcome) => outcome.status === "rejected" && !(outcome.reason instanceof PhaseBoundary));
+      throw other ? other.reason : error;
+    }
   }
 
   function requestProgress(completed, total, subphase = null) {
@@ -226,8 +458,12 @@
   async function postJson(path, body, errorPrefix = "RSI_API") {
     const approvedUrl = approvedPostUrl(path);
     if (!approvedUrl) throw new Error(`${errorPrefix}_ROUTE_NOT_ALLOWED`);
-    return withRsiToken(async (rsiToken) => {
-      const response = await fetchWithTimeout(approvedUrl.href, {
+    const requestBody = JSON.stringify(body);
+    // A request an earlier slot of this step already sent is answered from the journal, so the transient RSI token is
+    // read only for a request that is due (§6.3).
+    const kept = activeJournal?.served.some((entry) => entry.key === journalKey(approvedUrl.href, { method: "POST", body: requestBody })) === true;
+    const send = async (rsiToken) => {
+      const { response, meta } = await fetchWithTimeout(approvedUrl.href, {
         method: "POST",
         credentials: "include",
         cache: "no-store",
@@ -237,16 +473,25 @@
           "Accept": "application/json",
           "Accept-Language": "en-US,en;q=0.9",
           "Content-Type": "application/json",
-          "X-Rsi-Token": rsiToken
+          ...(rsiToken === null ? {} : { "X-Rsi-Token": rsiToken })
         },
-        body: JSON.stringify(body)
+        body: requestBody
       });
-      if (!response.ok) throw new Error(`${errorPrefix}_HTTP_${response.status}`);
+      // Every POST route is a fixed address.
+      if (!response.ok) throw statusError(`${errorPrefix}_HTTP_${response.status}`, meta, true);
       const contentType = response.headers.get("content-type") ?? "";
-      if (!contentType.includes("application/json")) throw new Error(`${errorPrefix}_CONTENT_TYPE_CHANGED`);
-      return response.json();
-    });
+      if (!contentType.includes("application/json")) throw new RsiReadError({ kind: "ambiguous", code: `${errorPrefix}_CONTENT_TYPE_CHANGED`, httpStatus: meta.httpStatus, ...requestFields(meta), elapsedMs: meta.elapsedMs });
+      lastPostMeta = meta;
+      const evidence = keepEvidence(response, meta, body);
+      const parsed = await response.json();
+      if (evidence) evidence.topLevelKeys = topLevelKeysOf(parsed);
+      return parsed;
+    };
+    return kept ? await send(null) : await withRsiToken(send);
   }
+
+  // The request fields of the last JSON answer, for the refusals its caller finds in the body.
+  let lastPostMeta = null;
 
   function approvedHtmlPath(path) {
     const url = new URL(path, RSI_ORIGIN);
@@ -266,44 +511,68 @@
     return false;
   }
 
-  function assertSignedInHtml(html, finalUrl) {
+  function assertSignedInHtml(html, finalUrl, meta = null) {
+    const signedOut = () => new RsiReadError({ kind: "user", code: "RSI_SESSION_NOT_AUTHENTICATED", reason: "signed-out", ...requestFields(meta), httpStatus: meta?.httpStatus ?? null });
     const normalized = String(html).replace(/\s+/gu, " ");
     if (/Restricted Area/iu.test(normalized) && /Authorized Personnel Only/iu.test(normalized) && /must be authenticated to reach this area/iu.test(normalized)) {
-      throw new Error("RSI_SESSION_NOT_AUTHENTICATED");
+      throw signedOut();
     }
     const path = new URL(finalUrl).pathname;
-    if (/\/(?:connect|auth|login)(?:\/|$)/iu.test(path)) throw new Error("RSI_SESSION_NOT_AUTHENTICATED");
+    if (/\/(?:connect|auth|login)(?:\/|$)/iu.test(path)) throw signedOut();
+  }
+
+  // The addresses that cannot be gone: a 403 or 404 there is unclear until the canary has spoken (§5.2 rows 5, 6).
+  function isFixedHtmlPath(pathname) {
+    return /^\/en\/citizens\/[A-Za-z0-9_-]+(?:\/organizations)?\/?$/u.test(pathname) || pathname === "/account/pledges" || pathname === "/account/billing";
+  }
+
+  // A browser check page of Google's, which RSI's front end can send instead of the page asked for (§5.2 row 13).
+  function isBrowserCheck(url) {
+    return (url.hostname === "www.google.com" || url.hostname === "www.recaptcha.net") && url.pathname.startsWith("/recaptcha/");
   }
 
   // `cache: false` is for pages read once and never again in a run. A status listed in `unavailableStatuses` is
-  // answered as a page without markup instead of failing the run.
-  async function getHtml(path, { cache = true, unavailableStatuses = [] } = {}) {
+  // answered as a page without markup instead of failing the run. `credentials: "omit"` sends no cookie, and then
+  // the cache is neither read nor written: it holds the signed-in copy of the same address.
+  async function getHtml(path, { cache = true, unavailableStatuses = [], credentials = "include" } = {}) {
     if (!approvedHtmlPath(path)) throw new Error("RSI_HTML_ROUTE_NOT_ALLOWED");
     const url = new URL(path, RSI_ORIGIN).href;
+    const useCache = cache && credentials !== "omit";
     recordSourceUrl(url);
-    const cached = cache ? htmlCache.get(url) : null;
+    const cached = useCache ? htmlCache.get(url) : null;
     if (cached && Date.now() - cached.cachedAt < HTML_CACHE_TTL_MS) {
       recordSourceUrl(cached.finalUrl);
       return cached;
     }
-    const response = await fetchWithTimeout(url, {
+    const { response, meta } = await fetchWithTimeout(url, {
       method: "GET",
-      credentials: "include",
+      credentials,
       cache: "no-store",
       redirect: "follow",
       referrerPolicy: "no-referrer",
       headers: { "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9" }
     });
-    if (unavailableStatuses.includes(response.status)) return Object.freeze({ html: null, finalUrl: response.url || url, status: response.status });
-    if (!response.ok) throw new Error(`RSI_HTML_HTTP_${response.status}`);
-    if (new URL(response.url).origin !== RSI_ORIGIN) throw new Error("RSI_HTML_REDIRECTED_OFF_ORIGIN");
+    if (unavailableStatuses.includes(response.status)) return Object.freeze({ html: null, finalUrl: response.url || url, status: response.status, meta });
+    if (!response.ok) throw statusError(`RSI_HTML_HTTP_${response.status}`, meta, isFixedHtmlPath(new URL(url).pathname));
+    const answered = new URL(response.url || url);
+    if (isBrowserCheck(answered)) throw new RsiReadError({ kind: "user", code: "RSI_CHECK_IN_BROWSER", reason: "check-in-browser", httpStatus: meta.httpStatus, ...requestFields(meta), elapsedMs: meta.elapsedMs });
+    if (answered.origin !== RSI_ORIGIN) throw new RsiReadError({ kind: "ambiguous", code: "RSI_HTML_REDIRECTED_OFF_ORIGIN", httpStatus: meta.httpStatus, ...requestFields(meta), elapsedMs: meta.elapsedMs });
     const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.includes("text/html")) throw new Error("RSI_HTML_CONTENT_TYPE_CHANGED");
+    if (!contentType.includes("text/html")) throw new RsiReadError({ kind: "ambiguous", code: "RSI_HTML_CONTENT_TYPE_CHANGED", httpStatus: meta.httpStatus, ...requestFields(meta), elapsedMs: meta.elapsedMs });
+    keepEvidence(response, meta);
     const html = await response.text();
-    assertSignedInHtml(html, response.url);
-    const value = Object.freeze({ html, finalUrl: response.url, cachedAt: Date.now(), status: response.status });
-    if (cache) htmlCache.set(url, value);
+    assertSignedInHtml(html, response.url || url, meta);
+    const value = Object.freeze({ html, finalUrl: response.url || url, cachedAt: Date.now(), status: response.status, meta });
+    if (useCache) htmlCache.set(url, value);
     return value;
+  }
+
+  // Page identity (§5.3): the page RSI sent is the page asked for, or the read stops as row 22, before any value of
+  // the page is used; the page is dropped from the cache.
+  function assertPageRecognized(parsed, page, path) {
+    if (parsed?.pageRecognized === true) return;
+    htmlCache.delete(new URL(path, RSI_ORIGIN).href);
+    throw new RsiReadError({ kind: "ambiguous", code: "RSI_PAGE_NOT_RECOGNIZED", rsiMessage: Answers.bounded(parsed?.pageTitle, 160), httpStatus: page.meta?.httpStatus ?? null, ...requestFields(page.meta), elapsedMs: page.meta?.elapsedMs ?? null });
   }
 
   async function ensureOffscreenParser() {
@@ -330,26 +599,50 @@
     return response;
   }
 
-  function assertPagedFragment(response, page, contractName, property = "rendered") {
+  // An RSI JSON answer whose `success` is not true or 1, raised with RSI's code and message (§5.2 rows 18 and 19).
+  function refusalError(response, contractName, meta = lastPostMeta) {
+    const refusal = Answers.classifyJsonRefusal(response);
+    const safeCode = refusal.rsiCode ? refusal.rsiCode.toUpperCase() : "UNSUCCESSFUL";
+    return new RsiReadError({ kind: refusal.kind, code: `${contractName}_RESPONSE_REJECTED_${safeCode}`, rsiCode: refusal.rsiCode, rsiMessage: refusal.rsiMessage, httpStatus: meta?.httpStatus ?? null, ...requestFields(meta), elapsedMs: meta?.elapsedMs ?? null });
+  }
+
+  // `allowEmpty`, for the ledgers only (§13.2): RSI answers page 1 of an empty ledger with a page count of 0. That one
+  // shape is read as one page; the collector then requires it to hold no row.
+  function assertPagedFragment(response, page, contractName, { property = "rendered", allowEmpty = false } = {}) {
+    const meta = lastPostMeta;
+    if (![true, 1].includes(response?.success)) throw refusalError(response, contractName, meta);
     const data = response?.data;
     const observedPage = Number(data?.page);
     const pageCount = Number(data?.pagecount);
-    if (!data) throw new Error(`${contractName}_MISSING_DATA`);
-    if (![true, 1].includes(response.success)) {
-      const safeCode = typeof response?.code === "string" && /^[A-Za-z0-9_-]{1,64}$/u.test(response.code) ? response.code.toUpperCase() : "UNSUCCESSFUL";
-      throw new Error(`${contractName}_RESPONSE_REJECTED_${safeCode}`);
-    }
-    if (observedPage !== page) throw new Error(`${contractName}_PAGE_MISMATCH_REQUESTED_${page}_OBSERVED_${Number.isSafeInteger(observedPage) ? observedPage : "UNKNOWN"}`);
-    if (!Number.isSafeInteger(pageCount) || pageCount < page) throw new Error(`${contractName}_PAGE_COUNT_INVALID`);
-    if (typeof data[property] !== "string") throw new Error(`${contractName}_${property.toUpperCase()}_MISSING`);
+    if (allowEmpty && page === 1 && observedPage === 1 && pageCount === 0 && typeof data?.rendered === "string") return { ...data, page: 1, pagecount: 1 };
+    if (!data) throw contractError(`${contractName}_MISSING_DATA`, requestFields(meta));
+    if (observedPage !== page) throw contractError(`${contractName}_PAGE_MISMATCH_REQUESTED_${page}_OBSERVED_${Number.isSafeInteger(observedPage) ? observedPage : "UNKNOWN"}`, requestFields(meta));
+    if (!Number.isSafeInteger(pageCount) || pageCount < page) throw contractError(`${contractName}_PAGE_COUNT_INVALID`, requestFields(meta));
+    if (typeof data[property] !== "string") throw contractError(`${contractName}_${property.toUpperCase()}_MISSING`, requestFields(meta));
     return { ...data, page: observedPage, pagecount: pageCount };
+  }
+
+  // One GraphQL answer of an operation, classified (§5.7). A limit's words refuse the step; an error beside the
+  // operation's required data is kept as anomaly rows; an error without that data is unclear.
+  function graphqlAnswer(answer, operation, anomalyRows, accountId = null) {
+    const classified = Answers.classifyGraphqlEnvelope(answer, { name: operation, accountId });
+    const meta = lastPostMeta;
+    if (classified.kind === "limit" || classified.kind === "ambiguous") {
+      const first = classified.errors[0] ?? {};
+      throw new RsiReadError({ kind: classified.kind, code: "RSI_GRAPHQL_REJECTED", rsiCode: first.code ?? null, rsiMessage: first.message ?? null, httpStatus: meta?.httpStatus ?? null, ...requestFields(meta), elapsedMs: meta?.elapsedMs ?? null });
+    }
+    for (const row of classified.anomalyRows) anomalyRows.push(row);
+    return answer;
   }
 
   async function identifyAccount() {
     const response = await postJson(IDENTIFY_PATH, {});
+    if (![true, 1].includes(response?.success)) throw refusalError(response, "RSI_IDENTIFY");
     const member = response?.data?.member;
     const accountId = typeof member?.nickname === "string" ? member.nickname.trim() : "";
-    if (!accountId || !/^[A-Za-z0-9_-]+$/u.test(accountId)) throw new Error("The signed-in RSI account did not expose its dossier handle.");
+    if (!accountId || !/^[A-Za-z0-9_-]+$/u.test(accountId)) {
+      throw new RsiReadError({ kind: "ambiguous", code: "RSI_IDENTIFY_HANDLE_MISSING", ...requestFields(lastPostMeta) }, { message: "The signed-in RSI account did not expose its dossier handle." });
+    }
     if (identifiedAccountId !== accountId) {
       identifiedAccountId = accountId;
       htmlCache.clear();
@@ -366,7 +659,9 @@
     const handle = encodeURIComponent(input.accountId);
     const page = await getHtml(`/en/citizens/${handle}`);
     const parsed = await parseMarkup("profile", page.html, { baseUrl: page.finalUrl });
-    if (!parsed.raw?.handle || parsed.raw.handle.toLowerCase() !== input.accountId.toLowerCase()) throw new Error("RSI_PUBLIC_DOSSIER_IDENTITY_MISMATCH");
+    assertPageRecognized(parsed, page, `/en/citizens/${handle}`);
+    if (!parsed.raw?.handle || parsed.raw.handle.toLowerCase() !== input.accountId.toLowerCase()) throw contractError("RSI_PUBLIC_DOSSIER_IDENTITY_MISMATCH", requestFields(page.meta));
+    const anomalyRows = [];
     const [authenticatedEnvelope, dashboardEnvelope] = await runLanes(input, [0, 1], (lane) => lane === 0
       ? postJson(GRAPHQL_PATH, [{ operationName: "GetAuthenticatedUser", variables: {}, query: AUTHENTICATED_USER_QUERY }])
       : postJson(GRAPHQL_PATH, [
@@ -380,14 +675,23 @@
           variables: {},
           extensions: { persistedQuery: { version: 1, sha256Hash: ACCOUNT_DASHBOARD_QUERY_HASH } }
         }
-      ]));
-    const authenticated = Array.isArray(authenticatedEnvelope) ? authenticatedEnvelope[0]?.data?.account : null;
-    const dashboard = Array.isArray(dashboardEnvelope) ? dashboardEnvelope[1]?.data?.accountDashboard?.account : null;
-    if (!authenticated || authenticated.isAnonymous !== false || typeof authenticated.nickname !== "string"
-      || authenticated.nickname.toLowerCase() !== input.accountId.toLowerCase() || !Array.isArray(authenticated.badges)) {
-      throw new Error("RSI_AUTHENTICATED_BADGES_CONTRACT_CHANGED");
+      ]), "dashboard-badges");
+    // getRouteInfo's errors never discard the dashboard account; they are kept beside it. A limit's words still refuse.
+    if (Array.isArray(dashboardEnvelope) && Answers.classifyGraphqlErrors(dashboardEnvelope[0]?.errors) === "limit") graphqlAnswer(dashboardEnvelope[0], "getRouteInfo", [], input.accountId);
+    const authenticatedAnswer = Array.isArray(authenticatedEnvelope) ? graphqlAnswer(authenticatedEnvelope[0], "GetAuthenticatedUser", anomalyRows, input.accountId) : null;
+    const dashboardAnswer = Array.isArray(dashboardEnvelope) ? graphqlAnswer(dashboardEnvelope[1], "GetAccountDashboardData", anomalyRows, input.accountId) : null;
+    if (Array.isArray(dashboardEnvelope?.[0]?.errors)) {
+      for (const error of dashboardEnvelope[0].errors) {
+        anomalyRows.push({ issueCode: "GRAPHQL_PARTIAL_ERROR", message: `RSI answered getRouteInfo with an error beside the dashboard account: ${Answers.bounded(error?.message, 100) ?? "no message"}`, raw: { operation: "getRouteInfo", message: Answers.bounded(error?.message, Answers.MESSAGE_LENGTH), code: Answers.rsiCodeOf(error?.extensions?.code) } });
+      }
     }
-    if (!dashboard || !Array.isArray(dashboard.featuredBadges)) throw new Error("RSI_DASHBOARD_BADGES_CONTRACT_CHANGED");
+    const authenticated = authenticatedAnswer?.data?.account ?? null;
+    const dashboard = dashboardAnswer?.data?.accountDashboard?.account ?? null;
+    if (authenticated?.isAnonymous !== false || typeof authenticated.nickname !== "string"
+      || authenticated.nickname.toLowerCase() !== input.accountId.toLowerCase() || !Array.isArray(authenticated.badges)) {
+      throw contractError("RSI_AUTHENTICATED_BADGES_CONTRACT_CHANGED");
+    }
+    if (!dashboard || !Array.isArray(dashboard.featuredBadges)) throw contractError("RSI_DASHBOARD_BADGES_CONTRACT_CHANGED");
     recordSourceUrl(`${RSI_ORIGIN}/account/dashboard`);
     if (typeof authenticated.profileUrl === "string" && authenticated.profileUrl) recordSourceUrl(new URL(authenticated.profileUrl, RSI_ORIGIN).href);
 
@@ -423,12 +727,16 @@
     };
     addTitleImage(favorite?.name, favoriteImage);
     for (const entry of featuredBadges) for (const image of entry.images) addTitleImage(entry.title, image);
-    const unlockedBadges = authenticated.badges.map((badge, sourceIndex) => {
+    // A malformed badge row is left out and kept as anomaly evidence; the other badges continue (§5.7).
+    const unlockedBadges = authenticated.badges.flatMap((badge, sourceIndex) => {
       const id = badge?.id ?? null;
       const title = badge?.title ?? null;
       if (!(id === null || Number.isSafeInteger(id)) || !(title === null || typeof title === "string" && title.length > 0)
-        || (id === null) !== (title === null)) throw new Error("RSI_AUTHENTICATED_BADGE_ROW_CONTRACT_CHANGED");
-      return { sourceIndex, id, title, images: title === null ? [] : [...(imagesByTitle.get(title) ?? [])] };
+        || (id === null) !== (title === null)) {
+        anomalyRows.push({ recordIndex: sourceIndex + 1, pageOrBatch: 1, keySuffix: `badge.${sourceIndex}`, issueCode: "RSI_AUTHENTICATED_BADGE_ROW_CONTRACT_CHANGED", message: `Unlocked badge row ${sourceIndex + 1} did not have the shape CitizenData reads and was retained for review.`, raw: badge === undefined ? null : badge, retainedInNormalizedData: false });
+        return [];
+      }
+      return [{ sourceIndex, id, title, images: title === null ? [] : [...(imagesByTitle.get(title) ?? [])] }];
     });
     const selectedBadge = typeof favorite?.name === "string" && favorite.name
       ? { title: favorite.name, images: favoriteImage ? [favoriteImage] : [] }
@@ -449,7 +757,8 @@
       done: true,
       complete: true,
       pagesOrBatches: 3,
-      warnings: [],
+      warnings: anomalyRows.length ? [`${anomalyRows.length} profile source value${anomalyRows.length === 1 ? "" : "s"} did not have the expected shape; exact evidence was retained in dataQuality.anomalies.`] : [],
+      rawAnomalies: anomalyRows.map((row, index) => ({ recordIndex: row.recordIndex ?? index + 1, pageOrBatch: row.pageOrBatch ?? 1, keySuffix: row.keySuffix ?? `graphql.${index}`, retainedInNormalizedData: false, ...row })),
       requestProgress: requestProgress(3, 3)
     };
   }
@@ -465,13 +774,14 @@
     const results = await runLanes(input, pages, async (pageNumber) => {
       const page = await getHtml(`/account/pledges?page=${pageNumber}&product-type=`);
       const parsed = await parseMarkup("pledges", page.html, { baseUrl: page.finalUrl, page: pageNumber });
-      if (!Array.isArray(parsed.raw) || pageNumber === 1 && parsed.raw.length === 0) throw new Error("RSI_PLEDGES_CONTRACT_CHANGED");
+      assertPageRecognized(parsed, page, `/account/pledges?page=${pageNumber}&product-type=`);
+      if (!Array.isArray(parsed.raw) || pageNumber === 1 && parsed.raw.length === 0) throw contractError("RSI_PLEDGES_CONTRACT_CHANGED", requestFields(page.meta));
       const pageCount = Number.isSafeInteger(parsed.pageCount) ? parsed.pageCount : pageNumber;
       annotateActivity("/account/pledges", pageNumber, { pageCount, recordsReceived: parsed.raw.length });
       return { raw: parsed.raw, pageCount };
     });
     const pageCount = results[0].pageCount;
-    if (results.some((result) => result.pageCount !== pageCount)) throw new Error("RSI_PLEDGES_PAGE_COUNT_CHANGED");
+    if (results.some((result) => result.pageCount !== pageCount)) throw contractError("RSI_PLEDGES_PAGE_COUNT_CHANGED");
     const lastPage = pages.at(-1);
     const done = lastPage >= pageCount;
     return { raw: results.flatMap((result) => result.raw), done, nextPage: done ? null : lastPage + 1, interactiveState: done ? null : { pageCount }, complete: done, pagesOrBatches: lastPage, warnings: done ? [] : [`Pledge pages through ${lastPage} of ${pageCount} collected.`], requestProgress: requestProgress(lastPage, pageCount), changeState: "changed" };
@@ -487,7 +797,7 @@
       return { raw: parsed.raw, pageCount: data.pagecount };
     });
     const pageCount = results[0].pageCount;
-    if (results.some((result) => result.pageCount !== pageCount)) throw new Error("RSI_HANGAR_LOG_PAGE_COUNT_CHANGED");
+    if (results.some((result) => result.pageCount !== pageCount)) throw contractError("RSI_HANGAR_LOG_PAGE_COUNT_CHANGED");
     const lastPage = pages.at(-1);
     const pageRaw = results.flatMap((result) => result.raw);
     const prior = previousValue(input, "hangarLog");
@@ -540,7 +850,7 @@
       return { raw: parsed.raw, pageCount: data.pagecount };
     });
     const pageCount = results[0].pageCount;
-    if (results.some((result) => result.pageCount !== pageCount)) throw new Error("RSI_BUYBACKS_PAGE_COUNT_CHANGED");
+    if (results.some((result) => result.pageCount !== pageCount)) throw contractError("RSI_BUYBACKS_PAGE_COUNT_CHANGED");
     const lastPage = pages.at(-1);
     const done = lastPage >= pageCount;
     return { raw: results.flatMap((result) => result.raw), done, nextPage: done ? null : lastPage + 1, interactiveState: done ? null : { pageCount }, complete: done, pagesOrBatches: lastPage, warnings: done ? [] : [`Buyback pages through ${lastPage} of ${pageCount} collected.`], requestProgress: requestProgress(lastPage, pageCount), changeState: "changed" };
@@ -589,7 +899,7 @@
     if (pending.length === 0 && gathered.length === 0 && carried) {
       return reusePrevious(input, requestProgress(0, 0), ["Every listed buy-back's item already has its captured detail; no buy-back page was read."]);
     }
-    const batch = pending.slice(0, 2);
+    const batch = pending.slice(0, Number.isSafeInteger(input.lanes) && input.lanes > 0 ? input.lanes : 2);
     const rows = await runLanes(input, batch, async (buybackId) => {
       const path = `/pledge/buyback/${buybackId}`;
       const page = await getHtml(path, { cache: false, unavailableStatuses: [404] });
@@ -599,7 +909,7 @@
       const answeredPath = new URL(page.finalUrl).pathname.replace(/\/$/u, "");
       if (!new RegExp(`^/(?:[a-z]{2}/)?pledge/buyback/${buybackId}$`, "u").test(answeredPath)) return { buybackId, unavailable: true, reason: "REDIRECTED", capturedAt };
       const parsed = await parseMarkup("buybackDetail", page.html, { baseUrl: page.finalUrl });
-      if (parsed.raw?.recognized !== true || !parsed.raw.title) throw new Error("RSI_BUYBACK_DETAIL_CONTRACT_CHANGED");
+      if (parsed.raw?.recognized !== true || !parsed.raw.title) throw contractError("RSI_BUYBACK_DETAIL_CONTRACT_CHANGED", requestFields(page.meta));
       const { recognized: _recognized, ...detail } = parsed.raw;
       annotateActivity(path, null, { recordsReceived: 1 });
       return { buybackId, ...detail, sourceUrl: `${RSI_ORIGIN}${answeredPath}`, capturedAt };
@@ -731,21 +1041,29 @@
         return { ok: false, reason: refused[1] };
       }
     };
+    // setAuthToken and setContextToken: a refusal with a limit's words is a limit; any other leaves the price unread.
+    const opened = (answer) => {
+      if (!answer.ok || answer.json?.success === 1) return answer.ok;
+      const refusal = refusalError(answer.json, "RSI_UPGRADE_PRICE");
+      if (refusal.signal.kind === "limit") throw refusal;
+      return false;
+    };
+    const anomalyRows = [];
     const rows = [];
     if (pending.length > 0 || hangar.length > 0) {
       const authorize = async () => {
         const auth = await ask(UPGRADE_AUTH_PATH, {});
-        const opened = auth.ok && auth.json?.success === 1;
-        if (opened) upgradeAuthorizedRunId = input.runId;
-        await waitForConcurrentLane(input, 1);
-        return { opened, reason: auth.ok ? "AUTH_REFUSED" : auth.reason };
+        const authorized = opened(auth);
+        if (authorized) upgradeAuthorizedRunId = input.runId;
+        await waitForConcurrentLane(input, 1, "context");
+        return { opened: authorized, reason: auth.ok ? "AUTH_REFUSED" : auth.reason };
       };
       // The store upgrade session is opened once, in the section's first step.
       const first = gathered.length === 0 ? await authorize() : { opened: true };
       if (first.opened && hangar.length > 0) {
         // No upgrade is named, so RSI lists every ship. A list RSI refuses leaves the pledges as they are.
         await ask(UPGRADE_CONTEXT_PATH, {});
-        await waitForConcurrentLane(input, 1);
+        await waitForConcurrentLane(input, 1, "ships");
         const list = await ask(UPGRADE_GRAPHQL_PATH, [{ operationName: "ships", variables: {}, query: UPGRADE_SHIPS_QUERY }]);
         const found = hangarStartingShips(hangar, list.ok ? (Array.isArray(list.json) ? list.json[0] : list.json) : null);
         // The row is kept also when no ship was found, so the list is asked once. This step reads no price: the
@@ -759,33 +1077,44 @@
         const tell = () => ask(UPGRADE_CONTEXT_PATH, { fromShipId: group.fromShipId, toShipId: group.toShipId, toSkuId: group.toSkuId, pledgeId: group.buybackId });
         let context = await tell();
         // A build continued later, in another browser session, has not opened the session yet.
-        if ((!context.ok || context.json?.success !== 1) && gathered.length > 0 && upgradeAuthorizedRunId !== input.runId) {
-          await waitForConcurrentLane(input, 1);
+        if (!opened(context) && gathered.length > 0 && upgradeAuthorizedRunId !== input.runId) {
+          await waitForConcurrentLane(input, 1, "authorize");
           if ((await authorize()).opened) context = await tell();
         }
-        if (!context.ok || context.json?.success !== 1) rows.push(row(group, { unavailable: true, reason: context.ok ? "CONTEXT_REFUSED" : context.reason }));
+        if (!opened(context)) rows.push(row(group, { unavailable: true, reason: context.ok ? "CONTEXT_REFUSED" : context.reason }));
         else {
-          await waitForConcurrentLane(input, 1);
+          await waitForConcurrentLane(input, 1, "price-and-ships");
           const priceQuestion = { operationName: "getPrice", variables: { from: group.fromShipId, to: group.toSkuId }, query: UPGRADE_PRICE_QUERY };
           // The ships of this upgrade no list of this build has been read for yet.
           const asked = new Set(gathered.flatMap((entry) => Array.isArray(entry?.shipsAsked) ? entry.shipsAsked : []));
           const wanted = [...new Set([group.fromShipId, group.toShipId])].filter((shipId) => !asked.has(shipId));
+          // A price or ship answer with a limit's words refuses the step, so it is tried again.
+          const limitIn = (candidates) => {
+            for (const candidate of candidates) {
+              if (Answers.classifyGraphqlErrors(candidate?.errors) === "limit") graphqlAnswer(candidate, "getPrice", []);
+            }
+          };
           let answer = await ask(UPGRADE_GRAPHQL_PATH, wanted.length === 0 ? [priceQuestion] : [priceQuestion, { operationName: "ships", variables: {}, query: UPGRADE_SHIPS_QUERY }]);
           let answers = Array.isArray(answer.json) ? answer.json : [answer.json];
+          if (answer.ok) limitIn(answers);
           const listed = answer.ok && wanted.length > 0 && !answers[1]?.errors && Array.isArray(answers[1]?.data?.ships);
           const ships = listed ? wanted.map((shipId) => upgradeShipIn(answers[1], shipId)).filter(Boolean) : [];
           // A request with the list in it that RSI refuses, or answers without a price answer, is asked again for the
           // price alone: the list never costs a price.
           if (wanted.length > 0 && (!answer.ok || !answers[0] || answers[0].errors)) {
-            await waitForConcurrentLane(input, 1);
+            await waitForConcurrentLane(input, 1, "price-only-fallback");
             answer = await ask(UPGRADE_GRAPHQL_PATH, [priceQuestion]);
             answers = Array.isArray(answer.json) ? answer.json : [answer.json];
+            if (answer.ok) limitIn(answers);
           }
           const first = answers[0];
           const price = first?.data?.price;
           const read = (detail) => row(group, listed ? { ...detail, ships, shipsAsked: wanted } : detail);
+          // A proven price beside an error is kept, with the error as anomaly evidence (§5.7).
+          const priceKind = answer.ok && first?.errors ? Answers.classifyGraphqlEnvelope(first, "getPrice") : null;
+          if (priceKind?.kind === "ok-with-anomalies") anomalyRows.push(...priceKind.anomalyRows.map((entry) => ({ ...entry, raw: { ...entry.raw, buybackId: group.buybackId } })));
           if (!answer.ok) rows.push(read({ unavailable: true, reason: answer.reason }));
-          else if (first?.errors) rows.push(read({ unavailable: true, reason: "PRICE_REFUSED" }));
+          else if (first?.errors && priceKind?.kind !== "ok-with-anomalies") rows.push(read({ unavailable: true, reason: "PRICE_REFUSED" }));
           else if (!price || price.nativeAmount === null || price.nativeAmount === undefined) rows.push(read({ unavailable: true, reason: "NO_PRICE" }));
           // A price that is not a whole number of cents is not guessed at.
           else if (!Number.isSafeInteger(price.nativeAmount) || price.nativeAmount < 0) rows.push(read({ unavailable: true, reason: "PRICE_NOT_UNDERSTOOD" }));
@@ -807,14 +1136,17 @@
     } else warnings.push(`CCU buy-back prices through ${completed} of ${groups.length} read.`);
     return {
       raw: rows,
-      rawAnomalies: rows.filter((entry) => entry.unavailable === true).map((entry) => ({
-        recordIndex: groups.findIndex((group) => group.key === entry.key) + 1,
-        pageOrBatch: completed,
-        issueCode: "BUYBACK_UPGRADE_PRICE_UNAVAILABLE",
-        message: `RSI gave no price for the CCU buy-back ${entry.buybackId} (${entry.reason}).`,
-        raw: { buybackId: entry.buybackId, reason: entry.reason },
-        retainedInNormalizedData: false
-      })),
+      rawAnomalies: [
+        ...rows.filter((entry) => entry.unavailable === true).map((entry) => ({
+          recordIndex: groups.findIndex((group) => group.key === entry.key) + 1,
+          pageOrBatch: completed,
+          issueCode: "BUYBACK_UPGRADE_PRICE_UNAVAILABLE",
+          message: `RSI gave no price for the CCU buy-back ${entry.buybackId} (${entry.reason}).`,
+          raw: { buybackId: entry.buybackId, reason: entry.reason },
+          retainedInNormalizedData: false
+        })),
+        ...anomalyRows.map((entry, index) => ({ recordIndex: Math.max(1, groups.findIndex((group) => group.buybackId === entry.raw.buybackId) + 1), pageOrBatch: completed, keySuffix: `graphql.${index}`, retainedInNormalizedData: true, ...entry }))
+      ],
       done,
       nextPage: null,
       interactiveState: null,
@@ -830,6 +1162,7 @@
     const pageNumber = section === "financial.orders" && Number.isSafeInteger(input.cursor?.page) ? input.cursor.page : 1;
     const page = await getHtml(`/account/billing?page=${pageNumber}&pagesize=100`);
     const parsed = await parseMarkup(section, page.html, { baseUrl: page.finalUrl, page: pageNumber });
+    assertPageRecognized(parsed, page, `/account/billing?page=${pageNumber}&pagesize=100`);
     if (section !== "financial.orders") {
       const prior = previousValue(input, section);
       const comparableCurrent = section === "financial.billingTotal" && parsed.raw ? { amount: parsed.raw.amount, currency: parsed.raw.currency } : parsed.raw;
@@ -863,9 +1196,13 @@
     const batch = Number.isSafeInteger(input.cursor?.interactiveState?.batches) ? input.cursor.interactiveState.batches + 1 : 1;
     const page = Number.isSafeInteger(input.cursor?.page) ? input.cursor.page : 1;
     const ledger = LEDGERS[ledgerIndex];
+    // A cursor this extension did not write carries no signal: it stops the run, as today.
     if (!ledger) throw new Error("RSI_LEDGER_CURSOR_INVALID");
-    const data = assertPagedFragment(await postJson(ledger.path, { page }), page, "RSI_LEDGER");
+    const response = await postJson(ledger.path, { page });
+    const data = assertPagedFragment(response, page, "RSI_LEDGER", { allowEmpty: true });
     const parsed = await parseMarkup("ledger", data.rendered, { baseUrl: `${RSI_ORIGIN}${ledger.path}` });
+    // An empty ledger holds no row; a row under a page count of 0 is not an answer this reader knows (§13.2).
+    if (Number(response?.data?.pagecount) === 0 && parsed.raw.length > 0) throw contractError("RSI_LEDGER_PAGE_COUNT_INVALID", requestFields(lastPostMeta));
     annotateActivity(ledger.path, page, { pageCount: data.pagecount, recordsReceived: parsed.raw.length });
     if (input.mode === "update" && input.previousSection?.current === true) {
       const cursorRaw = input.cursor?.raw ?? { storeCredit: [], uec: [], rec: [] };
@@ -989,11 +1326,13 @@
     const converted = kind === "recruits";
     const response = await postJson(GRAPHQL_PATH, referralRequest(campaignId, converted, page));
     recordSourceUrl(`${RSI_ORIGIN}/en/referral`);
-    const result = Array.isArray(response) ? response[0] : response;
+    const partialRows = [];
+    const result = graphqlAnswer(Array.isArray(response) ? response[0] : response, "GetReferralRecruitsList", partialRows);
     const list = result?.data?.referralRecruitsList;
-    if (!list || !Array.isArray(list.data) || !Number.isSafeInteger(list.recruitsCount) || !Number.isSafeInteger(list.prospectsCount)) throw new Error("RSI_REFERRAL_CONTRACT_CHANGED");
+    if (!list || !Array.isArray(list.data) || !Number.isSafeInteger(list.recruitsCount) || !Number.isSafeInteger(list.prospectsCount)) throw contractError("RSI_REFERRAL_CONTRACT_CHANGED");
     const total = converted ? list.recruitsCount : list.prospectsCount;
-    const rawAnomalies = list.data.flatMap((entry, index) => {
+    const partialAnomalies = partialRows.map((row, index) => ({ recordIndex: (page - 1) * REFERRAL_PAGE_SIZE + 1, pageOrBatch: page, keySuffix: `graphql.${index}`, retainedInNormalizedData: true, ...row }));
+    const rawAnomalies = [...partialAnomalies, ...list.data.flatMap((entry, index) => {
       const issues = referralRecordContractIssues(entry, converted);
       if (issues.length === 0) return [];
       return [{
@@ -1004,7 +1343,7 @@
         raw: entry === undefined ? null : JSON.parse(JSON.stringify(entry)),
         retainedInNormalizedData: issues.join("_") === "DISPLAY_NAME_EMPTY_NICKNAME_NULL"
       }];
-    });
+    })];
     const raw = list.data.map((entry) => referralRaw(entry, converted));
     const priorPageSize = input.cursor?.interactiveState?.pageSize;
     const pageSize = Number.isSafeInteger(priorPageSize) && priorPageSize > 0
@@ -1012,7 +1351,7 @@
       : raw.length > 0 && raw.length < total
         ? raw.length
         : REFERRAL_PAGE_SIZE;
-    if (raw.length > pageSize) throw new Error("RSI_REFERRAL_PAGE_SIZE_CHANGED");
+    if (raw.length > pageSize) throw contractError("RSI_REFERRAL_PAGE_SIZE_CHANGED");
     const collected = Math.min((page - 1) * pageSize + raw.length, total);
     const done = collected >= total || raw.length === 0;
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -1066,6 +1405,7 @@
     const handle = encodeURIComponent(input.accountId);
     const page = await getHtml(`/en/citizens/${handle}/organizations`);
     const parsed = await parseMarkup("organizations.memberships", page.html, { baseUrl: page.finalUrl });
+    assertPageRecognized(parsed, page, `/en/citizens/${handle}/organizations`);
     annotateActivity(new URL(page.finalUrl).pathname, null, { pageCount: 1, recordsReceived: parsed.raw.length, recordsTotal: parsed.raw.length });
     return { raw: parsed.raw, done: true, complete: true, pagesOrBatches: 1, warnings: [], requestProgress: requestProgress(1, 1) };
   }
@@ -1074,13 +1414,57 @@
     const sid = descriptor.parserOptions.organizationSid;
     const page = Number.isSafeInteger(input.cursor?.page) ? input.cursor.page : 1;
     const response = await postJson(ORGANIZATION_MEMBERS_PATH, { symbol: sid, search: "", pagesize: 32, page });
+    if (![true, 1].includes(response?.success)) throw refusalError(response, "RSI_ORGANIZATION_MEMBERS");
     const data = response?.data;
-    if (!data || ![true, 1].includes(response.success) || !Number.isSafeInteger(data.totalrows) || typeof data.html !== "string") throw new Error("RSI_ORGANIZATION_MEMBERS_CONTRACT_CHANGED");
+    if (!data || !Number.isSafeInteger(data.totalrows) || typeof data.html !== "string") throw contractError("RSI_ORGANIZATION_MEMBERS_CONTRACT_CHANGED");
     const parsed = await parseMarkup("organizations.members", data.html, { organizationSid: sid, baseUrl: `${RSI_ORIGIN}/en/orgs/${sid}/members` });
     const pageCount = Math.max(1, Math.ceil(data.totalrows / 32));
     const done = page >= pageCount;
     annotateActivity(ORGANIZATION_MEMBERS_PATH, page, { pageCount, recordsReceived: parsed.raw.length, recordsTotal: Math.min(page * 32, data.totalrows) });
     return { raw: parsed.raw, done, nextPage: done ? null : page + 1, interactiveState: done ? null : { pageCount }, complete: done, pagesOrBatches: page, warnings: done ? [] : [`${sid} roster page ${page} of ${pageCount} collected.`], requestProgress: requestProgress(page, pageCount, sid) };
+  }
+
+  // The canary (§5.4): the run's own identify call, sent before a step whose last attempt was unclear. It raises the
+  // canary's own signal when RSI is limiting, the session is gone or another account is signed in. When identify is
+  // itself unclear after an unclear 403, 404, content type or network failure of a JSON call, one credentialed read of
+  // the hangar's first page tells a working session from a limit.
+  const SESSION_CHECK_AFTER = /(?:_HTTP_403|_HTTP_404|_CONTENT_TYPE_CHANGED)$|^RSI_NETWORK_OR_REDIRECT$/u;
+
+  async function runCanary(input) {
+    const fromCanary = (error) => error?.signal ? new RsiReadError({ ...error.signal, fromCanary: true }, { cause: error, message: error.message }) : error;
+    let identity;
+    try {
+      identity = await identifyAccount();
+    } catch (error) {
+      const previous = input.canaryAfterSignal ?? null;
+      const sessionCheck = error?.signal?.kind === "ambiguous" && previous?.method === "POST" && SESSION_CHECK_AFTER.test(previous.code ?? "");
+      if (!sessionCheck) throw fromCanary(error);
+      await waitForConcurrentLane(input, 1, "session-check");
+      let hangar;
+      try {
+        hangar = await getHtml("/account/pledges?page=1&product-type=", { cache: false });
+      } catch (checkError) {
+        throw fromCanary(checkError);
+      }
+      const parsed = await parseMarkup("pledges", hangar.html, { baseUrl: hangar.finalUrl, page: 1 });
+      // A recognized hangar shows the session works; the step's real requests follow.
+      if (!Array.isArray(parsed.raw) || parsed.raw.length === 0) throw fromCanary(error);
+      await waitForConcurrentLane(input, 1, "step");
+      return;
+    }
+    if (identity.accountId.toLowerCase() !== String(input.accountId ?? "").toLowerCase()) {
+      throw new RsiReadError({ kind: "user", code: "ACCOUNT_CHANGED", reason: "account-changed", method: "POST", route: IDENTIFY_PATH, fromCanary: true });
+    }
+    await waitForConcurrentLane(input, 1, "step");
+  }
+
+  // A failed step's error as a new object of this extension: the same message and signal, the step's request lines,
+  // and the thrown value as its cause. A browser's or another realm's error is never changed.
+  function failedStepError(error, requestActivities) {
+    const message = typeof error?.message === "string" && error.message ? error.message : "RSI_READ_FAILED";
+    const wrapped = error?.signal ? new RsiReadError(error.signal, { cause: error, message }) : new Error(message, { cause: error });
+    wrapped.requestActivities = requestActivities;
+    return wrapped;
   }
 
   async function collectStep(descriptor, input) {
@@ -1090,7 +1474,14 @@
     activeRequestActivities = [];
     activeRequestActivityListener = typeof input?.onRequestActivity === "function" ? input.onRequestActivity : null;
     activeSourceUrls = [];
+    const priorEvidence = activeEvidence;
+    activeEvidence = [];
+    const priorJournal = activeJournal;
+    // Durable request slots: the runner passes the journal of the step's earlier slots, or an empty one.
+    const journal = Array.isArray(input?.requestSlots?.journal) ? input.requestSlots.journal : null;
+    activeJournal = journal ? { served: [...journal], recorded: [...journal], lastStartMs: journal.reduce((latest, entry) => Math.max(latest, entry.startedAtMs ?? 0), 0) || null } : null;
     try {
+      if (input?.canary === true) await runCanary(input);
       let result;
       if (descriptor.id === "profile") result = await collectProfile(input);
       else if (descriptor.id === "pledges") result = await collectPledges(input);
@@ -1107,15 +1498,85 @@
       // Each buy-back detail records the address of its own page, so the section does not list them all again.
       const sourceUrls = descriptor.id === "buybackDetails" ? [] : Array.from(new Set(activeSourceUrls)).sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
       return { ...result, requestActivities: activeRequestActivities, sourceUrls };
+    } catch (error) {
+      // A durable request slot: the step stops here, and its answers so far go to the runner to keep.
+      if (error instanceof PhaseBoundary && activeJournal) {
+        return { pendingPhase: { phase: error.phase, nextRequestAtMs: error.nextRequestAtMs, journal: activeJournal.recorded }, requestActivities: activeRequestActivities, sourceUrls: [] };
+      }
+      const wrapped = failedStepError(error, activeRequestActivities);
+      // A changed contract leaves its finding before the answer is let go. So does an unclear answer, which the runner
+      // reads as a changed contract when it comes again after a canary that answered normally (§7.7, §10).
+      if (error?.signal?.kind === "contract" || error?.signal?.kind === "ambiguous") {
+        try {
+          wrapped.contractFinding = await contractFinding(error.signal, descriptor.id);
+        } catch {
+          wrapped.contractFinding = null;
+        }
+      }
+      throw wrapped;
     } finally {
+      activeJournal = priorJournal;
+      activeEvidence = priorEvidence;
       activeRequestActivities = priorActivities;
       activeRequestActivityListener = priorActivityListener;
       activeSourceUrls = priorSourceUrls;
     }
   }
 
-  function clearTransientCaches() {
-    htmlCache.clear();
+  // Drops every cached page except the addresses in `retain`.
+  function clearTransientCaches({ retain = [] } = {}) {
+    for (const url of [...htmlCache.keys()]) if (!retain.includes(url)) htmlCache.delete(url);
+  }
+
+  // The cached copies of `urls` that the runner keeps with the run: each page's text, final address and status.
+  function retainedPages(urls) {
+    return urls.map((url) => [url, htmlCache.get(url)]).filter(([, value]) => typeof value?.html === "string")
+      .map(([url, value]) => Object.freeze({ url, html: value.html, finalUrl: value.finalUrl, status: value.status }));
+  }
+
+  // Puts pages the runner kept back into the cache, as if just read, unless the cache holds them already. Only an
+  // address the client reads signed in is taken.
+  function restorePages(pages) {
+    for (const page of Array.isArray(pages) ? pages : []) {
+      if (typeof page?.url !== "string" || typeof page.html !== "string" || htmlCache.has(page.url)) continue;
+      const url = new URL(page.url);
+      if (url.origin !== RSI_ORIGIN || !approvedHtmlPath(`${url.pathname}${url.search}`)) continue;
+      const finalUrl = typeof page.finalUrl === "string" && new URL(page.finalUrl).origin === RSI_ORIGIN ? page.finalUrl : page.url;
+      htmlCache.set(page.url, Object.freeze({ html: page.html, finalUrl, cachedAt: Date.now(), status: Number.isSafeInteger(page.status) ? page.status : 200, meta: null }));
+    }
+  }
+
+  // The smart check's request without cookies (§9.2). "answered": a 2xx dossier of this handle; "refused": an answer
+  // in the limit or transient class, a time-out among them; "failed": any other answer, or a network failure. The
+  // dossier is recognized by its page marker (§5.3) and its parsed handle.
+  async function probePublicPage(handle) {
+    const accountId = typeof handle === "string" ? handle.trim() : "";
+    const startedAt = Date.now();
+    const outcome = (probe, httpStatus = null) => ({ probe, httpStatus, elapsedMs: Math.max(0, Date.now() - startedAt) });
+    if (!/^[A-Za-z0-9_-]{1,60}$/u.test(accountId)) return outcome("failed");
+    const url = `${RSI_ORIGIN}/en/citizens/${encodeURIComponent(accountId)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { method: "GET", credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer", redirect: "follow", signal: controller.signal });
+      const kind = Answers.classifyStatus({ status: response.status, fixedAddress: false });
+      if (kind === "limit" || kind === "transient") return outcome("refused", response.status);
+      if (kind !== "ok") return outcome("failed", response.status);
+      const parsed = await parseMarkup("profile", await response.text(), { baseUrl: response.url || url }).catch(() => null);
+      const handleShown = typeof parsed?.raw?.handle === "string" ? parsed.raw.handle.toLowerCase() : null;
+      return outcome(parsed?.pageRecognized === true && handleShown === accountId.toLowerCase() ? "answered" : "failed", response.status);
+    } catch (error) {
+      return outcome(error?.name === "AbortError" ? "refused" : "failed");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  // RSI's status feed (§9.3), for the status-page checker: the settings' one address, never with cookies.
+  const STATUS_FEED_URL = root.CITIZENDATA_REQUEST_PACING.smartCheck.statusFeedUrl;
+  function fetchStatusFeed(url, init = {}) {
+    if (url !== STATUS_FEED_URL) return Promise.reject(new TypeError("Only RSI's status feed is read this way."));
+    return fetch(STATUS_FEED_URL, { ...init, method: "GET", credentials: "omit" });
   }
 
   return Object.freeze({
@@ -1125,7 +1586,11 @@
     IDENTIFY_PATH,
     ORGANIZATION_MEMBERS_PATH,
     clearTransientCaches,
+    retainedPages,
+    restorePages,
     collectStep,
-    identifyAccount
+    fetchStatusFeed,
+    identifyAccount,
+    probePublicPage
   });
 });

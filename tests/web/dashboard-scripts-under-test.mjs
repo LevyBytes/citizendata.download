@@ -7,6 +7,7 @@ export const docsRoot = path.join(repositoryRoot, "docs");
 
 await import(pathToFileURL(path.join(docsRoot, "scripts", "safe-json.js")));
 await import(pathToFileURL(path.join(docsRoot, "scripts", "account-document.js")));
+await import(pathToFileURL(path.join(docsRoot, "scripts", "request-pacing-settings.js")));
 await import(pathToFileURL(path.join(docsRoot, "scripts", "dashboard-model.js")));
 await import(pathToFileURL(path.join(docsRoot, "scripts", "demo-profile-avatars.js")));
 await import(pathToFileURL(path.join(docsRoot, "scripts", "demo-data.js")));

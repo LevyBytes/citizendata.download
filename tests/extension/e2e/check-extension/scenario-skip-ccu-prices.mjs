@@ -29,7 +29,7 @@ export async function skipCcuPrices() {
     `${skipShown} && document.getElementById('pauseCollection').getClientRects().length > 0 && document.getElementById('cancelCollection').getClientRects().length > 0`,
     8000, "Skip to be offered beside Pause and Cancel while CCU buy-back prices are read"
   );
-  assert.equal(await dashboard.evaluate("document.getElementById('collectionActivityLabel').textContent"), "CCU buy-back prices");
+  assert.equal(await dashboard.evaluate("document.getElementById('collectionActivityLabel').textContent"), "CCU buyback prices");
   await click(dashboard, "skipCollection");
   // The extension has taken the Skip once its job record says so; then the held request is let go.
   const skipTaken = () => extensionPage.evaluate("chrome.runtime.sendMessage({ kind: 'EXTENSION_UI_REQUEST', type: 'EXPORT_BACKUP' }).then(({ backup }) => backup.stores.jobs.some((job) => (job.skipSections ?? []).includes('buybackUpgradePrices')))");

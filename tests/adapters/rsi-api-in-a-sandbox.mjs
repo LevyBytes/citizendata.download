@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { answerOf } from "./rsiapistandinanswers.mjs";
 
 export const source = await readFile(new URL("../../extension/adapters/rsi-api.js", import.meta.url), "utf8");
+const pacingSettingsSource = await readFile(new URL("../../extension/shared/request-pacing-settings.js", import.meta.url), "utf8");
+const answerClassificationSource = await readFile(new URL("../../extension/adapters/rsi-answer-classification.js", import.meta.url), "utf8");
 const updateDeltaSource = await readFile(new URL("../../extension/adapters/update-delta.js", import.meta.url), "utf8");
 
 export function harness(responses, parsedByType = {}, harnessOptions = {}) {
@@ -13,17 +16,24 @@ export function harness(responses, parsedByType = {}, harnessOptions = {}) {
   let together;
   const requestsTogether = new Promise((resolve) => { together = resolve; });
   let maximumInFlight = 0;
+  // The streamed bodies of answers given as {stream: {chunkBytes, chunks}}: how much was read and whether it was cancelled.
+  const streams = [];
   const context = {
     AbortController,
+    TextEncoder,
     URL,
+    Uint8Array,
+    crypto: globalThis.crypto,
     clearTimeout,
     console,
     setTimeout,
+    // A test's own clock and timers: `Date`, `setTimeout` and `clearTimeout`.
+    ...(harnessOptions.globals ?? {}),
     chrome: {
       cookies: {
         async get(input) {
           calls.push({ kind: "cookie", input });
-          return { value: "transient-test-token" };
+          return harnessOptions.signedOut === true ? null : { value: "transient-test-token" };
         }
       },
       offscreen: {
@@ -35,7 +45,8 @@ export function harness(responses, parsedByType = {}, harnessOptions = {}) {
           messages.push(message);
           if (Object.hasOwn(parsedByType, message.fragmentType)) {
             const parsed = typeof parsedByType[message.fragmentType] === "function" ? parsedByType[message.fragmentType](message) : parsedByType[message.fragmentType];
-            return { ok: true, ...parsed };
+            // The offscreen parser recognizes the page asked for (§5.3), unless the test says otherwise.
+            return { ok: true, pageRecognized: true, pageTitle: null, ...parsed };
           }
           return { ok: true, raw: [{ rawTimestamp: "now", subjectId: 42, subjectName: "Example", kind: "created", rawDetail: "Created", parsed: { recognized: false } }] };
         }
@@ -47,25 +58,17 @@ export function harness(responses, parsedByType = {}, harnessOptions = {}) {
       maximumInFlight = Math.max(maximumInFlight, inFlight);
       if (inFlight >= (harnessOptions.answerWhenInFlight ?? 1)) together();
       await requestsTogether;
-      const response = responses.shift();
-      const isHtml = response?.kind === "html";
-      const isHttpError = response?.kind === "http-error";
-      const body = isHtml || isHttpError ? response.body : response;
-      const status = isHttpError ? response.status : 200;
-      const result = {
-        ok: status >= 200 && status < 300,
-        status,
-        url: isHtml ? (response.finalUrl ?? url) : url,
-        headers: { get(name) { return name.toLowerCase() === "content-type" ? (isHtml ? "text/html; charset=UTF-8" : "application/json") : null; } },
-        async json() { return body; },
-        async text() { return String(body); }
-      };
-      inFlight -= 1;
-      return result;
+      try {
+        return answerOf(responses.shift(), url, streams);
+      } finally {
+        inFlight -= 1;
+      }
     }
   };
   context.globalThis = context;
+  vm.runInNewContext(pacingSettingsSource, context, { filename: "request-pacing-settings.js" });
+  vm.runInNewContext(answerClassificationSource, context, { filename: "rsi-answer-classification.js" });
   vm.runInNewContext(updateDeltaSource, context, { filename: "update-delta.js" });
   vm.runInNewContext(source, context, { filename: "rsi-api.js" });
-  return { api: context.CitizenDataRsiApi, calls, messages, maximumInFlight: () => maximumInFlight };
+  return { api: context.CitizenDataRsiApi, calls, messages, streams, context, maximumInFlight: () => maximumInFlight };
 }

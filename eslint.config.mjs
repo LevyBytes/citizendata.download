@@ -24,7 +24,7 @@ const rules = {
 const names = (list) => ({ globals: Object.fromEntries(list.split(/\s+/u).filter(Boolean).map((name) => [name, "readonly"])) });
 // A script that also runs under Node for the tests hands its interface to `module.exports` when there is one.
 const NODE_EXPORT = "module require";
-const SYNCED_COPIES = ["account-document.js", "organization-document.js"].flatMap((name) => [`docs/scripts/${name}`, `extension/shared/${name}`]);
+const SYNCED_COPIES = ["account-document.js", "organization-document.js", "request-pacing-settings.js", "pace-controller.js", "pace-history.js"].flatMap((name) => [`docs/scripts/${name}`, `extension/shared/${name}`]);
 // What the dashboard's scripts use of a page.
 const PAGE = `AbortController Blob CustomEvent DOMException IntersectionObserver ResizeObserver TextDecoder TextEncoder URL crypto document fetch
   location matchMedia queueMicrotask sessionStorage setTimeout structuredClone window`;

@@ -11,7 +11,7 @@ await evaluate(`(()=>{
   window.__citizendataActiveStatus={status:'running',activeJob,hasActiveJob:true,controlSessionBound:true,requiresRebind:false,partialAvailable:false,continuable:false};
   window.__citizendataTestStatus=structuredClone(window.__citizendataActiveStatus);
   window.__emitCitizenDataStatus=(status)=>{window.__citizendataTestStatus=status;window.dispatchEvent(new MessageEvent('message',
-    {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'STATUS',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{status}}}));};
+    {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'STATUS',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{status}}}));};
   window.addEventListener('message',async(event)=>{
     const request=event.data;
     if(event.source!==window||request?.channel!=='citizendata.dashboard.v1'||!['GET_STATUS','GET_PARTIAL_RESULT','PROPOSE_BUILD'].includes(request.type))return;
@@ -21,10 +21,10 @@ await evaluate(`(()=>{
       payload={...payload,partialResult:await window.CitizenDataAccountDocument.stampIntegrity(partial)};
     }
     if(request.type==='PROPOSE_BUILD') payload={ok:false,code:'TEST_DECLINED',message:'Synthetic proposal declined.',status:window.__citizendataTestStatus};
-    window.dispatchEvent(new MessageEvent('message',{source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'RESPONSE',requestId:request.requestId,bridgeSessionId:session,nonce,payload}}));
+    window.dispatchEvent(new MessageEvent('message',{source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'RESPONSE',requestId:request.requestId,bridgeSessionId:session,nonce,payload}}));
   });
   window.dispatchEvent(new MessageEvent('message',
-    {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{extensionVersion:'0.42.1',capabilities:{buildJson:true}}}}));
+    {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{extensionVersion:'0.42.1',capabilities:{buildJson:true}}}}));
   window.__emitCitizenDataStatus(window.__citizendataTestStatus);return true;
 })()`);
 await waitFor("!document.querySelector('#collectionActivity').hidden");

@@ -30,7 +30,8 @@ export async function checkPageStructure() {
       privacyLinksInBody:document.body.querySelectorAll('a[href*="privacy-policy"]').length,
       termsLinks:[...document.body.querySelectorAll('a[href="terms-of-service.html"]')].map(link=>Boolean(link.closest('#projectSupport'))),
       badgeLinks:[...document.querySelectorAll('#unlockedBadgeGrid a, #unlockableBadgeGrid a')].map(link=>({href:link.href,id:link.dataset.badgeId??null,target:link.target})),
-      scriptOrder:${JSON.stringify(["schema/account-export.schema.js", "schema/offline-package.schema.js", "scripts/safe-json.js", "scripts/account-document.js", "scripts/organization-document.js", "scripts/zip-store.js", "scripts/media-policy.js",
+      scriptOrder:${JSON.stringify(["schema/account-export.schema.js", "schema/offline-package.schema.js", "scripts/safe-json.js", "scripts/account-document.js", "scripts/organization-document.js", "scripts/zip-store.js",
+        "scripts/request-pacing-settings.js", "scripts/pace-controller.js", "scripts/pace-history.js", "scripts/media-policy.js",
         "scripts/media-file-names.js", "scripts/media-materializer.js", "scripts/media-package-builder.js", "scripts/media-package-reader.js", "scripts/canonical-download.js", "scripts/badge-wiki-pages.js",
         "scripts/dashboard.js"])}.map(name=>scripts.indexOf(name)),
       lastScript:scripts.at(-1)

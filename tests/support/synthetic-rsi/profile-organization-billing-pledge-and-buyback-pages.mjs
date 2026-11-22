@@ -28,10 +28,11 @@ export function accountPages({ state, handle, organization }) {
   }
 
   function organizationsPage() {
-    return html(`<div class="profile-content orgs-content"><div class="box-content org main"><div class="thumb"><a href="/orgs/${organization.sid}"><img src="${MEDIA}/org-${organization.sid}.png" alt=""></a></div><div class="info"><p class="entry `
+    return html(`<div id="public-profile" class="account-profile"><div class="profile-content orgs-content"><div class="box-content org main"><div class="thumb"><a ` +
+      `href="/orgs/${organization.sid}"><img src="${MEDIA}/org-${organization.sid}.png" alt=""></a></div><div class="info"><p class="entry `
       + `orgtitle"><span class="label">Organization</span><a href="/orgs/${organization.sid}" class="value">${organization.name}</a></p><p class="entry"><span class="label">Spectrum Identification (SID)</span><strong `
       + `class="value">${organization.sid}</strong></p><p class="entry"><span class="label">Organization rank</span><strong class="value">Captain</strong></p><p class="entry"><span class="label">Archetype</span><strong class="value">Organization</strong>`
-      + `</p></div><div class="members">${state.members.length} members</div></div></div>`);
+      + `</p></div><div class="members">${state.members.length} members</div></div></div></div>`);
   }
 
   function billingPage(page) {

@@ -6,7 +6,8 @@
   const PAGE_SIZE = 25;
   const INVENTORY_PAGE_SIZE = 100;
   const BRIDGE_CHANNEL = "citizendata.dashboard.v1";
-  const PROTOCOL_VERSION = 1;
+  // The extension's Protocol.VERSION; 2 since terminal `partial` and the bounded status fields.
+  const PROTOCOL_VERSION = 2;
   // Stamped into the documents this page itself assembles. Extension compatibility is decided by PROTOCOL_VERSION.
   const DASHBOARD_VERSION = "0.42.1";
   // Placeholder until the Chrome Web Store listing exists; replace with the listing URL.
@@ -47,6 +48,7 @@
     partialFailureNotifiedRunIds: new Set(),
     dismissedCompletedRunIds: new Set(),
     overlayDismissed: false,
+    buildStatusOpener: null,
     skipRequestedRunId: null,
     pendingOrganizationSids: [],
     mediaPlan: [],
@@ -63,13 +65,19 @@
     mediaCompleted: 0,
     mediaActiveRequests: 0,
     mediaActivity: [],
+    // The image run's warning for the caution tape (§14), the status feed's last answer for it, and when it was asked.
+    mediaTapeState: null,
+    mediaStatusPage: null,
+    mediaStatusCheckedAt: null,
     loadedMediaPackage: null,
     loadedMediaFileName: null,
     mediaObjectUrls: new Map(),
     mediaLoadPromises: new Map(),
     mediaLoadStates: new Map(),
     continuePartial: false,
-    statusPollTimer: null
+    statusPollTimer: null,
+    // The ordered renderer's view (§11.2).
+    view: { revision: -1, pollSequence: 0, appliedPoll: 0, announcementKey: null, presentation: null, mediaLogSequence: 0, noticeRunId: null, noticeKeys: new Set() }
   };
 
   const byId = (id) => document.getElementById(id);
@@ -77,6 +85,11 @@
     fileInput: byId("jsonFileInput"),
     loadButton: byId("loadButton"),
     buildButton: byId("buildButton"),
+    cautionTape: byId("cautionTape"),
+    cautionTapeText: byId("cautionTapeText"),
+    buildStatusAnnouncement: byId("buildStatusAnnouncement"),
+    coolDownExplanation: byId("coolDownExplanation"),
+    parserChangeNotice: byId("parserChangeNotice"),
     messageDialog: byId("messageDialog"),
     dialogEyebrow: byId("dialogEyebrow"),
     dialogTitle: byId("dialogTitle"),
@@ -125,7 +138,6 @@
     skipCollection: byId("skipCollection"),
     organizationSearch: byId("organizationSearch"),
     organizationSearchCount: byId("organizationSearchCount"),
-    referralSearchForm: byId("referralSearchForm"),
     referralSearch: byId("referralSearch"),
     referralSearchLabel: byId("referralSearchLabel"),
     referralSearchCount: byId("referralSearchCount"),
@@ -189,7 +201,9 @@
   const mediaLoadTasks = new Map();
 
   function text(id, value) {
-    byId(id).textContent = value ?? "—";
+    const node = byId(id);
+    const next = value ?? "—";
+    if (node.textContent !== next) node.textContent = next;
   }
 
   function element(tag, className, value) {
@@ -197,6 +211,137 @@
     if (className) node.className = className;
     if (value !== undefined) node.textContent = value;
     return node;
+  }
+
+  // Patching (PARSER_HARDENING.md §11.2): each writes only when the value differs, so a status that changes nothing
+  // leaves the panel's nodes, focus and scroll positions as they are.
+  function patchText(node, value) {
+    if (node && node.textContent !== value) node.textContent = value;
+  }
+
+  function patchHidden(node, hidden) {
+    if (!node || node.hidden === hidden) return;
+    // A control hidden while it holds focus first hands focus to the panel's minimize button.
+    if (hidden && node.contains(document.activeElement)) byId("minimizeOverlay")?.focus();
+    node.hidden = hidden;
+  }
+
+  function patchClass(node, name, on) {
+    if (node && node.classList.contains(name) !== on) node.classList.toggle(name, on);
+  }
+
+  function patchAttr(node, name, value) {
+    if (!node) return;
+    if (value === null) {
+      if (node.hasAttribute(name)) node.removeAttribute(name);
+    } else if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+  }
+
+  function patchProgress(node, value) {
+    if (node && (!node.hasAttribute("value") || node.value !== value)) node.value = value;
+  }
+
+  // Countdowns: each node that shows one, with its countdown. One timer a second changes only the time. Once the time
+  // has passed, the sentence becomes its after text once, and the controls and tape the time held back are refreshed.
+  const countdowns = new Map();
+  let countdownTimer = null;
+
+  function countdownTimeText(value) {
+    const full = Model.countdownText(value);
+    return full.slice(value.lead.length, full.length - value.tail.length);
+  }
+
+  function showCountdown(node, value) {
+    if (!node) return;
+    if (!value || !Model.countdownRunning(value)) {
+      countdowns.delete(node);
+      patchText(node, value ? value.after : "");
+      return;
+    }
+    const current = countdowns.get(node);
+    const clock = node.querySelector(":scope > time.countdown");
+    if (!current || !clock || current.until !== value.until || current.lead !== value.lead || current.tail !== value.tail) {
+      const time = element("time", "countdown", countdownTimeText(value));
+      time.dateTime = value.until;
+      node.replaceChildren(document.createTextNode(value.lead), time, document.createTextNode(value.tail));
+    }
+    countdowns.set(node, value);
+    if (countdownTimer === null) countdownTimer = window.setInterval(tickCountdowns, 1000);
+  }
+
+  function forgetCountdown(node) {
+    countdowns.delete(node);
+  }
+
+  function tickCountdowns() {
+    let ended = false;
+    for (const [node, value] of countdowns) {
+      if (Model.countdownRunning(value)) {
+        patchText(node.querySelector(":scope > time.countdown"), countdownTimeText(value));
+        continue;
+      }
+      countdowns.delete(node);
+      node.textContent = value.after;
+      ended = true;
+    }
+    if (countdowns.size === 0) {
+      window.clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    if (ended) {
+      updateUnavailableControls();
+      renderCautionTape();
+    }
+  }
+
+  // The cool-down (§8.4, §12.2): while it lasts, Build, Update, Continue, roster Start and Org Build look unavailable,
+  // stay focusable, point to their explanation, and show W-25 when used.
+  function coolDownUntil() {
+    const until = state.publicStatus?.retryNotBefore;
+    return Date.parse(until) > Date.now() ? until : null;
+  }
+
+  function applyUnavailable(control, until) {
+    patchAttr(control, "aria-disabled", until ? "true" : null);
+    patchAttr(control, "aria-describedby", until ? "coolDownExplanation" : null);
+  }
+
+  function updateUnavailableControls() {
+    const until = coolDownUntil();
+    for (const control of [refs.buildButton, refs.buildAccountAction, refs.buildOrgButton, refs.orgBuildStart]) applyUnavailable(control, until);
+    applyUnavailable(refs.resumeCollection, state.continuePartial ? until : null);
+    if (until) showCountdown(refs.coolDownExplanation, Model.coolingDownCountdown(until));
+    else {
+      forgetCountdown(refs.coolDownExplanation);
+      patchText(refs.coolDownExplanation, "");
+    }
+  }
+
+  function showCountdownDialog(eyebrow, title, value) {
+    showDialog(eyebrow, title, "");
+    showCountdown(refs.dialogMessage, value);
+  }
+
+  // W-25 for a start or Continue used during the cool-down. Returns whether it was shown.
+  function showCoolingDown() {
+    const until = coolDownUntil();
+    if (!until) return false;
+    showCountdownDialog("RSI", "Cooling down", Model.coolingDownCountdown(until));
+    return true;
+  }
+
+  // W-20 for a start RSI refused, W-25 for one the cool-down held back. Returns whether either was shown.
+  function showStartDeclined(response) {
+    if (!Number.isFinite(Date.parse(response?.retryNotBefore))) return false;
+    if (response.code === "RSI_RATE_LIMITED") {
+      showCountdownDialog("RSI", "RSI is refusing", Model.refusedDialogCountdown(response.retryNotBefore, response.diagnosis ?? null));
+      return true;
+    }
+    if (response.code === "RSI_COOLING_DOWN") {
+      showCountdownDialog("RSI", "Cooling down", Model.coolingDownCountdown(response.retryNotBefore));
+      return true;
+    }
+    return false;
   }
 
   function formatInteger(value) {
@@ -215,6 +360,7 @@
   }
 
   function showDialog(eyebrow, title, message) {
+    forgetCountdown(refs.dialogMessage);
     refs.dialogEyebrow.textContent = eyebrow;
     refs.dialogTitle.textContent = title;
     refs.dialogMessage.textContent = message;
@@ -394,7 +540,8 @@
     }
     let resolve;
     const promise = new Promise((complete) => { resolve = complete; });
-    const task = { imageKey, asset, package: state.loadedMediaPackage, priority, quiet, sequence: mediaLoadSequence += 1, generation: mediaLoadGeneration, promise, resolve, started: false };
+    mediaLoadSequence += 1;
+    const task = { imageKey, asset, package: state.loadedMediaPackage, priority, quiet, sequence: mediaLoadSequence, generation: mediaLoadGeneration, promise, resolve, started: false };
     mediaLoadTasks.set(imageKey, task);
     state.mediaLoadPromises.set(imageKey, promise);
     state.mediaLoadStates.set(imageKey, { status: "queued", message: `Queued from ${imageSourcePhrase()}.` });
@@ -592,6 +739,13 @@
     byId("subscriptionNote").hidden = !summary.note;
   }
 
+  // One entry of a list: `child` inside an <li> of class `className`.
+  function listItem(child, className) {
+    const item = element("li", className);
+    item.append(child);
+    return item;
+  }
+
   function renderBadgeCard(badge, unlockable = false) {
     const card = element("a", "badge-card");
     card.href = badgeWikiUrl(badge.title);
@@ -637,7 +791,7 @@
     }
     const unlocked = [...unique.values()].sort((left, right) => left.title.localeCompare(right.title, "en", { sensitivity: "base" }) || left.id - right.id);
     const unlockedGrid = byId("unlockedBadgeGrid");
-    unlockedGrid.replaceChildren(...unlocked.map((badge) => renderBadgeCard(badge)));
+    unlockedGrid.replaceChildren(...unlocked.map((badge) => listItem(renderBadgeCard(badge), "badge-item")));
     byId("unlockedBadgeEmpty").hidden = unlocked.length > 0;
     const collection = state.document.profile?.badgeCollection;
     const populatedCount = Number.isSafeInteger(collection?.nonNullRows) ? collection.nonNullRows : unlocked.length;
@@ -654,7 +808,7 @@
     const unlockable = catalogue.filter((badge) => typeof badge?.title === "string" && !unlockedTitles.has(badgeTitleKey(badge.title)))
       .map((badge) => ({ title: badge.title, id: null, section: badge.section, assetPath: badge.images?.[0]?.assetPath ?? null }));
     const unlockableGrid = byId("unlockableBadgeGrid");
-    unlockableGrid.replaceChildren(...unlockable.map((badge) => renderBadgeCard(badge, true)));
+    unlockableGrid.replaceChildren(...unlockable.map((badge) => listItem(renderBadgeCard(badge, true), "badge-item")));
     byId("unlockableBadgeEmpty").hidden = unlockable.length > 0;
     text("unlockableBadgeCount", catalogue.length ? `${formatInteger(unlockable.length)} available` : "Catalogue unavailable");
   }
@@ -925,10 +1079,10 @@
           ? `${progress.ready} OF ${progress.total} READY`
           : `${progress.ready} OF ${progress.total} READY · ${progress.loading} LOADING`;
     inspector.media.title = activeError ?? "";
-    inspector.galleryThumbnails.replaceChildren(...entries.map((entry, index) => mediaThumbnail(entry, index, index === inspectorMediaIndex, () => {
+    inspector.galleryThumbnails.replaceChildren(...entries.map((entry, index) => listItem(mediaThumbnail(entry, index, index === inspectorMediaIndex, () => {
       inspectorMediaIndex = index;
       renderInspectorMedia(record);
-    })));
+    }), "media-thumbnail-item")));
   }
 
   function renderMediaGallery() {
@@ -947,10 +1101,10 @@
       : !state.loadedMediaPackage
         ? `${mediaCountLabel(entries.length)} related to this record and its contained items. Load the Images ZIP to view them.`
         : `${progress.ready} of ${progress.total} ready${progress.loading ? ` · ${progress.loading} loading` : ""}${progress.unavailable ? ` · ${progress.unavailable} unavailable` : ""}.`;
-    refs.mediaGalleryThumbnails.replaceChildren(...entries.map((entry, index) => mediaThumbnail(entry, index, index === mediaGalleryIndex, () => {
+    refs.mediaGalleryThumbnails.replaceChildren(...entries.map((entry, index) => listItem(mediaThumbnail(entry, index, index === mediaGalleryIndex, () => {
       mediaGalleryIndex = index;
       renderMediaGallery();
-    })));
+    }), "media-thumbnail-item")));
     const path = active ? localMediaPath(active.reference) : null;
     refs.mediaGalleryFull.hidden = !path;
     refs.mediaGalleryImage.hidden = !path;
@@ -1315,10 +1469,7 @@
         selector.open = false;
         selector.querySelector(":scope > summary")?.focus({ preventScroll: true });
       });
-      const item = element("div", "membership-card");
-      item.setAttribute("role", "listitem");
-      item.append(button);
-      container.append(item);
+      container.append(listItem(button, "membership-card"));
     }
   }
 
@@ -1487,6 +1638,7 @@
       reopenMediaOverlay();
       return;
     }
+    if (showCoolingDown()) return;
     if (accountOperationActive()) {
       state.mediaOverlayActive = false;
       showOverlayExpanded();
@@ -1522,6 +1674,7 @@
   }
 
   function chooseAccountBuild() {
+    if (showCoolingDown()) return;
     refs.buildChoices.hidden = true;
     refs.eventLog.hidden = false;
     if (accountOperationActive()) {
@@ -1851,19 +2004,25 @@
     return location.protocol === "file:" ? origin === "null" : origin === location.origin;
   }
 
-  function setBridgeStatus(summary, stateText, detail, tone = "quiet", active = false) {
+  function setBridgeStatus(summary, stateText, detail, tone = "quiet", active = false, countdownValue = null, prose = null) {
     text("overlaySummary", summary);
     text("overlayState", stateText);
-    text("overlayDetail", detail);
-    refs.overlay.dataset.tone = tone;
+    if (countdownValue) showCountdown(byId("overlayDetail"), countdownValue);
+    else {
+      forgetCountdown(byId("overlayDetail"));
+      text("overlayDetail", detail);
+    }
+    patchAttr(byId("overlayDetail"), "data-prose", prose);
+    patchAttr(refs.overlay, "data-tone", tone);
     const pulse = document.querySelector(".parser-overlay .pulse");
-    pulse.classList.toggle("idle", !active);
-    pulse.classList.toggle("warning", tone === "warning");
-    pulse.classList.toggle("failure", tone === "failure");
+    patchClass(pulse, "idle", !active);
+    patchClass(pulse, "warning", tone === "warning");
+    patchClass(pulse, "failure", tone === "failure");
   }
 
-  function setOverlayMinimized(minimized) {
-    refs.overlay.classList.toggle("minimized", minimized);
+  // The title of the minimized panel, recomputed from every accepted presentation.
+  function refreshOverlayTitle() {
+    const minimized = refs.overlay.classList.contains("minimized");
     const activeJob = state.publicStatus?.activeJob;
     const badge = byId("overlaySummary").textContent;
     const section = Model.collectionSectionPresentation(activeJob?.currentSection);
@@ -1871,13 +2030,146 @@
     const minimizedTitle = state.mediaOverlayActive
       ? `${badge} · Offline images · ${formatInteger(state.mediaCompleted)}/${formatInteger(state.mediaPlan.length)}`
       : activeJob ? `${badge} · ${section.label} · ${progress.currentPosition}/${progress.sectionCount}` : badge;
-    text("overlayTitle", minimized ? minimizedTitle : "BUILD STATUS");
-    text("overlayToggleSymbol", minimized ? "+" : "−");
-    byId("minimizeOverlay").setAttribute("aria-expanded", String(!minimized));
-    byId("minimizeOverlay").setAttribute("aria-label", minimized ? "Expand build status" : "Minimize build status");
+    patchText(byId("overlayTitle"), minimized ? minimizedTitle : "BUILD STATUS");
+  }
+
+  function setOverlayMinimized(minimized) {
+    patchClass(refs.overlay, "minimized", minimized);
+    refreshOverlayTitle();
+    patchText(byId("overlayToggleSymbol"), minimized ? "+" : "−");
+    patchAttr(byId("minimizeOverlay"), "aria-expanded", String(!minimized));
+    patchAttr(byId("minimizeOverlay"), "aria-label", minimized ? "Expand build status" : "Minimize build status");
+  }
+
+  // The caution tape (§11.1), derived from every accepted status. Its nodes are never replaced; only its class and text
+  // change, and only when they differ. The image run's own state joins it in WP11.
+  function renderCautionTape() {
+    const tape = Model.cautionPresentation(state.publicStatus, state.mediaTapeState ?? null);
+    patchClass(refs.cautionTape, "is-active", tape.active);
+    patchClass(refs.overlay, "caution-active", tape.active);
+    patchText(refs.cautionTapeText, tape.text);
+  }
+
+  // One announcement for each logical state (§11.2). Repeated polls, countdown ticks and log growth announce nothing.
+  function announcePresentation(presentation) {
+    if (state.view.announcementKey === presentation.key) return;
+    state.view.announcementKey = presentation.key;
+    patchText(refs.buildStatusAnnouncement, `Build status: ${presentation.badge}. ${presentation.operation}.`);
+  }
+
+  // The log (§11.2): each row keyed by its activity's seq. An existing row keeps its node, a new row is inserted in its
+  // place, and a log scrolled away from its top keeps its first visible row where it was.
+  const logNodes = new Map();
+
+  function logLine(row) {
+    const line = element("p", row.tone === "failure" ? "failure" : row.tone === "warning" ? "waiting" : "");
+    line.dataset.logKey = row.key;
+    const displayedTime = activityTime(row.at);
+    if (displayedTime) {
+      const time = element("time", "", displayedTime);
+      time.dateTime = row.at;
+      line.append(time, document.createTextNode(row.message));
+    } else {
+      line.textContent = row.message;
+    }
+    return line;
+  }
+
+  function patchLog(rows) {
+    const log = refs.eventLog;
+    const top = log.getBoundingClientRect().top;
+    const anchor = log.scrollTop > 0 ? [...log.children].find((child) => child.getBoundingClientRect().bottom > top) ?? null : null;
+    const anchorOffset = anchor ? anchor.getBoundingClientRect().top - top : 0;
+    const wanted = new Set(rows.map((row) => row.key));
+    for (const [key, node] of logNodes) {
+      if (wanted.has(key)) continue;
+      node.remove();
+      logNodes.delete(key);
+    }
+    for (const child of [...log.children]) if (!child.dataset.logKey) child.remove();
+    let cursor = log.firstElementChild;
+    for (const row of rows) {
+      let node = logNodes.get(row.key);
+      if (!node) {
+        node = logLine(row);
+        logNodes.set(row.key, node);
+      }
+      if (node === cursor) cursor = cursor.nextElementSibling;
+      else log.insertBefore(node, cursor);
+    }
+    if (anchor?.isConnected) {
+      const moved = anchor.getBoundingClientRect().top - log.getBoundingClientRect().top - anchorOffset;
+      if (moved !== 0) log.scrollTop += moved;
+    }
+  }
+
+  function renderEventLog(publicStatus, presentation) {
+    const activeJob = publicStatus?.activeJob;
+    const continuable = presentation.row >= 16 && presentation.row <= 19;
+    const runKey = typeof activeJob?.runId === "string" ? activeJob.runId.slice(0, 80) : "run";
+    const rows = [];
+    if (activeJob?.status === "failed" && activeJob.failure) {
+      if (continuable) {
+        const history = presentation.historyMessage ?? "The previous attempt stopped. Completed data remains available.";
+        const technical = `Technical detail: ${presentation.technicalMessage ?? "RUN_FAILED"}`;
+        rows.push({ key: `history:${runKey}:${history}`, at: null, tone: "warning", message: history }, { key: `technical:${runKey}:${technical}`, at: null, tone: "diagnostic", message: technical });
+      } else {
+        const detail = Model.stopTechnicalDetail(activeJob.failure);
+        rows.push({ key: `failure:${runKey}:${detail}`, at: null, tone: "failure", message: detail });
+      }
+    }
+    rows.push(...Model.activityRows(activeJob?.activityLog).reverse());
+    const shown = rows.length ? rows : [{ key: `empty:${activeJob ? "started" : "none"}`, at: null, tone: "normal", message: activeJob ? "Data collection has started." : "No account collection has started." }];
+    patchLog(continuable ? [{ key: `header:${runKey}`, at: null, tone: "warning", message: "Previous attempt history" }, ...shown] : shown);
+  }
+
+  // The control that explicitly opened Build Status, to which Close returns focus (final criterion 31): Build,
+  // Continue, a roster action or another opener outside the panel. A control inside the panel, such as a chooser
+  // choice, keeps the opener it was reached from. A control inside a dialog that has just closed hands over to the
+  // control the dialog gave focus back to, such as the roster action that opened Build Orgs JSON.
+  let activatedControl = null;
+  let activatedTimer = 0;
+  // The control that opened each dialog, kept because a mouse click does not focus a button in every browser, so the
+  // dialog cannot always give focus back to it.
+  const dialogOpeners = new WeakMap();
+
+  function rememberActivatedControl(event) {
+    const target = typeof event.target?.closest === "function" ? event.target.closest("button, a[href], summary, [role='button'], input") : null;
+    activatedControl = target;
+    window.clearTimeout(activatedTimer);
+    // An opener counts within the task of its own activation, its default action included; never a later one.
+    activatedTimer = window.setTimeout(() => { activatedControl = null; }, 0);
+  }
+
+  function explicitOpener() {
+    let control = activatedControl;
+    const dialog = control?.closest("dialog");
+    if (dialog && !dialog.open) control = dialogOpeners.get(dialog) ?? (typeof document.activeElement?.closest === "function" ? document.activeElement : null);
+    if (!control || control === document.body || refs.overlay.contains(control)) return null;
+    return control;
+  }
+
+  // Whether a control can take focus now: still in the page, shown, not disabled, and outside a closed dialog.
+  function canTakeFocus(control) {
+    if (typeof control?.focus !== "function" || typeof control.closest !== "function" || !control.isConnected || control.disabled) return false;
+    if (control.closest("[hidden], [inert]") || (control.closest("dialog") && !control.closest("dialog").open)) return false;
+    return control.getClientRects().length > 0;
+  }
+
+  function returnFocusFromBuildStatus() {
+    const opener = state.buildStatusOpener;
+    state.buildStatusOpener = null;
+    if (canTakeFocus(opener)) {
+      opener.focus();
+      if (document.activeElement === opener) return;
+    }
+    refs.buildButton.focus();
   }
 
   function showOverlayExpanded() {
+    const opener = explicitOpener();
+    if (opener) state.buildStatusOpener = opener;
+    else if (refs.overlay.hidden) state.buildStatusOpener = null;
     state.overlayDismissed = false;
     refs.overlay.hidden = false;
     setOverlayMinimized(false);
@@ -1903,7 +2195,7 @@
 
   function completedRunId(publicStatus = state.publicStatus) {
     const activeJob = publicStatus?.activeJob;
-    return activeJob?.status === "complete" && typeof activeJob.runId === "string" ? activeJob.runId : null;
+    return (activeJob?.status === "complete" || activeJob?.status === "partial") && typeof activeJob.runId === "string" ? activeJob.runId : null;
   }
 
   function activityTime(value) {
@@ -1911,59 +2203,100 @@
     return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
-  function renderEventLog(publicStatus, presentation) {
-    const activeJob = publicStatus?.activeJob;
-    const continuable = activeJob?.status === "failed" && publicStatus?.continuable === true;
-    const rows = (Array.isArray(activeJob?.activityLog) ? activeJob.activityLog : [])
-      .slice(-20)
-      .map(Model.safeActivityPresentation)
-      .filter(Boolean)
-      .reverse();
-    if (activeJob?.status === "failed" && activeJob.failure) {
-      if (continuable) rows.unshift(
-        { at: null, tone: "warning", message: presentation.historyMessage ?? "The previous attempt stopped. Completed data remains available." },
-        { at: null, tone: "diagnostic", message: `Technical detail: ${presentation.technicalMessage ?? "RUN_FAILED"}` }
-      );
-      else {
-        const code = typeof activeJob.failure.code === "string" ? activeJob.failure.code.slice(0, 80) : "RUN_FAILED";
-        const message = typeof activeJob.failure.message === "string" ? activeJob.failure.message.slice(0, 500) : "The account backup stopped.";
-        rows.unshift({ at: null, tone: "failure", message: `${code}: ${message}` });
+  // The image run's pace as Build Status takes it (§14): a page-local value, checked first; anything else is null.
+  function validMediaPace(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    return {
+      warning: ["limited", "slow"].includes(value.warning) ? value.warning : null,
+      waitingUntil: typeof value.waitingUntil === "string" && Number.isFinite(Date.parse(value.waitingUntil)) ? value.waitingUntil : null,
+      factor: Number.isFinite(value.factor) && value.factor >= 1 ? value.factor : null
+    };
+  }
+
+  const MEDIA_STATUS_EVERY_MS = 300000;
+  const unreadableStatus = () => ({ status: "unknown", reason: "unreadable", components: [], checkedAt: new Date().toISOString() });
+
+  // RSI's status feed for the image run, through the extension (§14): when a warning first shows, every 5 minutes
+  // while it shows, and at the stop. The page never asks the feed itself.
+  async function refreshMediaStatusPage(force = false) {
+    const nowMs = Date.now();
+    if (!force && state.mediaStatusCheckedAt !== null && nowMs - state.mediaStatusCheckedAt < MEDIA_STATUS_EVERY_MS) return;
+    state.mediaStatusCheckedAt = nowMs;
+    let statusPage = unreadableStatus();
+    if (state.bridge) {
+      try {
+        const answer = await requestBridge("CHECK_RSI_STATUS", null);
+        if (answer?.ok === true && ["ok", "issue", "unknown"].includes(answer.status)) statusPage = { status: answer.status, reason: answer.reason ?? null, components: Array.isArray(answer.components) ? answer.components.slice(0, 10) : [], checkedAt: answer.checkedAt ?? null };
+      } catch {
+        // An extension that does not answer leaves the status unread.
       }
     }
-    refs.eventLog.replaceChildren();
-    if (continuable) refs.eventLog.append(element("p", "waiting", "Previous attempt history"));
-    if (!rows.length) {
-      refs.eventLog.append(element("p", "", activeJob ? "Data collection has started." : "No account collection has started."));
-      return;
-    }
-    for (const row of rows.slice(0, 20)) {
-      const line = element("p", row.tone === "failure" ? "failure" : row.tone === "warning" ? "waiting" : "");
-      const displayedTime = activityTime(row.at);
-      if (displayedTime) {
-        const time = element("time", "", displayedTime);
-        time.dateTime = row.at;
-        line.append(time, document.createTextNode(row.message));
-      } else {
-        line.textContent = row.message;
+    state.mediaStatusPage = statusPage;
+    if (state.mediaTapeState) state.mediaTapeState = { ...state.mediaTapeState, statusPage };
+    renderCautionTape();
+  }
+
+  // While a warning shows, a page-local timer asks again at each cache period, even when no image answers between;
+  // it is cancelled when the warning clears or the image run ends, cancelled or not (§14).
+  let mediaStatusTimer = null;
+  function scheduleMediaStatusRefresh(warning) {
+    globalThis.clearTimeout(mediaStatusTimer);
+    mediaStatusTimer = null;
+    if (!warning) return;
+    const dueInMs = Math.max(0, (state.mediaStatusCheckedAt ?? Date.now()) + MEDIA_STATUS_EVERY_MS - Date.now());
+    mediaStatusTimer = globalThis.setTimeout(() => {
+      mediaStatusTimer = null;
+      if (!state.mediaTapeState?.active || !state.mediaTapeState.warning) return;
+      void refreshMediaStatusPage().then(() => scheduleMediaStatusRefresh(Boolean(state.mediaTapeState?.active && state.mediaTapeState.warning)));
+    }, dueInMs);
+  }
+
+  // The image hosts' earlier runs for the next image run (§14, criterion 20): the extension's image history when it is
+  // connected, then the loaded Images ZIP's receipt. The materializer uses the first that passes its checks.
+  async function imagePaceHistorySources() {
+    const sources = [];
+    if (state.bridge) {
+      try {
+        const answer = await requestBridge("GET_IMAGE_PACE_HISTORY", null);
+        if (answer?.ok === true && answer.history) sources.push({ source: "extension", record: answer.history });
+      } catch {
+        // An extension that does not answer gives no history.
       }
-      refs.eventLog.append(line);
+    }
+    const fromPackage = globalThis.CitizenDataPaceHistory.imageHistoryFromReceipt(state.loadedMediaPackage?.manifest?.materializationReceipt ?? null, globalThis.CITIZENDATA_REQUEST_PACING);
+    if (fromPackage) sources.push({ source: "package", record: fromPackage });
+    return sources;
+  }
+
+  // The finished image run joins the extension's image history, when the extension is connected.
+  async function keepImagePaceRun(run) {
+    if (!run || !state.bridge) return;
+    try {
+      await requestBridge("ADD_IMAGE_PACE_RUN", { run });
+    } catch {
+      // The package's receipt still carries the history.
     }
   }
 
+  // One progress value's pace: the tape's row 4 while a warning shows, and the status asked when it first shows.
+  function noteMediaPace(value) {
+    const pace = validMediaPace(value);
+    if (!pace) return;
+    const firstWarning = Boolean(pace.warning) && !state.mediaTapeState?.warning;
+    state.mediaTapeState = { active: true, warning: pace.warning, waitingUntil: pace.waitingUntil, factor: pace.factor, statusPage: state.mediaStatusPage };
+    if (pace.warning) void refreshMediaStatusPage(firstWarning);
+    scheduleMediaStatusRefresh(Boolean(pace.warning));
+  }
+
   function addMediaActivity(message, tone = "normal") {
-    state.mediaActivity.push({ at: new Date().toISOString(), message, tone });
+    state.view.mediaLogSequence += 1;
+    state.mediaActivity.push({ key: `media:${state.view.mediaLogSequence}`, at: new Date().toISOString(), message, tone });
     state.mediaActivity = state.mediaActivity.slice(-20);
   }
 
   function renderMediaEventLog() {
-    refs.eventLog.replaceChildren();
-    for (const row of [...state.mediaActivity].reverse()) {
-      const line = element("p", row.tone === "failure" ? "failure" : row.tone === "warning" ? "waiting" : "");
-      const time = element("time", "", activityTime(row.at) ?? "");
-      line.append(time, document.createTextNode(row.message));
-      refs.eventLog.append(line);
-    }
-    if (!state.mediaActivity.length) refs.eventLog.append(element("p", "", "No image download has started."));
+    const rows = [...state.mediaActivity].reverse();
+    patchLog(rows.length ? rows : [{ key: "media:empty", at: null, tone: "normal", message: "No image download has started." }]);
   }
 
   function renderMediaOverlay({ badge, operation, detail, tone = "active", active = false, completed = state.mediaCompleted, total = state.mediaPlan.length, refreshLog = true }) {
@@ -1987,71 +2320,122 @@
     if (refreshLog) renderMediaEventLog();
     updateBuildAction();
     updateOrganizationActionAvailability();
-    if (!state.overlayDismissed) refs.overlay.hidden = false;
+    renderCautionTape();
+  }
+
+  // The rows whose summary is a text of §11.3, shown at the warning prose size.
+  const WARNING_PROSE_ROWS = new Set([9, 13, 14, 16, 17, 18, 20, 21]);
+
+  // Build Status from an accepted status (§11.2): one presentation, patched into the panel's stable nodes. A status
+  // never shows, expands, minimizes or focuses the panel; only the user's own actions do.
+  // The notice that RSI changed a page (§11.4): one block per detected change, built with DOM calls and textContent,
+  // appended once by its key. It stays until the next run starts. It never opens, reopens, minimizes, expands, focuses
+  // or scrolls the panel; the alert region announces only an entry appended while the panel is shown.
+  function renderChangeNotice(publicStatus) {
+    const container = refs.parserChangeNotice;
+    if (!container) return;
+    const job = publicStatus?.activeJob ?? null;
+    const runId = typeof job?.runId === "string" ? job.runId : null;
+    if (runId && runId !== state.view.noticeRunId) {
+      if (state.view.noticeKeys.size > 0) container.replaceChildren();
+      state.view.noticeKeys.clear();
+      state.view.noticeRunId = runId;
+    }
+    for (const notice of Model.changeNotices(job?.detectedChanges)) {
+      if (state.view.noticeKeys.has(notice.key)) continue;
+      state.view.noticeKeys.add(notice.key);
+      const entry = document.createElement("section");
+      entry.className = "parser-change-entry";
+      const title = document.createElement("b");
+      title.textContent = notice.title;
+      const prose = document.createElement("p");
+      prose.textContent = notice.prose;
+      const technical = document.createElement("p");
+      technical.className = "parser-change-technical";
+      technical.textContent = notice.technical;
+      const request = document.createElement("p");
+      request.textContent = notice.request;
+      const links = document.createElement("p");
+      for (const [label, href] of [["Existing issues", notice.searchLink], ["New issue", notice.newIssueLink]]) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = label;
+        if (links.childNodes.length > 0) links.append(" ");
+        links.append(link);
+      }
+      entry.append(title, prose, technical, request, links);
+      container.append(entry);
+    }
+    patchHidden(container, state.view.noticeKeys.size === 0);
   }
 
   function renderCollectionStatus(value, options = {}) {
     const publicStatus = normalizedPublicStatus(value) ?? state.publicStatus;
     if (publicStatus) state.publicStatus = publicStatus;
+    renderCautionTape();
+    renderChangeNotice(publicStatus);
     if (state.mediaOverlayActive) {
       updateBuildAction();
+      updateUnavailableControls();
       return;
     }
+    const panelTop = refs.overlay.scrollTop;
     const activeJob = publicStatus?.activeJob ?? null;
-    refs.buildChoices.hidden = true;
-    refs.eventLog.hidden = false;
-    const presentation = Model.collectionStatusPresentation(publicStatus, {
+    patchHidden(refs.buildChoices, true);
+    patchHidden(refs.eventLog, false);
+    const presentation = Model.buildPresentation(publicStatus, {
       bridgeConnected: state.bridgeReachable,
       connecting: options.connecting === true || state.connecting,
       jobKind: options.jobKind
     });
-    setBridgeStatus(presentation.badge, presentation.operation, presentation.summary, presentation.tone, presentation.active);
+    state.view.presentation = presentation;
+    setBridgeStatus(presentation.badge, presentation.operation, presentation.summary, presentation.tone, presentation.active, presentation.countdown, WARNING_PROSE_ROWS.has(presentation.row) ? "warning" : null);
 
-    const statusName = activeJob?.status ?? publicStatus?.status;
-    const running = statusName === "running";
-    const paused = statusName === "paused";
     const requiresRebind = publicStatus?.requiresRebind === true;
-    const continuable = statusName === "failed" && publicStatus?.continuable === true;
+    const controls = presentation.controls;
+    const continuable = presentation.row >= 16 && presentation.row <= 19;
     state.continuePartial = continuable;
-    const rosterJob = options.jobKind === "organizationData" || activeJob?.jobKind === "organizationData" || activeJob?.currentSection?.startsWith?.("organizations.members.");
-    refs.overlayOperation.textContent = rosterJob ? "ORGANIZATION DATA" : continuable ? "CONTINUE BACKUP" : "ACCOUNT DATA";
+    patchText(refs.overlayOperation, presentation.jobKind === "roster" ? "ORGANIZATION DATA" : continuable ? "CONTINUE BACKUP" : "ACCOUNT DATA");
     updateBuildAction();
     updateOrganizationActionAvailability();
-    refs.mediaControls.hidden = true;
-    refs.collectionControls.hidden = !state.bridgeReachable || !(running || paused || requiresRebind || continuable);
-    refs.rebindCollection.hidden = !state.bridgeReachable || !requiresRebind;
-    refs.pauseCollection.hidden = !state.bridgeReachable || requiresRebind || !running;
-    refs.resumeCollection.hidden = !state.bridgeReachable || requiresRebind || !(paused || continuable);
-    refs.resumeCollection.textContent = continuable ? rosterJob ? "Continue Organization Data" : "Continue backup" : "Resume";
-    refs.cancelCollection.hidden = !state.bridgeReachable || requiresRebind || !(running || paused);
-    // Skip is offered for one stage only, the reading of CCU buy-back prices, and once for a run.
-    refs.skipCollection.hidden = !state.bridgeReachable || requiresRebind || !running || activeJob?.currentSection !== "buybackUpgradePrices" || state.skipRequestedRunId === activeJob.runId;
+    patchHidden(refs.mediaControls, true);
+    const connected = state.bridgeReachable;
+    patchHidden(refs.collectionControls, !connected || !(controls.pause || controls.resume || controls.cancel || controls.rebind));
+    patchHidden(refs.rebindCollection, !connected || !controls.rebind);
+    patchHidden(refs.pauseCollection, !connected || !controls.pause);
+    patchHidden(refs.resumeCollection, !connected || !controls.resume);
+    patchText(refs.resumeCollection, controls.resumeLabel);
+    patchHidden(refs.cancelCollection, !connected || !controls.cancel);
+    // Skip is offered for one stage only, the reading of CCU buyback prices, and once for a run.
+    patchHidden(refs.skipCollection, !connected || !controls.skip || state.skipRequestedRunId === activeJob?.runId);
 
     const showActivity = Boolean(activeJob) || requiresRebind;
-    refs.collectionActivity.hidden = !showActivity;
-    refs.requestProgress.hidden = true;
+    patchHidden(refs.collectionActivity, !showActivity);
     if (showActivity) {
       const section = Model.collectionSectionPresentation(activeJob?.currentSection);
       const progress = Model.collectionProgress(activeJob);
       text("collectionActivityLabel", section.label);
       text("collectionActivityText", `${progress.overallText} · ${progress.httpText}`);
-      refs.collectionActivityProgress.value = Math.max(0, Math.min(100, progress.overallPercent));
+      patchProgress(refs.collectionActivityProgress, Math.max(0, Math.min(100, progress.overallPercent)));
+      patchHidden(refs.requestProgress, !progress.requestProgress);
       if (progress.requestProgress) {
-        refs.requestProgress.hidden = false;
-        refs.requestProgressLabel.textContent = progress.requestProgress.label;
-        if (progress.requestProgress.indeterminate) refs.collectionRequestProgress.removeAttribute("value");
-        else refs.collectionRequestProgress.value = Math.max(0, Math.min(100, progress.requestProgress.percent));
-        refs.requestProgressText.textContent = progress.requestProgress.text;
+        patchText(refs.requestProgressLabel, progress.requestProgress.label);
+        if (!progress.requestProgress.indeterminate) patchProgress(refs.collectionRequestProgress, Math.max(0, Math.min(100, progress.requestProgress.percent)));
+        else if (refs.collectionRequestProgress.hasAttribute("value")) refs.collectionRequestProgress.removeAttribute("value");
+        patchText(refs.requestProgressText, progress.requestProgress.text);
       }
-      setCollectionActivityImage(running && !requiresRebind && !matchMedia("(prefers-reduced-motion: reduce)").matches);
+      setCollectionActivityImage(activeJob?.status === "running" && !requiresRebind && !matchMedia("(prefers-reduced-motion: reduce)").matches);
     } else {
+      patchHidden(refs.requestProgress, true);
       setCollectionActivityImage(false);
     }
     renderEventLog(publicStatus, presentation);
-
-    // The panel shows by itself only for a run that is going on or waits for the user. With nothing running, or a
-    // finished build, it stays as it is: closed until Build opens it.
-    if (running || paused || requiresRebind || continuable) refs.overlay.hidden = state.overlayDismissed;
+    refreshOverlayTitle();
+    announcePresentation(presentation);
+    updateUnavailableControls();
+    if (refs.overlay.scrollTop !== panelTop) refs.overlay.scrollTop = panelTop;
   }
 
   function clearStatusPoll() {
@@ -2132,7 +2516,7 @@
   }
 
   // Returns true once the backup file has been handed to the browser, which is what lets the extension stop offering it.
-  async function openCompletedDocument(documentValue, { recovered = false } = {}) {
+  async function openCompletedDocument(documentValue, { recovered = false, partial = false } = {}) {
     const timestamp = globalThis.CitizenDataFileTimestamp.format(new Date().toISOString());
     const accepted = await acceptAccountDocument(documentValue, { source: "extension", fileName: `citizendata-${timestamp}.json` });
     const contentHash = accepted.integrity.contentHash;
@@ -2142,6 +2526,12 @@
       state.savedBuildContentHashes.add(contentHash);
       state.fileName = saved.fileName;
       text("railExported", saved.fileName);
+      if (partial) {
+        // W-29: {fileName} bounded to 200 printable characters, or "The saved file".
+        const shown = typeof saved.fileName === "string" && saved.fileName.length > 0 && saved.fileName.length <= 200 && [...saved.fileName].every((character) => character.codePointAt(0) >= 32 && character.codePointAt(0) !== 127) ? saved.fileName : "The saved file";
+        showDialog("BUILD JSON", "Partial backup saved", `${shown} leaves out the skipped sections. Any earlier complete backup is unchanged.`);
+        return true;
+      }
       showDialog("BUILD JSON", "Account backup saved", `${recovered ? "This backup finished while the dashboard was not connected. " : ""}${saved.fileName} passed the canonical schema and SHA-256 integrity checks, was saved to your device, and is now open in this dashboard.${removalSummary(accepted)} Keep your earlier backup files as well: a record RSI stops listing can only be shown by comparing two backups.`);
       return true;
     } catch (error) {
@@ -2229,18 +2619,34 @@
       if (!response.ok || !response.result || response.runId !== runId) throw new Error(response.message ?? response.code ?? "The completed result was unavailable.");
       const saved = organizationData
         ? await openCompletedOrganizationDocument(response.result, { activeJob: { jobKind: "organizationData", selectedSections: Model.asArray(response.selectedSections) } })
-        : await openCompletedDocument(response.result, { recovered: true });
+        : await openCompletedDocument(response.result, { recovered: true, partial: pending.status === "partial" });
       if (saved) await acknowledgeCompletedResult(runId);
     } catch (error) {
       showDialog("BUILD JSON", "Completed result could not be opened", `${error.message} The result stays in the extension; reload this page to try again.`);
     }
   }
 
-  async function applyDashboardPayload(payload) {
-    const publicStatus = normalizedPublicStatus(payload);
+  // One way in for every status (§11.2), pushed STATUS and polled GET_STATUS alike. A lower revision is ignored; a
+  // poll answer without one is ignored when a later poll was applied already; a pushed status without one keeps
+  // arrival order, as an older extension sends it. A status that fails validation keeps the last valid presentation.
+  function acceptStatus(value, { pollSequence = null } = {}) {
+    const status = Model.validateStatus(normalizedPublicStatus(value));
+    if (!status) return null;
+    if (Number.isSafeInteger(status.statusRevision)) {
+      if (status.statusRevision < state.view.revision) return null;
+      state.view.revision = status.statusRevision;
+    } else if (pollSequence !== null && pollSequence < state.view.appliedPoll) return null;
+    if (pollSequence !== null) state.view.appliedPoll = Math.max(state.view.appliedPoll, pollSequence);
+    return status;
+  }
+
+  async function applyDashboardPayload(payload, options = {}) {
+    const accepted = acceptStatus(payload, options);
+    const publicStatus = accepted ?? state.publicStatus;
     state.bridgeReachable = true;
     state.connecting = false;
-    renderCollectionStatus(publicStatus);
+    // A stale status changes nothing, except that a panel left connecting or disconnected shows the last valid one.
+    if (accepted || [5, 6].includes(state.view.presentation?.row)) renderCollectionStatus(publicStatus);
     if (payload?.partialResult) {
       if (publicStatus?.activeJob?.jobKind === "organizationData") await openPartialOrganizationDocument(payload.partialResult, publicStatus);
       else await openPartialDocument(payload.partialResult, publicStatus);
@@ -2249,7 +2655,7 @@
     if (payload?.result) {
       const saved = publicStatus?.activeJob?.jobKind === "organizationData"
         ? await openCompletedOrganizationDocument(payload.result, publicStatus)
-        : await openCompletedDocument(payload.result);
+        : await openCompletedDocument(payload.result, { partial: publicStatus?.activeJob?.status === "partial" });
       if (saved) await acknowledgeCompletedResult(completedRunId(publicStatus));
     }
     else await requestCompletedResult(publicStatus);
@@ -2262,9 +2668,11 @@
       return;
     }
     try {
+      state.view.pollSequence += 1;
+      const pollSequence = state.view.pollSequence;
       const response = await requestBridge("GET_STATUS", null);
       if (!response.ok || !response.status) throw new Error(response.message ?? response.code ?? "CitizenData status is unavailable.");
-      await applyDashboardPayload({ status: response.status });
+      await applyDashboardPayload({ status: response.status }, { pollSequence });
     } catch {
       markBridgeDisconnected();
       scheduleStatusPoll();
@@ -2338,6 +2746,9 @@
       state.bridgeReachable = true;
       state.bridgeSeen = true;
       state.connecting = false;
+      // A new bridge session may follow cleared extension data, whose revisions start again.
+      state.view.revision = -1;
+      state.view.appliedPoll = 0;
       const enabled = state.bridge.capabilities.buildJson === true;
       refs.buildButton.classList.toggle("bridge-gated", !enabled);
       renderCollectionStatus(state.publicStatus ?? { status: "idle", activeJob: null });
@@ -2380,17 +2791,24 @@
     const priorCompletedRunId = completedRunId();
     if (priorCompletedRunId) state.dismissedCompletedRunIds.delete(priorCompletedRunId);
     showOverlayExpanded();
+    // Settings that fail their own validation propose nothing; the panel says why.
+    const pacingProblem = globalThis.CitizenDataRequestPacing?.validationMessage ?? null;
+    if (pacingProblem !== null) {
+      setBridgeStatus("SETTINGS", "Build cannot start", `The request pacing settings are not valid: ${pacingProblem}`, "failure", false);
+      updateBuildAction();
+      return;
+    }
     state.connecting = true;
     renderCollectionStatus(state.publicStatus, { connecting: true });
     try {
-      const response = await requestBridge("PROPOSE_BUILD", Model.buildDefaultPlan());
+      const response = await requestBridge("PROPOSE_BUILD", Model.buildDefaultPlan(state.bridge.capabilities));
       state.connecting = false;
       if (response.status) await applyDashboardPayload({ status: response.status });
       else renderCollectionStatus(state.publicStatus);
       if (response.ok) {
         showToast(response.message ?? "Account backup started.");
       }
-      else showDialog("BUILD JSON", response.code === "COLLECTION_GATED" ? "Account adapters are gated" : "Build request declined", response.message ?? "No account collection started.");
+      else if (!showStartDeclined(response)) showDialog("BUILD JSON", response.code === "COLLECTION_GATED" ? "Account adapters are gated" : "Build request declined", response.message ?? "No account collection started.");
     } catch (error) {
       markBridgeDisconnected();
       scheduleStatusPoll();
@@ -2428,10 +2846,12 @@
       return;
     }
     populateOrganizationChecklist(preferredSid);
+    if (activatedControl && !refs.orgBuildDialog.contains(activatedControl)) dialogOpeners.set(refs.orgBuildDialog, activatedControl);
     if (typeof refs.orgBuildDialog.showModal === "function") refs.orgBuildDialog.showModal();
   }
 
   async function proposeOrganizationRosters(organizationSids) {
+    if (showCoolingDown()) return;
     const sids = [...new Set(Model.asArray(organizationSids))];
     const memberships = Model.asArray(state.document.organizations?.memberships);
     if (!sids.length || sids.some((sid) => !memberships.some((membership) => membership?.sid === sid)) || !state.bridge) {
@@ -2452,7 +2872,7 @@
       if (response.status) await applyDashboardPayload({ status: response.status });
       if (response.ok) {
         showToast(response.message ?? "Organization Data job started.");
-      } else showDialog("ORGANIZATION DATA", "Organization job declined", response.message ?? "No Organization Data job started.");
+      } else if (!showStartDeclined(response)) showDialog("ORGANIZATION DATA", "Organization job declined", response.message ?? "No Organization Data job started.");
     } catch (error) {
       state.connecting = false;
       showDialog("ORGANIZATION DATA", "Extension request failed", error.message);
@@ -2461,6 +2881,7 @@
 
   async function controlCollection(type) {
     const continuing = type === "CONTINUE_PARTIAL";
+    if (continuing && showCoolingDown()) return false;
     if (continuing) {
       clearStatusPoll();
       showOverlayExpanded();
@@ -2474,7 +2895,7 @@
       else renderCollectionStatus(state.publicStatus);
       scheduleStatusPoll();
       if (response.ok && continuing) showToast(response.message ?? "Partial backup continuation started.");
-      if (!response.ok) showDialog("ACCOUNT COLLECTION", continuing ? "Continuation declined" : "Control request declined", response.message ?? response.code ?? "The collection state did not change.");
+      if (!response.ok && !(continuing && showStartDeclined(response))) showDialog("ACCOUNT COLLECTION", continuing ? "Continuation declined" : "Control request declined", response.message ?? response.code ?? "The collection state did not change.");
       return response.ok === true;
     } catch (error) {
       state.connecting = false;
@@ -2533,6 +2954,10 @@
     state.mediaCompleted = 0;
     state.mediaActiveRequests = 0;
     state.mediaActivity = [];
+    // A new image run starts without the last run's warning (§14).
+    state.mediaTapeState = { active: true, warning: null, statusPage: null };
+    state.mediaStatusPage = null;
+    state.mediaStatusCheckedAt = null;
     addMediaActivity(`Started ${formatInteger(plan.length)} image downloads.`);
     refs.mediaStatus.textContent = "Image download is running in Build Status.";
     showOverlayExpanded();
@@ -2548,28 +2973,42 @@
       const delta = await globalThis.CitizenDataMediaPackageReader.prepareDelta(plan, state.loadedMediaPackage);
       state.mediaCompleted = delta.reused.assets.length;
       if (delta.reused.assets.length) addMediaActivity(`Reusing ${formatInteger(delta.reused.assets.length)} validated images from ${fromExtension ? "the extension" : "the loaded ZIP"}. ${formatInteger(delta.pending.length)} images remain to download.`);
+      const history = await imagePaceHistorySources();
       const downloaded = await globalThis.CitizenDataMediaMaterializer.materialize(delta.pending, globalThis.CITIZENDATA_MEDIA_POLICY, {
         fetcher: (url, options) => fetch(url, { ...options, mode: "cors", cache: "no-store" }),
+        runId: globalThis.crypto.randomUUID(),
+        history,
         signal: controller.signal,
+        statusPage: () => state.mediaStatusPage,
         onRequestStart: ({ index, total, attempt, activeRequests, maximumConcurrency }) => {
           state.mediaActiveRequests = activeRequests;
           addMediaActivity(`Started image ${formatInteger(index + 1)} of ${formatInteger(total)}. ${formatInteger(activeRequests)} of ${formatInteger(maximumConcurrency)} requests active${attempt > 1 ? `. Attempt ${formatInteger(attempt)}.` : "."}`);
           renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(plan.length), active: true, completed: state.mediaCompleted, total: plan.length });
         },
-        onProgress: ({ completed, total, receipt, activeRequests }) => {
+        onProgress: ({ completed, total, receipt, activeRequests, pace }) => {
+          noteMediaPace(pace);
           state.mediaCompleted = delta.reused.assets.length + completed;
           if (Number.isSafeInteger(activeRequests)) state.mediaActiveRequests = activeRequests;
-          addMediaActivity(`Finished delta image ${formatInteger(completed)} of ${formatInteger(total)}. Result: ${receipt.status}.`, receipt.status === "failed" ? "warning" : "normal");
+          // A refusal reports the pace alone, with no finished image.
+          if (receipt) addMediaActivity(`Finished delta image ${formatInteger(completed)} of ${formatInteger(total)}. Result: ${receipt.status}.`, receipt.status === "failed" ? "warning" : "normal");
           renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(plan.length), active: true, completed: state.mediaCompleted, total: plan.length });
         }
       });
+      // Images left after RSI kept refusing (W-21): the status once more, and row 7 until the next image run or a reload.
+      const stoppedWithRemaining = downloaded.stoppedWithRemaining === true;
+      await keepImagePaceRun(downloaded.imageRun);
+      if (stoppedWithRemaining) await refreshMediaStatusPage(true);
+      state.mediaTapeState = { active: false, warning: null, stoppedWithRemaining, statusPage: state.mediaStatusPage };
       const assetsByUrl = new Map([...delta.reused.assets, ...downloaded.assets].map((asset) => [asset.sourceUrl, asset]));
       const filesByPath = new Map([...delta.reused.files, ...downloaded.files].map((file) => [file.name, file]));
       const materialized = {
         assets: plan.map((entry) => assetsByUrl.get(entry.normalizedUrl)).filter(Boolean),
         files: [...filesByPath.values()].sort((left, right) => left.name.localeCompare(right.name, "en")),
         totalBytes: [...filesByPath.values()].reduce((total, file) => total + file.bytes.byteLength, 0),
-        downloadedBytes: downloaded.downloadedBytes
+        downloadedBytes: downloaded.downloadedBytes,
+        refusedAttempts: downloaded.refusedAttempts,
+        pacing: downloaded.pacing,
+        paceHistory: downloaded.paceHistory
       };
       const result = await globalThis.CitizenDataMediaPackage.buildArchive({
         accountDocument,
@@ -2604,12 +3043,14 @@
       text("healthMedia", `${formatInteger(result.manifest.summary.downloaded + result.manifest.summary.reused)} packaged images loaded${failed ? ` · ${formatInteger(failed)} failed` : ""}`);
       refs.mediaSaveOverlay.textContent = automaticDownloadError ? "Save image ZIP" : "Save image ZIP again";
       addMediaActivity(automaticDownloadError ? `Automatic ZIP download failed: ${automaticDownloadError.message}` : "Image ZIP downloaded and opened for this dashboard.", automaticDownloadError || failed ? "warning" : "normal");
-      finalPresentation = { badge: automaticDownloadError ? "READY TO SAVE" : "COMPLETED", operation: automaticDownloadError ? "Offline image ZIP ready" : "Offline image ZIP downloaded", detail: refs.mediaStatus.textContent, tone: automaticDownloadError ? "warning" : "success", active: false, completed: plan.length, total: plan.length };
+      finalPresentation = { badge: automaticDownloadError ? "READY TO SAVE" : "COMPLETED", operation: automaticDownloadError ? "Offline image ZIP ready" : "Offline image ZIP downloaded", detail: stoppedWithRemaining ? `${refs.mediaStatus.textContent} ${Model.TEXTS.imagesLeft}` : refs.mediaStatus.textContent, tone: automaticDownloadError ? "warning" : "success", active: false, completed: plan.length, total: plan.length };
     } catch (error) {
+      state.mediaTapeState = { active: false, warning: null, stoppedWithRemaining: false, statusPage: null };
       refs.mediaStatus.textContent = error?.name === "AbortError" ? "Image download cancelled. No partial ZIP was created." : `Image download failed: ${error?.message ?? "Unknown error"}`;
       addMediaActivity(refs.mediaStatus.textContent, error?.name === "AbortError" ? "warning" : "failure");
       finalPresentation = { badge: error?.name === "AbortError" ? "CANCELLED" : "FAILED", operation: error?.name === "AbortError" ? "Image download cancelled" : "Image download failed", detail: refs.mediaStatus.textContent, tone: error?.name === "AbortError" ? "warning" : "failure", active: false, completed: state.mediaCompleted, total: plan.length };
     } finally {
+      scheduleMediaStatusRefresh(false);
       if (state.mediaController === controller) state.mediaController = null;
       if (finalPresentation) renderMediaOverlay(finalPresentation);
     }
@@ -2635,9 +3076,14 @@
     refs.fileInput.addEventListener("change", () => loadJsonFile(refs.fileInput.files?.[0]).catch((error) => showDialog("LOAD JSON", "File rejected", error.message)).finally(() => { refs.fileInput.value = ""; }));
     refs.loadOrgButton.addEventListener("click", (event) => { event.stopPropagation(); refs.orgFileInput.click(); });
     refs.orgFileInput.addEventListener("change", () => loadOrganizationFile(refs.orgFileInput.files?.[0]).catch((error) => showDialog("LOAD ORGS JSON", "File rejected", error.message)).finally(() => { refs.orgFileInput.value = ""; }));
-    refs.buildOrgButton.addEventListener("click", (event) => { event.stopPropagation(); openOrganizationBuildDialog(); });
+    refs.buildOrgButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (showCoolingDown()) return;
+      openOrganizationBuildDialog();
+    });
     refs.loadMediaZipButton.addEventListener("click", () => refs.mediaZipInput.click());
     refs.mediaZipInput.addEventListener("change", () => loadMediaPackageFile(refs.mediaZipInput.files?.[0]).catch((error) => showDialog("LOAD IMAGES ZIP", "Package rejected", error.message)).finally(() => { refs.mediaZipInput.value = ""; }));
+    document.addEventListener("click", rememberActivatedControl, true);
     refs.buildButton.addEventListener("click", openBuildChooser);
     refs.buildAccountAction.addEventListener("click", chooseAccountBuild);
     refs.buildImagesAction.addEventListener("click", chooseImageBuild);
@@ -2679,6 +3125,7 @@
     byId("closeOverlay").addEventListener("click", () => {
       state.overlayDismissed = true;
       refs.overlay.hidden = true;
+      returnFocusFromBuildStatus();
       if (state.mediaOverlayActive && !state.mediaController) state.mediaOverlayActive = false;
     });
     const closeOrganizationBuild = () => {
@@ -2689,6 +3136,7 @@
     byId("orgBuildCancel").addEventListener("click", closeOrganizationBuild);
     refs.orgBuildForm.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (showCoolingDown()) return;
       updateOrganizationActionAvailability();
       if (refs.orgBuildStart.disabled) return;
       const selectedSids = [...refs.orgRosterChecklist.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value);
@@ -2748,7 +3196,6 @@
       state.referralPage = 1;
       renderReferrals();
     });
-    refs.referralSearchForm.addEventListener("submit", (event) => event.preventDefault());
     refs.referralSearch.addEventListener("input", () => {
       state.referralSearch = refs.referralSearch.value;
       state.referralPage = 1;

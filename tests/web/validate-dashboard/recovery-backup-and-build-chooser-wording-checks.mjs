@@ -45,7 +45,7 @@ export async function checkRecoveryBackupOpens() {
 export async function checkBuildChooserWording() {
   const connect = () => evaluate(`(()=>{
     const session=crypto.randomUUID(),nonce='w'.repeat(40);
-    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:1,type,requestId,bridgeSessionId:session,nonce,payload}")};
+    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:2,type,requestId,bridgeSessionId:session,nonce,payload}")};
     const status={status:'idle',activeJob:null,hasActiveJob:false,controlSessionBound:false,requiresRebind:false,partialAvailable:false,continuable:false};
     window.addEventListener('message',(event)=>{
       const request=event.data;

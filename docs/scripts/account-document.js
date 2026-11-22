@@ -137,7 +137,7 @@
             seen.add(key);
           }
         }
-        if (currentSchema.items !== undefined) candidate.forEach((item, index) => visit(item, currentSchema.items, `${path}/${index}`));
+        if (currentSchema.items !== undefined) candidate.forEach((item, index) => { visit(item, currentSchema.items, `${path}/${index}`); });
       }
 
       if (isObject(candidate)) {

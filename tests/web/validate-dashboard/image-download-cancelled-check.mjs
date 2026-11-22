@@ -2,6 +2,7 @@ import { assert, openBuildChooser, reloadDashboard } from "./assert-build-choose
 import { loadFixture } from "./captures-viewport-and-fixture-loading.mjs";
 import { evaluate, waitFor } from "./chrome-process-and-devtools-commands.mjs";
 import { checkCompleteImageDownloadAndSavingAgain } from "./image-download-complete-check.mjs";
+import { checkImageRunUnderHiddenLimit } from "./image-run-under-hidden-limit-check.mjs";
 import { checkImageZipWithLaterBuildsAndOtherAccounts } from "./image-zip-with-later-builds-check.mjs";
 import { quiet } from "./polling-intervals.mjs";
 
@@ -18,7 +19,7 @@ async function checkCancelledImageDownloadStartsNothingMore() {
   const planned = await evaluate("Number(document.getElementById('mediaSummary').textContent.split(' ')[0])");
   assert(planned >= 6, `The image plan did not find the fixture's images: ${planned}`);
   // A 1 by 1 PNG, distinct for each address so no two images share content. Each answer takes longer than the gap
-  // between two starts, so several are on their way at once.
+  // between two starts, at most 400 ms while the run starts at factor 2 (§14), so several are on their way at once.
   await evaluate(`(()=>{
     const png=(seed)=>{const base=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg='
       + '='),c=>c.charCodeAt(0));const text=new TextEncoder().encode(seed);const out=new Uint8Array(base.length+text.length);out.set(base);out.set(text,base.length);return out;};
@@ -33,7 +34,7 @@ async function checkCancelledImageDownloadStartsNothingMore() {
       return new Promise((resolve,reject)=>{
         const finish=()=>{window.__images.active-=1;resolve(new Response(png(address.pathname),{status:200,headers:{'content-type':'image/png'}}));};
         options.signal?.addEventListener('abort',()=>{window.__images.active-=1;reject(new DOMException('The download was cancelled.','AbortError'));});
-        if(window.__images.hold)window.__images.release=finish;else setTimeout(finish,300);
+        if(window.__images.hold)window.__images.release=finish;else setTimeout(finish,500);
       });
     };
     const click=HTMLAnchorElement.prototype.click;
@@ -56,18 +57,19 @@ async function checkCancelledImageDownloadStartsNothingMore() {
   );
   // Requests that were waiting their turn when the download was cancelled are never started.
   const startedAtCancel = await evaluate("window.__images.requests.length");
-  // Longer than the 200 ms the dashboard leaves at most between two starts.
-  await quiet(300);
+  // Longer than the 400 ms the dashboard leaves at most between two starts at the run's starting factor 2 (§14).
+  await quiet(500);
   assert(await evaluate("window.__images.requests.length") === startedAtCancel, `Image requests were started after the download was cancelled: ${startedAtCancel} at the cancel, ${await evaluate("window.__images.requests.length")} later`);
   return { withImages, planned };
 }
 
 // The image download from Build: public images are fetched without credentials, a few at a time, packed into one ZIP
 // that is saved and opened, and a download in progress can be cancelled. The two RSI image hosts are answered by a
-// stand-in inside the page, so nothing leaves the machine.
+// stand-in inside the page, so nothing leaves the machine. Last, an image run brakes under a limit CORS hides.
 export async function checkImageDownload() {
   const shared = {};
   Object.assign(shared, await checkCancelledImageDownloadStartsNothingMore());
   await checkCompleteImageDownloadAndSavingAgain(shared);
-  return checkImageZipWithLaterBuildsAndOtherAccounts(shared);
+  await checkImageZipWithLaterBuildsAndOtherAccounts(shared);
+  return checkImageRunUnderHiddenLimit(shared);
 }

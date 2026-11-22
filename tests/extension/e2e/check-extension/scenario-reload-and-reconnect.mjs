@@ -17,8 +17,11 @@ export async function reloadAndReconnect() {
   // A reloaded page is a new bridge session. It does not own the run, so its first status request pauses it.
   await dashboard.send("Page.reload");
   await waitForState((state) => state.status === "paused", 15000, "the reloaded dashboard to pause the run it does not own");
-  // The Build Status panel comes back collapsed after a reload; the offer is inside it.
-  await dashboard.waitFor("document.readyState === 'complete' && !document.getElementById('parserOverlay').hidden", 15000, "the Build Status panel to return after the reload");
+  // A status never shows the panel (PARSER_HARDENING.md §11.2): after the reload Build opens it, as the user's action;
+  // the offer is inside it.
+  await dashboard.waitFor("document.readyState === 'complete' && document.getElementById('overlaySummary').textContent === 'RECONNECT REQUIRED'", 15000, "the reloaded dashboard to learn of the paused run");
+  await click(dashboard, "buildButton");
+  await dashboard.waitFor("!document.getElementById('parserOverlay').hidden", 15000, "Build to open the Build Status panel after the reload");
   if (await dashboard.evaluate("document.getElementById('minimizeOverlay').getAttribute('aria-expanded') === 'false'")) await click(dashboard, "minimizeOverlay");
   await dashboard.waitFor("document.getElementById('rebindCollection').getClientRects().length > 0", 15000, "the dashboard to offer Reconnect paused run");
   assertStep(await dashboard.evaluate("['pauseCollection', 'resumeCollection', 'cancelCollection'].every((id) => document.getElementById(id).getClientRects().length === 0)"), "A dashboard that does not own the run must not offer its controls.");

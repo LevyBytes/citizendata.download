@@ -6,7 +6,10 @@ test("a section's pages are stored once while it is collected, and a finished ru
   // 120 pledges are 12 pages: the first step reads one page and each later step two.
   const { harness, tab } = await runningBuild({ account: { counts: { pledges: 120 } } }, 9);
   await harness.advance(() => kept(harness).pages.filter((page) => page.section === "pledges").length >= 3);
-  const during = kept(harness);
+  const all = kept(harness);
+  // Billing page 1 is kept with the run's pages for its later billing sections (§7.3, D23); the rest are step pages.
+  const during = { ...all, pages: all.pages.filter((page) => page.section !== "kept.billingPage1") };
+  assert.ok(all.pages.some((page) => page.section === "kept.billingPage1" && page.pageKey.startsWith(`${all.jobs[0].runId}|kept.billingPage1|`)));
   const [job] = during.jobs;
   assert.equal(job.plan.selectedSections[job.sectionIndex], "pledges");
   assert.deepEqual(during.pages.map((page) => [page.section, page.step, page.checkpoint]), [["pledges", 1, false], ["pledges", 2, false], ["pledges", 3, false]]);

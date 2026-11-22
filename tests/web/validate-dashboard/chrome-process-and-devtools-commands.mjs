@@ -1,12 +1,9 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { POLL_MS, quiet } from "./polling-intervals.mjs";
-import { chromePath, profileDirectory } from "./run-options-and-work-folders.mjs";
+import { chromeErrors } from "./headlesschromestart.mjs";
 
-export const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--remote-debugging-port=0", `--user-data-dir=${profileDirectory}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
-export let chromeErrors = "";
-chrome.stderr.setEncoding("utf8");
-chrome.stderr.on("data", (chunk) => { chromeErrors += chunk; });
+// Chrome is started by headlesschromestart.mjs when this module loads; its process and its error output are read here.
+export { chrome, chromeErrors } from "./headlesschromestart.mjs";
 
 export async function waitForFile(filePath, timeoutMs = 12000) {
   const deadline = Date.now() + timeoutMs;

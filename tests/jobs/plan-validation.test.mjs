@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadClassicScript } from "../extension/load-classic-script.mjs";
+import { loadClassicScripts } from "../extension/load-classic-script.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const { api: Plans } = await loadClassicScript(path.join(root, "extension", "jobs", "plan-validation.js"), "CitizenDataPlanValidation");
+const Plans = (await loadClassicScripts([
+  path.join(root, "extension", "shared", "request-pacing-settings.js"),
+  path.join(root, "extension", "jobs", "plan-validation.js")
+])).CitizenDataPlanValidation;
 
 function validate(value) {
   return Plans.validatePlan(JSON.parse(JSON.stringify(value)));

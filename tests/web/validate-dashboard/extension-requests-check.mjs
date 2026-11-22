@@ -8,7 +8,7 @@ async function checkImageQuestionAndWaitingFileOffer() {
   await loadFixture('extension-requests-fixture.json', "documentCopy.account.handle='ControlCitizen';documentCopy.profile.handle='ControlCitizen';");
   await evaluate(`(()=>{
     const session=crypto.randomUUID(),nonce='c'.repeat(40);
-    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:1,type,requestId,bridgeSessionId:session,nonce,payload}")};
+    const send=(type,requestId,payload)=>${extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:2,type,requestId,bridgeSessionId:session,nonce,payload}")};
     const job=(status)=>({jobId:'job-controls',runId:'run-controls',status,mode:'baseline',sectionIndex:3,sectionCount:14,completedSections:3,currentSection:'buybacks',requestCount:10,httpRequestCount:10,httpRequestsTotal:null,
       resolvedRequestTotalsForSections:3,requestsBySection:{},requestProgressBySection:{},activityLog:[],failure:null});
     const shape=(status,extra={})=>({status,activeJob:status==='idle'?null:job(status),hasActiveJob:['running','paused'].includes(status),controlSessionBound:true,requiresRebind:false,partialAvailable:false,continuable:false,...extra});

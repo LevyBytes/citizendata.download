@@ -187,138 +187,381 @@
     return bytes;
   }
 
+  // The image hosts' earlier runs (§14, criterion 20), in the order given: the extension's image history, then a loaded
+  // package's. The first that passes its checks is used; a malformed one is not. The account's history is never one.
+  function priorImageHistory(candidates, History, settings) {
+    for (const candidate of Array.isArray(candidates) ? candidates : []) {
+      if (!["extension", "package"].includes(candidate?.source) || !candidate.record) continue;
+      if (History.validateImageHistory(candidate.record, settings) === null) return { source: candidate.source, record: candidate.record };
+    }
+    return null;
+  }
+
+  // The image run (PARSER_HARDENING.md §14). The live pace stays in this run: it starts at the controller's slow start,
+  // every change of it goes through one queue in the order the answers end, and every start waits for the latest
+  // retryNotBefore just before its request. RSI's image errors carry no cross-site header, so a TypeError is told
+  // apart from a dead link by asking again for the last image that downloaded: the control image.
   async function materialize(entries, policy, options) {
     if (!Array.isArray(entries) || entries.length > policy.maximumAssets) throw new RangeError("Image plan exceeds the configured asset limit.");
     const fetcher = options?.fetcher;
     if (typeof fetcher !== "function") throw new TypeError("A public-image transport is required.");
+    const settings = options.settings ?? root.CITIZENDATA_REQUEST_PACING;
+    const Pace = options.paceController ?? root.CitizenDataPaceController;
+    const History = options.paceHistory ?? root.CitizenDataPaceHistory;
+    if (!settings?.images || !settings.brakes || !Pace || !History) throw new TypeError("The request pacing settings, the pace controller and the pace history must load before the image run.");
     const sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     const now = options.now ?? (() => new Date().toISOString());
+    const nowMs = options.nowMs ?? (() => Date.now());
     const random = options.random ?? Math.random;
-    const minimumStartDelay = policy.minimumInterRequestDelayMs;
-    const maximumStartDelay = policy.maximumInterRequestDelayMs ?? minimumStartDelay;
-    const concurrency = Math.max(1, Math.min(4, policy.maximumConcurrency ?? 4));
-    const maximumAttempts = Math.max(1, Math.min(3, policy.maximumAttempts ?? 3));
-    const minimumRetryDelay = policy.minimumRetryDelayMs ?? 750;
-    const maximumRetryDelay = policy.maximumRetryDelayMs ?? 1750;
+    // The settings' validator bounds these values, so the value in the settings file is the value used.
+    const gapBaseline = { startGapMinimumMs: policy.minimumInterRequestDelayMs, startGapMaximumMs: policy.maximumInterRequestDelayMs };
+    const concurrency = policy.maximumConcurrency;
+    const maximumAttempts = policy.maximumAttempts;
+    const minimumRetryDelay = policy.minimumRetryDelayMs;
+    const maximumRetryDelay = policy.maximumRetryDelayMs;
+    const controlReuseMs = settings.images.controlImageReuseMs;
+    const maximumRefused = settings.images.maximumRefusedAttemptsPerImage;
+    const maxFactor = Pace.maximumFactor(Math.max(1, gapBaseline.startGapMinimumMs), settings);
+    // Every image and control request reserves one count of this bound before it is sent (§14).
+    const maximumActualRequests = entries.length * (maximumAttempts + maximumRefused + 1);
+    const IMAGE_FAMILY = Pace.requestFamily("images", "GET", "/{image}");
     const assets = new Array(entries.length);
     const filesByPath = new Map();
+    const perImage = entries.map(() => ({ attempts: 0, refused: 0, redirects: 0 }));
+    const queue = entries.map((_, index) => index);
+    let waiters = [];
     let totalBytes = 0;
     let downloadedBytes = 0;
     let completed = 0;
-    let nextIndex = 0;
     let starts = 0;
     let activeRequests = 0;
+    let actualRequests = 0;
+    let refusedAttempts = 0;
     let startGate = Promise.resolve();
+    let stopping = false;
+    let stoppedWithRemaining = false;
+    let lastDownloadedUrl = null;
+    let typeErrorsWithoutDownload = 0;
+    let control = null;
+    let requestSequence = 0;
+    let refusalBatchSequence = 0;
+    let controlSequence = 0;
+    const openImageRequests = new Set();
+    const refusalBatchByRequest = new Map();
+    const refusalActions = new Map();
+    // The live pace and the run's pace summary (§4.7), changed only through paceMutationQueue.
+    let pace = options.initialPace ? { ...options.initialPace } : Pace.initialPace(settings);
+    const fingerprint = typeof options.settingsFingerprint === "string" ? options.settingsFingerprint
+      : typeof root.CitizenDataRequestPacing?.settingsFingerprint === "function" ? await root.CitizenDataRequestPacing.settingsFingerprint(settings) : null;
+    let history = History.startRun({ runId: options.runId ?? "images", accountId: options.accountId ?? "images", runKind: "images", settingsFingerprint: fingerprint, settingsVersion: settings.version, startedAt: now(), startedFactor: pace.factor });
+    // The image family's normal response times come from the earlier image runs; they never set the starting factor or
+    // any live penalty, which start from the settings alone.
+    const prior = priorImageHistory(options.history, History, settings);
+    const historicalNormal = prior ? History.imageNormalLatency(prior.record, IMAGE_FAMILY, settings) : [];
+    let paceMutationQueue = Promise.resolve();
+
+    function mutate(transition) {
+      const next = paceMutationQueue.then(transition);
+      paceMutationQueue = next.catch(() => {});
+      return next;
+    }
+
+    // What every progress value carries of the pace: bounded, with no RSI message.
+    function paceView() {
+      const until = Date.parse(pace.retryNotBefore);
+      const statusPage = typeof options.statusPage === "function" ? options.statusPage() ?? null : null;
+      return Object.freeze({ warning: ["limited", "slow"].includes(pace.warning) ? pace.warning : null, waitingUntil: Number.isFinite(until) && until > nowMs() ? pace.retryNotBefore : null, factor: Math.round(pace.factor * 1000) / 1000, statusPage });
+    }
+
+    function report(receipt = null) {
+      options.onProgress?.({ completed, total: entries.length, receipt, activeRequests, pace: paceView() });
+    }
 
     function jitter(minimum, maximum) {
       if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum < 0 || maximum < minimum) throw new TypeError("Invalid image request delay policy.");
       return Math.round(minimum + (maximum - minimum) * Math.max(0, Math.min(1, random())));
     }
 
+    function aborted() {
+      if (options.signal?.aborted) throw new DOMException("Image materialization cancelled.", "AbortError");
+    }
+
+    // One start at a time: the gap at the current factor, then the latest wait, read again after every sleep.
     async function waitForStartSlot() {
       const previous = startGate;
       let release;
       startGate = new Promise((resolve) => { release = resolve; });
       await previous;
       try {
-        if (starts > 0) await sleep(jitter(minimumStartDelay, maximumStartDelay));
+        if (starts > 0) await sleep(Pace.startGapMs({ baseline: gapBaseline, pace, settings, random }));
+        for (;;) {
+          await paceMutationQueue;
+          const until = Date.parse(pace.retryNotBefore);
+          const wait = Number.isFinite(until) ? until - nowMs() : 0;
+          if (wait <= 0 || stopping || options.signal?.aborted) break;
+          await sleep(wait);
+        }
         starts += 1;
       } finally {
         release();
       }
     }
 
-    async function fetchWithRetry(entry, index) {
-      let lastError = null;
-      for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
-        if (options.signal?.aborted) throw new DOMException("Image materialization cancelled.", "AbortError");
+    function reserve() {
+      if (actualRequests >= maximumActualRequests) return false;
+      actualRequests += 1;
+      return true;
+    }
+
+    async function send(url, index, attempt, extra = {}) {
+      const requestId = index >= 0 ? ++requestSequence : null;
+      if (requestId !== null) openImageRequests.add(requestId);
+      activeRequests += 1;
+      const startedAt = nowMs();
+      try {
+        const pending = fetcher(url, { credentials: "omit", redirect: "manual", referrerPolicy: "no-referrer", signal: options.signal, ...extra });
+        options.onRequestStart?.({ index, total: entries.length, attempt, activeRequests, maximumConcurrency: concurrency, control: extra.cache === "no-store" });
+        return { response: await pending, error: null, elapsedMs: Math.max(0, nowMs() - startedAt), requestId };
+      } catch (error) {
+        if (error?.name === "AbortError") throw error;
+        return { response: null, error, elapsedMs: Math.max(0, nowMs() - startedAt), requestId };
+      } finally {
+        activeRequests -= 1;
+      }
+    }
+
+    // The requests already in flight when the first refusal lands are one concurrent batch. Later starts are not
+    // added. Every refused answer is retained, but the batch changes the controller only once.
+    function refusalBatchFor(requestId) {
+      const existing = refusalBatchByRequest.get(requestId);
+      if (existing) return existing;
+      const batchId = `images:${++refusalBatchSequence}`;
+      const members = openImageRequests.has(requestId) ? [...openImageRequests] : [requestId];
+      for (const member of members) if (!refusalBatchByRequest.has(member)) refusalBatchByRequest.set(member, batchId);
+      return batchId;
+    }
+
+    function finishImageRequest(requestId) {
+      if (requestId === null) return;
+      openImageRequests.delete(requestId);
+      const batchId = refusalBatchByRequest.get(requestId);
+      refusalBatchByRequest.delete(requestId);
+      if (batchId && ![...refusalBatchByRequest.values()].includes(batchId)) refusalActions.delete(batchId);
+    }
+
+    function responseRetryAfterMs(response) {
+      const bound = (milliseconds) => Math.min(24 * 60 * 60 * 1000, Math.max(0, milliseconds));
+      const value = response?.headers?.get?.("retry-after");
+      if (typeof value !== "string" || value.trim() === "") return null;
+      const seconds = Number(value);
+      if (Number.isFinite(seconds) && seconds >= 0) return bound(Math.round(seconds * 1000));
+      const at = Date.parse(value);
+      return Number.isFinite(at) ? bound(at - nowMs()) : null;
+    }
+
+    // The control image: one request serves every failure in the reuse time after it.
+    async function controlAnswers() {
+      if (control && nowMs() - control.startedAtMs < controlReuseMs) return control.answered;
+      const startedAtMs = nowMs();
+      const batchId = `control:${++controlSequence}`;
+      const answered = (async () => {
         await waitForStartSlot();
-        // A download cancelled while this request waited its turn starts nothing more.
-        if (options.signal?.aborted) throw new DOMException("Image materialization cancelled.", "AbortError");
+        aborted();
+        if (stopping || !reserve()) return { ok: false, batchId };
+        const { response, elapsedMs } = await send(lastDownloadedUrl, -1, 1, { cache: "no-store" });
+        const ok = Boolean(response && response.status >= 200 && response.status < 300);
+        await mutate(() => {
+          history = History.recordAttempt(history, { section: "images", requestFamily: IMAGE_FAMILY, outcome: ok ? "accepted" : "limit", code: ok ? "OK" : "IMAGE_CONTROL_FAILED", httpStatus: response?.status ?? null, elapsedMs, factor: pace.factor, retried: false }, settings);
+        });
+        return { ok, batchId };
+      })();
+      control = { startedAtMs, answered };
+      return answered;
+    }
+
+    // A refused attempt (§14): onRefusal, a wait no start passes, and the image back in the queue.
+    async function refused(code, httpStatus, elapsedMs, batchId, retryAfterMs = null) {
+      refusedAttempts += 1;
+      const signal = { kind: "limit", code, httpStatus, rsiCode: null, rsiMessage: null, retryAfterMs, reason: null, method: "GET", route: null, page: null, elapsedMs, fromCanary: false };
+      const action = await mutate(() => {
+        let batchAction = refusalActions.get(batchId);
+        if (!batchAction) {
+          const result = Pace.onRefusal(pace, signal, { nowMs: nowMs(), random, settings, maxFactor, expiresAtMs: Number.POSITIVE_INFINITY });
+          pace = result.pace;
+          batchAction = result.action;
+          refusalActions.set(batchId, batchAction);
+        } else if (Number.isSafeInteger(retryAfterMs) && retryAfterMs > 0) {
+          const stronger = nowMs() + retryAfterMs;
+          if (stronger > Date.parse(pace.retryNotBefore)) pace = { ...pace, retryNotBefore: new Date(stronger).toISOString() };
+        }
+        history = History.recordAttempt(history, { section: "images", requestFamily: IMAGE_FAMILY, outcome: "limit", code, httpStatus, elapsedMs, factor: pace.factor, retried: false }, settings);
+        return batchAction;
+      });
+      report();
+      return action;
+    }
+
+    function failedReceipt(entry, sourceImageKeys, attempts, errorCode) {
+      return { assetId: entry.imageKey, sourceImageKeys, sourceUrl: entry.normalizedUrl, finalUrl: null, status: "failed", relativePath: null, displayFileName: null, mediaType: null, byteLength: null, pixelWidth: null, pixelHeight: null, contentHash: null, fetchedAt: null, attempts, errorCode: String(errorCode ?? "FETCH_FAILED").slice(0, 120), entityReferences: entry.references };
+    }
+
+    // One image until it downloads, fails, goes back in the queue, or the run stops.
+    async function fetchImage(entry, index) {
+      const own = perImage[index];
+      for (;;) {
+        aborted();
+        if (stopping) return { stop: "RATE_LIMITED" };
+        await waitForStartSlot();
+        aborted();
+        if (stopping) return { stop: "RATE_LIMITED" };
+        if (!reserve()) {
+          stopping = true;
+          stoppedWithRemaining = true;
+          return { stop: "RATE_LIMITED" };
+        }
+        own.attempts += 1;
+        const { response, error, elapsedMs, requestId } = await send(entry.normalizedUrl, index, own.attempts);
         try {
-          activeRequests += 1;
-          let response;
-          try {
-            const pendingResponse = fetcher(entry.normalizedUrl, { credentials: "omit", redirect: "manual", referrerPolicy: "no-referrer", signal: options.signal });
-            options.onRequestStart?.({ index, total: entries.length, attempt, activeRequests, maximumConcurrency: concurrency });
-            response = await pendingResponse;
-          } finally {
-            activeRequests -= 1;
+          const status = response?.status;
+          if (response && status >= 200 && status < 300) {
+            await mutate(() => {
+              pace = Pace.onSuccess(pace, { requestFamily: IMAGE_FAMILY, elapsedMs, historicalNormal: historicalNormal.length > 0 ? historicalNormal : null, nowMs: nowMs(), settings, maxFactor });
+              history = History.recordAttempt(history, { section: "images", requestFamily: IMAGE_FAMILY, outcome: "accepted", code: "OK", httpStatus: status, elapsedMs, factor: pace.factor, retried: own.attempts > 1 }, settings);
+            // The whole response time joins the image family's retained times, for the next image run (§6.8, §14).
+              history = History.recordAccepted(history, { requestFamily: IMAGE_FAMILY, elapsedMs, factor: pace.factor }, settings);
+              history = History.recordStep(history, { factor: pace.factor, slow: pace.warning === "slow" });
+            });
+            lastDownloadedUrl = entry.normalizedUrl;
+            typeErrorsWithoutDownload = 0;
+            return { response, attempts: own.attempts };
           }
-          if (response && response.status >= 200 && response.status < 300) return { response, attempts: attempt };
-          const status = response?.status ?? "UNKNOWN";
-          const error = new Error(`HTTP_${status}`);
-          error.retryable = status === 429 || (Number.isInteger(status) && status >= 500 && status <= 599);
-          throw error;
-        } catch (error) {
-          if (error?.name === "AbortError") throw error;
-          lastError = error;
-          const retryable = error?.retryable === true || error instanceof TypeError;
-          if (!retryable || attempt >= maximumAttempts) {
-            error.attempts = attempt;
-            throw error;
+        // A visible limit, or a TypeError the control image confirms, is a refusal; it does not count as an attempt.
+          let refusal = null;
+          let batchId = refusalBatchFor(requestId);
+          if (response && [429, 502, 503, 504].includes(status)) refusal = `IMAGE_HTTP_${status}`;
+          else if (error?.name === "TypeError") {
+            if (lastDownloadedUrl === null) {
+              typeErrorsWithoutDownload += 1;
+              if (typeErrorsWithoutDownload >= 3) refusal = "IMAGE_NETWORK_REFUSED";
+            } else {
+              const controlResult = await controlAnswers();
+              if (!controlResult.ok) {
+                refusal = "IMAGE_CONTROL_FAILED";
+                batchId = controlResult.batchId;
+              }
+            }
           }
+          if (refusal) {
+            own.attempts -= 1;
+            own.refused += 1;
+            const action = await refused(refusal, Number.isInteger(status) ? status : null, elapsedMs, batchId, responseRetryAfterMs(response));
+            if (action === "give-up") {
+              stopping = true;
+              stoppedWithRemaining = true;
+              return { stop: "RATE_LIMITED" };
+            }
+            if (own.refused >= maximumRefused) return { failed: "RATE_LIMITED", attempts: own.attempts };
+            return { requeue: true };
+          }
+        // A redirect is not a refusal: the second for the same image records it failed.
+          const redirected = Boolean(response) && status === 0;
+          if (redirected) own.redirects += 1;
+          const redirect = redirected && own.redirects < 2;
+          const retryable = redirect || (Number.isInteger(status) && status >= 500 && status <= 599) || error?.name === "TypeError";
+          if (!retryable || own.attempts >= maximumAttempts) return { failed: error ? error.message : `HTTP_${status ?? "UNKNOWN"}`, attempts: own.attempts };
           await sleep(jitter(minimumRetryDelay, maximumRetryDelay));
+        } finally {
+          finishImageRequest(requestId);
         }
       }
-      throw lastError ?? new Error("FETCH_FAILED");
     }
 
     async function materializeOne(index) {
-      if (options.signal?.aborted) throw new DOMException("Image materialization cancelled.", "AbortError");
+      aborted();
       const entry = entries[index];
       const sourceImageKeys = Array.isArray(entry.sourceImageKeys) && entry.sourceImageKeys.length ? [...new Set(entry.sourceImageKeys)].sort() : [entry.imageKey];
       let receipt;
-      let attempts = 1;
       try {
-        const fetched = await fetchWithRetry(entry, index);
-        const response = fetched.response;
-        attempts = fetched.attempts;
-        const finalUrl = normalizeImageUrl(response.url || entry.normalizedUrl, policy.allowedImageHosts);
-        const remainingBytes = policy.maximumBytes - downloadedBytes;
-        if (remainingBytes < 1) throw new Error("TOTAL_BYTE_LIMIT");
-        const bytes = await responseBytes(response, Math.min(policy.maximumBytesPerAsset, remainingBytes));
-        if (downloadedBytes + bytes.byteLength > policy.maximumBytes) throw new Error("TOTAL_BYTE_LIMIT");
-        downloadedBytes += bytes.byteLength;
-        const declaredType = String(response.headers?.get?.("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();
-        const detectedType = mediaTypeFromMagic(bytes);
-        if (!ALLOWED_MEDIA_TYPES.has(declaredType) || declaredType !== detectedType || !policy.allowedMediaTypes.includes(detectedType)) throw new Error("INVALID_MEDIA_TYPE");
-        const size = dimensions(bytes, detectedType);
-        if (!size || size.width < 1 || size.height < 1 || size.width > policy.maximumWidth || size.height > policy.maximumHeight) throw new Error("INVALID_DIMENSIONS");
-        const contentHash = await sha256(bytes);
-        const extension = mediaExtension(detectedType);
-        const relativePath = `media/${contentHash.slice(0, 2)}/${contentHash}.${extension}`;
-        const displayFileName = root.CitizenDataMediaFileNames?.deriveDisplayFileName?.({ title: entry.title, role: entry.references[0]?.role, imageKey: entry.imageKey, sourceUrl: entry.normalizedUrl, mediaType: detectedType }) ?? null;
-        if (!filesByPath.has(relativePath)) {
-          if (totalBytes + bytes.byteLength > policy.maximumBytes) throw new Error("TOTAL_BYTE_LIMIT");
-          totalBytes += bytes.byteLength;
-          filesByPath.set(relativePath, { name: relativePath, bytes });
+        const fetched = await fetchImage(entry, index);
+        if (fetched.requeue) {
+          queue.push(index);
+          wake();
+          return;
         }
-        receipt = { assetId: entry.imageKey, sourceImageKeys, sourceUrl: entry.normalizedUrl, finalUrl, status: "downloaded", relativePath, displayFileName, mediaType: detectedType, byteLength: bytes.byteLength, pixelWidth: size.width, pixelHeight: size.height, contentHash, fetchedAt: now(), attempts, errorCode: null, entityReferences: entry.references };
+        if (fetched.stop || fetched.failed) {
+          receipt = failedReceipt(entry, sourceImageKeys, fetched.attempts ?? perImage[index].attempts, fetched.stop ?? fetched.failed);
+        } else {
+          const response = fetched.response;
+          const finalUrl = normalizeImageUrl(response.url || entry.normalizedUrl, policy.allowedImageHosts);
+          const remainingBytes = policy.maximumBytes - downloadedBytes;
+          if (remainingBytes < 1) throw new Error("TOTAL_BYTE_LIMIT");
+          const bytes = await responseBytes(response, Math.min(policy.maximumBytesPerAsset, remainingBytes));
+          if (downloadedBytes + bytes.byteLength > policy.maximumBytes) throw new Error("TOTAL_BYTE_LIMIT");
+          downloadedBytes += bytes.byteLength;
+          const declaredType = String(response.headers?.get?.("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();
+          const detectedType = mediaTypeFromMagic(bytes);
+          if (!ALLOWED_MEDIA_TYPES.has(declaredType) || declaredType !== detectedType || !policy.allowedMediaTypes.includes(detectedType)) throw new Error("INVALID_MEDIA_TYPE");
+          const size = dimensions(bytes, detectedType);
+          if (!size || size.width < 1 || size.height < 1 || size.width > policy.maximumWidth || size.height > policy.maximumHeight) throw new Error("INVALID_DIMENSIONS");
+          const contentHash = await sha256(bytes);
+          const extension = mediaExtension(detectedType);
+          const relativePath = `media/${contentHash.slice(0, 2)}/${contentHash}.${extension}`;
+          const displayFileName = root.CitizenDataMediaFileNames?.deriveDisplayFileName?.({ title: entry.title, role: entry.references[0]?.role, imageKey: entry.imageKey, sourceUrl: entry.normalizedUrl, mediaType: detectedType }) ?? null;
+          if (!filesByPath.has(relativePath)) {
+            if (totalBytes + bytes.byteLength > policy.maximumBytes) throw new Error("TOTAL_BYTE_LIMIT");
+            totalBytes += bytes.byteLength;
+            filesByPath.set(relativePath, { name: relativePath, bytes });
+          }
+          receipt = { assetId: entry.imageKey, sourceImageKeys, sourceUrl: entry.normalizedUrl, finalUrl, status: "downloaded", relativePath, displayFileName, mediaType: detectedType, byteLength: bytes.byteLength, pixelWidth: size.width, pixelHeight: size.height, contentHash, fetchedAt: now(), attempts: fetched.attempts, errorCode: null, entityReferences: entry.references };
+        }
       } catch (error) {
         if (error?.name === "AbortError") throw error;
-        attempts = Number.isSafeInteger(error?.attempts) ? error.attempts : attempts;
-        receipt = { assetId: entry.imageKey, sourceImageKeys, sourceUrl: entry.normalizedUrl, finalUrl: null, status: "failed", relativePath: null, displayFileName: null, mediaType: null, byteLength: null, pixelWidth: null, pixelHeight: null, contentHash: null, fetchedAt: null, attempts, errorCode: String(error?.message ?? "FETCH_FAILED").slice(0, 120), entityReferences: entry.references };
+        receipt = failedReceipt(entry, sourceImageKeys, perImage[index].attempts, error?.message);
       }
       assets[index] = receipt;
       completed += 1;
-      options.onProgress?.({ completed, total: entries.length, receipt, activeRequests });
+      wake();
+      report(receipt);
+    }
+
+    // Workers take the next image from the queue; an image a refusal put back is taken again later.
+    function wake() {
+      const waiting = waiters;
+      waiters = [];
+      for (const resolve of waiting) resolve();
     }
 
     async function worker() {
-      while (true) {
-        const index = nextIndex;
-        nextIndex += 1;
-        if (index >= entries.length) return;
+      while (completed < entries.length) {
+        const index = queue.shift();
+        if (index === undefined) {
+          await new Promise((resolve) => { waiters.push(resolve); });
+          continue;
+        }
         await materializeOne(index);
       }
+      wake();
     }
 
-    await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, () => worker()));
+    try {
+      await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, () => worker()));
+    } finally {
+      wake();
+    }
+    await paceMutationQueue;
     const files = [...filesByPath.values()].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-    return { assets, files, totalBytes, downloadedBytes };
+    const pacing = typeof fingerprint === "string" && /^[a-f0-9]{64}$/u.test(fingerprint) ? History.runSummary(history) : null;
+    // The run's record for the extension's image history, and the receipt's provenance: the history's source, what it
+    // held before, the samples the controller was given, and the history with this run in it, as one aggregate.
+    const imageRun = pacing ? { ...history, endedAt: now() } : null;
+    const paceHistory = imageRun ? {
+      source: prior?.source ?? "none",
+      priorAggregate: prior ? History.imagePriorCounts(prior.record, settings) : null,
+      acceptedSamples: [...historicalNormal],
+      aggregate: History.imageAggregate(History.finishImageRun(prior?.record ?? null, imageRun, { endedAt: imageRun.endedAt }, settings), settings)
+    } : null;
+    return { assets, files, totalBytes, downloadedBytes, stoppedWithRemaining, refusedAttempts, actualRequests, pace: paceView(), pacing, paceHistory, imageRun };
   }
 
   return Object.freeze({ collectImageReferences, dimensions, materialize, mediaTypeFromMagic, normalizeImageUrl, plan, responseBytes, sha256 });
 });
-

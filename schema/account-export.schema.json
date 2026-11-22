@@ -2136,6 +2136,140 @@
         }
       }
     },
+    "contractFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findingKey",
+        "section",
+        "code",
+        "method",
+        "route",
+        "page",
+        "httpStatus",
+        "contentType",
+        "byteLength",
+        "bodySha256",
+        "bodyTruncated",
+        "finalRoute",
+        "pageMarkers",
+        "topLevelKeys",
+        "operationNames",
+        "observedAt",
+        "sourceUrls"
+      ],
+      "properties": {
+        "findingKey": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]{1,80}$"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,200}$"
+        },
+        "page": {
+          "$ref": "#/$defs/nullablePositiveInteger"
+        },
+        "httpStatus": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "contentType": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "byteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "bodySha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bodyTruncated": {
+          "type": "boolean"
+        },
+        "finalRoute": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 400,
+          "pattern": "^/"
+        },
+        "pageMarkers": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "profile",
+              "billing",
+              "hangar",
+              "organizations",
+              "buybackDetail"
+            ]
+          },
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "topLevelKeys": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.$@-]{1,80}$"
+          }
+        },
+        "operationNames": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.$@-]{1,80}$"
+          }
+        },
+        "observedAt": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "sourceUrls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relatedUrl"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
     "dataQuality": {
       "type": "object",
       "additionalProperties": false,
@@ -2147,6 +2281,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/dataQualityAnomaly"
+          }
+        },
+        "contractFindings": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/contractFinding"
           }
         }
       }
@@ -2435,6 +2576,7 @@
           "type": "string",
           "enum": [
             "complete",
+            "partial",
             "failed",
             "cancelled"
           ]
@@ -2465,6 +2607,9 @@
               "type": "null"
             }
           ]
+        },
+        "pacing": {
+          "$ref": "#/$defs/runPacing"
         }
       }
     },
@@ -2651,6 +2796,112 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$",
           "description": "Lowercase SHA-256 hexadecimal of the UTF-8 RFC 8785 JSON Canonicalization Scheme bytes after removing only integrity.contentHash and retaining integrity.algorithm; this detects document changes but is not an authenticity signature."
+        }
+      }
+    },
+    "runPacing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The run's pacing summary: the controller and settings that paced it and what RSI answered, counted. No token, cookie, header value, response body, IP address or RSI message.",
+      "required": [
+        "controllerVersion",
+        "settingsVersion",
+        "settingsFingerprint",
+        "startedFactor",
+        "acceptedRequests",
+        "refusedRequests",
+        "retriedRequests",
+        "slowSteps",
+        "maximumFactor",
+        "finalFactor",
+        "signalCounts"
+      ],
+      "properties": {
+        "controllerVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "settingsVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "settingsFingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "startedFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "acceptedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refusedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retriedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slowSteps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "finalFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "signalCounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "section",
+              "kind",
+              "code",
+              "httpStatus",
+              "count"
+            ],
+            "properties": {
+              "section": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Z0-9_]{1,80}$"
+              },
+              "httpStatus": {
+                "oneOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
         }
       }
     }

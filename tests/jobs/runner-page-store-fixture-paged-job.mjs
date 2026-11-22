@@ -1,12 +1,12 @@
 import { pagedAdapter } from "./runner-page-store-fixture-paged-adapter.mjs";
-import { AUTHORIZATION_ID, RUN_ID, authorizationRecord, databaseApi, plain, runnerApi } from "./runner-page-store-loaded-with-fixture-authorization.mjs";
+import { atBaseline, AUTHORIZATION_ID, authorizationRecord, databaseApi, plain, RUN_ID, runnerApi } from "./runner-page-store-loaded-with-fixture-authorization.mjs";
 
 export async function pagedJob(script, { mode = "baseline", seed = {} } = {}) {
   const state = { clock: 50_000, log: [], snapshotReads: 0 };
   const memory = databaseApi.createMemoryRepository(seed);
   const repository = { ...memory, getSnapshot: async (key) => { state.snapshotReads += 1; return memory.getSnapshot(key); } };
   const plan = { selectedSections: ["pledges"], maximumRecordsBySection: { pledges: 500 }, minimumInterRequestDelayMs: 900 };
-  const job = runnerApi.createJob({ jobId: "job-pages", runId: RUN_ID, accountId: "account-1", authorizationId: AUTHORIZATION_ID, localAccountId: "11111111-1111-4111-8111-111111111111", plan, mode, now: new Date(state.clock).toISOString() });
+  const job = atBaseline(runnerApi.createJob({ jobId: "job-pages", runId: RUN_ID, accountId: "account-1", authorizationId: AUTHORIZATION_ID, localAccountId: "11111111-1111-4111-8111-111111111111", plan, mode, now: new Date(state.clock).toISOString() }));
   await repository.saveAuthorization(authorizationRecord(state.clock));
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [] });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+await import("../../extension/shared/request-pacing-settings.js");
 await import("../../extension/adapters/catalog.js");
 test("the adapter catalog exposes every baseline section to the live runtime, each reader with the extension's one version", async () => {
   const catalog = globalThis.CitizenDataAdapterCatalog;

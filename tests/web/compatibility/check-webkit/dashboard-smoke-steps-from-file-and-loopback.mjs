@@ -7,6 +7,10 @@ import { out, source } from "./options-and-evidence-folder.mjs";
 import { fixtureFile, hosted } from "./playwright-module-fixture-file-and-docs-server-steps.mjs";
 import { check, page, screenshot } from "./webkit-page-with-error-and-request-watch-steps.mjs";
 
+// The scripts a browser would run: no type, a JavaScript type, or a module. The policy pages' JSON-LD is data and never
+// runs, so it does not count against "renders without scripts".
+const RUNNABLE_SCRIPTS = "[...document.scripts].filter((script) => ['', 'module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript'].includes(script.type.trim().toLowerCase())).length";
+
 for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html')).href], ['loopback', hosted]]) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(url, { waitUntil: 'load' });
@@ -58,7 +62,7 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
     await page.setViewportSize({ width: 320, height: 1000 });
     await page.goto(new URL(legal, url).href, { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
-    await check(`${mode}: ${legal} renders without scripts`, `document.querySelector('h1').textContent === ${JSON.stringify(title)} && document.scripts.length === 0`);
+    await check(`${mode}: ${legal} renders without scripts`, `document.querySelector('h1').textContent === ${JSON.stringify(title)} && ${RUNNABLE_SCRIPTS} === 0`);
     await check(`${mode}: ${legal} fits 320px`, 'document.documentElement.scrollWidth <= innerWidth + 1');
     // WebKit, like Safari by default, leaves links out of Tab: Safari reaches them with Option+Tab or with "Press Tab to
     // highlight each item on a webpage", and Windows WebKit has no such key. So after a key press, as a keyboard user

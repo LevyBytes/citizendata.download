@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { pagedJob } from "./runner-page-store-fixture-paged-job.mjs";
-import { AUTHORIZATION_ID, RUN_ID, authorizationRecord, databaseApi, plain, runnerApi } from "./runner-page-store-loaded-with-fixture-authorization.mjs";
+import { atBaseline, AUTHORIZATION_ID, authorizationRecord, databaseApi, plain, RUN_ID, runnerApi } from "./runner-page-store-loaded-with-fixture-authorization.mjs";
 
 test("a step that reuses the saved section after earlier steps replaces what those steps gathered", async () => {
   // The saved section is recognized only on the second step, after ten rows were gathered while looking for it. The
@@ -48,7 +48,7 @@ test("sections that each end in one step share a single read of the saved backup
   const memory = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "earlier", document: saved }] });
   const repository = { ...memory, getSnapshot: async (key) => { snapshotReads += 1; return memory.getSnapshot(key); } };
   const plan = { selectedSections: sections, maximumRecordsBySection: Object.fromEntries(sections.map((section) => [section, 5])), minimumInterRequestDelayMs: 900 };
-  const job = runnerApi.createJob({ jobId: "job-shared", runId: RUN_ID, accountId: "account-1", authorizationId: AUTHORIZATION_ID, plan, mode: "update", now: new Date(clock).toISOString() });
+  const job = atBaseline(runnerApi.createJob({ jobId: "job-shared", runId: RUN_ID, accountId: "account-1", authorizationId: AUTHORIZATION_ID, plan, mode: "update", now: new Date(clock).toISOString() }));
   await repository.saveAuthorization({ ...authorizationRecord(clock), selectedSections: sections, maximumRecordsBySection: plan.maximumRecordsBySection });
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [] });

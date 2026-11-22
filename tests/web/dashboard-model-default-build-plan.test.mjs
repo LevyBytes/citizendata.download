@@ -8,12 +8,12 @@ test("default Build JSON proposal matches the extension-owned plan contract", ()
   assert.equal(result.ok, true, result.message);
   assert.deepEqual(plan.selectedSections, [
     "profile",
+    "hangarLog",
     "financial.balances",
     "financial.billingTotal",
     "financial.ledgers",
     "financial.orders",
     "financial.subscriptions",
-    "hangarLog",
     "pledges",
     "buybacks",
     "referrals.legacy.recruits",

@@ -716,6 +716,82 @@ globalThis.CITIZENDATA_OFFLINE_SCHEMA = {
         },
         "promoted": {
           "type": "boolean"
+        },
+        "pacing": {
+          "$ref": "#/$defs/runPacing"
+        },
+        "paceHistory": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the image run's pace history came from, what it held before the run, the accepted response times the controller was given, and the history with this run, as one aggregate. Counts and response times of the image family only: no address, token, cookie, header value, response body, IP address or RSI message.",
+          "required": [
+            "source",
+            "priorAggregate",
+            "acceptedSamples",
+            "aggregate"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": [
+                "extension",
+                "package",
+                "none"
+              ]
+            },
+            "priorAggregate": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "runs",
+                    "acceptedRequests",
+                    "refusedRequests",
+                    "retriedRequests",
+                    "slowSteps"
+                  ],
+                  "properties": {
+                    "runs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "acceptedRequests": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "refusedRequests": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retriedRequests": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "slowSteps": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              ]
+            },
+            "acceptedSamples": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 600000
+              }
+            },
+            "aggregate": {
+              "type": "object"
+            }
+          }
         }
       }
     },
@@ -754,6 +830,112 @@ globalThis.CITIZENDATA_OFFLINE_SCHEMA = {
         "contentHash": {
           "$ref": "#/$defs/sha256",
           "description": "Lowercase SHA-256 hexadecimal of the UTF-8 RFC 8785 JSON Canonicalization Scheme bytes after removing only integrity.contentHash and retaining integrity.algorithm."
+        }
+      }
+    },
+    "runPacing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The run's pacing summary: the controller and settings that paced it and what RSI answered, counted. No token, cookie, header value, response body, IP address or RSI message.",
+      "required": [
+        "controllerVersion",
+        "settingsVersion",
+        "settingsFingerprint",
+        "startedFactor",
+        "acceptedRequests",
+        "refusedRequests",
+        "retriedRequests",
+        "slowSteps",
+        "maximumFactor",
+        "finalFactor",
+        "signalCounts"
+      ],
+      "properties": {
+        "controllerVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "settingsVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "settingsFingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "startedFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "acceptedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refusedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retriedRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slowSteps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "finalFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "signalCounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "section",
+              "kind",
+              "code",
+              "httpStatus",
+              "count"
+            ],
+            "properties": {
+              "section": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "kind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Z0-9_]{1,80}$"
+              },
+              "httpStatus": {
+                "oneOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
         }
       }
     }

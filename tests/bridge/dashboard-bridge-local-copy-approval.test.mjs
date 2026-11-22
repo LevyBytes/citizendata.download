@@ -8,7 +8,7 @@ test("an unapproved local copy is told only that approval is needed and cannot s
   await settle();
   assert.deepEqual(fixture.sent.map((message) => ({ ...message })), [{ kind: "LOCAL_DASHBOARD_HELLO", dashboardPath: LOCAL_PATH }]);
   // The notice carries no session and no nonce, so the page has nothing it could use to address the extension.
-  assert.deepEqual(fixture.posts.map((entry) => ({ ...entry.message })), [{ channel: "citizendata.dashboard.v1", protocolVersion: 1, type: "LOCAL_APPROVAL_REQUIRED" }]);
+  assert.deepEqual(fixture.posts.map((entry) => ({ ...entry.message })), [{ channel: "citizendata.dashboard.v1", protocolVersion: 2, type: "LOCAL_APPROVAL_REQUIRED" }]);
   fixture.dispatch("citizendata-dashboard-ready", {});
   assert.equal(fixture.posts.length, 2, "the notice is repeated when the dashboard finishes loading");
   assert.equal(fixture.posts[1].message.type, "LOCAL_APPROVAL_REQUIRED");

@@ -48,7 +48,7 @@
       <summary>Build history</summary>
       <div class="details-body">
         <label class="toggle" for="historyEnabled">
-          <input id="historyEnabled" type="checkbox" role="switch">
+          <input id="historyEnabled" type="checkbox">
           <span>Keep earlier builds</span>
         </label>
         <p id="historyExplain">Off: this browser keeps only your latest build. On: when a new build differs from the one before, the earlier build is kept here as a compressed account file. Your organization rosters are kept as one Orgs JSON, updated after each build. Images the dashboard downloads are kept too, so it can show them again without the Images ZIP. The dashboard opens your latest build by itself when it loads, and a complete account file you open there with Load JSON is kept here as your latest build unless a newer one is held. An Orgs JSON you open there adds its rosters to it.</p>
@@ -56,11 +56,11 @@
           <span>Earlier builds to keep</span>
           <input id="historyKeep" type="number" min="1" max="100" step="1" inputmode="numeric" value="5">
         </label>
-        <div class="history-question" id="historyOffQuestion" role="group" aria-labelledby="historyOffText" hidden>
-          <p id="historyOffText"></p>
+        <fieldset class="history-question" id="historyOffQuestion" hidden>
+          <legend id="historyOffText"></legend>
           <button class="danger" id="historyDeleteAll" type="button">Delete the kept builds</button>
           <button id="historyKeepAll" type="button">Keep them</button>
-        </div>
+        </fieldset>
         <p id="historySummary">No earlier build is kept.</p>
         <ul class="history-list" id="historyList"></ul>
         <p id="historyRecoveryNote" hidden>Kept builds are not part of the recovery backup. Save the ones you want as files.</p>

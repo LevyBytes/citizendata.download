@@ -1,5 +1,5 @@
 import { assembleCanonical, authorizationRecord, profile } from "./runner-fixture-authorization-profile-and-assembly.mjs";
-import { databaseApi, localAccountId, runnerApi } from "./runner-under-test.mjs";
+import { atBaseline, databaseApi, localAccountId, runnerApi } from "./runner-under-test.mjs";
 
 // A job that has already taken `requestsBySection.profile` steps of its one section and `requestCount` steps in all.
 export async function limitedJob({ adapter, cap, requestCount, sectionSteps }) {
@@ -8,7 +8,7 @@ export async function limitedJob({ adapter, cap, requestCount, sectionSteps }) {
   const plan = { selectedSections: ["profile"], maximumRecordsBySection: { profile: cap }, minimumInterRequestDelayMs: 2500 };
   const auth = authorizationRecord(clock, { maximumRecordsBySection: { profile: cap } });
   const job = {
-    ...runnerApi.createJob({ jobId: "job-limit", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() }),
+    ...atBaseline(runnerApi.createJob({ jobId: "job-limit", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() })),
     requestCount, requestsBySection: { profile: sectionSteps }
   };
   await repository.saveAuthorization(auth);

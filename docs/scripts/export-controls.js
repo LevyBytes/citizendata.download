@@ -94,7 +94,7 @@
     function downloadJson(event) {
       event.preventDefault();
       const inspection = refresh();
-      if (!inspection || !inspection.result.canExport || download.disabled) return;
+      if (!inspection?.result.canExport || download.disabled) return;
       let url;
       let anchor;
       try {

@@ -3,7 +3,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dashboard, extensionOrigin, extensionPage, recoveryBackup, setDashboard } from "./browser-pages-and-account-in-use.mjs";
 import { asksForApproval, offersAccount, waitForChooser } from "./build-chooser.mjs";
-import { freshDashboard, openDashboard } from "./dashboard-pages-and-builds.mjs";
+import { openDashboard } from "./dashboard-pages-and-builds.mjs";
 import { options, out, scratch } from "./options-and-run-folders.mjs";
 import { assertStep } from "./scenario-runner.mjs";
 
@@ -60,8 +60,12 @@ export async function popupRecoveryImport() {
       const tabs = await extensionPage.evaluate("chrome.storage.session.get('citizendata.localPending.v1').then((stored) => Object.keys(stored['citizendata.localPending.v1'] ?? {}).map(Number))");
       assert.equal(await extensionPage.evaluate(`chrome.runtime.sendMessage({ kind: 'EXTENSION_UI_REQUEST', type: 'APPROVE_LOCAL_DASHBOARD', tabId: ${tabs.at(-1)} }).then((response) => response.ok)`), true);
     }
-    await freshDashboard();
+    // Ready: a dashboard that has just loaded shows the restored build, which it can only fetch once the bridge is
+    // connected. Only then is the chooser asked for.
+    await dashboard.close();
+    setDashboard(await openDashboard());
     await dashboard.waitFor(`document.getElementById('accountHandle').textContent === ${JSON.stringify(snapshot.document.account.handle)}`, 120000, "the restored build to open in a dashboard that has just loaded");
+    await waitForChooser(dashboard, offersAccount, "the dashboard with the restored build to offer a build");
     detail.dashboardShowsRestoredBuild = true;
   } else {
     detail.dashboardShowsRestoredBuild = "no build in the backup";

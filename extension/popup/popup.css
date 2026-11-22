@@ -6,7 +6,6 @@
 }
 
 * { box-sizing: border-box; }
-[hidden] { display: none !important; }
 /* Chrome shows a popup at most 600 pixels tall. Past that the sections scroll under the header, inside the popup's
    own width, so the page itself never needs a scrollbar in either direction. Every section keeps its full height
    while they scroll: without that, the approval card, which hides its own overflow, is the one row squeezed. */
@@ -50,7 +49,9 @@ input[type="file"] { position: absolute; width: 1px; height: 1px; overflow: hidd
 .number-field:has(input:disabled) { color: #88a5aa; }
 .number-field input:disabled { opacity: .55; cursor: not-allowed; }
 .history-question { display: grid; gap: 8px; padding: 9px; border: 1px solid #6c4447; background: rgba(64, 25, 27, .45); }
-.history-question p { margin: 0; color: #e3f1f3; }
+.history-question { min-inline-size: 0; margin: 0; }
+/* The question is the group's legend. Floated, it is laid out as the paragraph it replaced, inside the box. */
+.history-question legend { float: left; width: 100%; margin: 0; padding: 0; color: #e3f1f3; font-size: 12px; line-height: 1.4; }
 .history-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .history-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; border: 1px solid #24464e; }
 .history-list .history-when { display: grid; gap: 2px; color: #cfe3e6; font-size: 12px; font-weight: 700; }
@@ -92,3 +93,6 @@ main[data-mode="approval"] > :not(.approval) { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .approval, .approval::after { animation: none; }
 }
+
+/* Last, so it holds over the class rules above that set display: an element with the hidden attribute is not shown. */
+[hidden] { display: none; }

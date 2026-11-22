@@ -50,7 +50,8 @@ test("a build that fails after reading both lists and is continued makes the sam
   // The Hangar Log has one new entry, so both lists are read; then RSI fails on the first referral request.
   harness.rsi.addPledges(1);
   const start = harness.rsi.requests.length;
-  harness.rsi.failNext((request) => request.path === "/graphql" && harness.rsi.requests.slice(start).some((earlier) => earlier.path === "/api/account/buybackPledges"), { status: 503 });
+  // A 401 signs the session out and stops the run; a 410 would set the section aside (§10.1), and a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === "/graphql" && harness.rsi.requests.slice(start).some((earlier) => earlier.path === "/api/account/buybackPledges"), { status: 401 });
   tab.reload();
   await tab.build();
   assert.equal((await harness.finishJob()).status, "failed");

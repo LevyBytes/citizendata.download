@@ -8,12 +8,13 @@ test("a failure while reading buy-back pages leaves everything else complete, an
   const tab = harness.openTab();
   const listed = ordinary(harness.rsi);
   // RSI fails on the ninth page asked for.
-  harness.rsi.failNext((request) => request.path === `/pledge/buyback/${listed[8].id}`, { status: 503 });
+  // A 401 signs the session out and stops the run; a 410 would set the section aside (§10.1), and a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === `/pledge/buyback/${listed[8].id}`, { status: 401 });
   const { finished } = await build(harness, tab);
   assert.equal(finished.status, "failed");
   const failure = tab.lastEvent();
   assert.equal(failure.status.activeJob.currentSection, "buybackDetails");
-  assert.match(failure.status.activeJob.failure.message, /RSI_HTML_HTTP_503/u);
+  assert.equal(failure.status.activeJob.failure.code, "RSI_SIGNED_OUT");
   assert.equal(failure.status.continuable, true);
   // The step would have read two pages. The second had not been asked for when the first failed, and it never is.
   const atFailure = harness.rsi.requests.length;

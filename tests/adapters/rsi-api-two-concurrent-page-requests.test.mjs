@@ -30,7 +30,7 @@ test("eligible known paginated sections issue at most two concurrent requests an
   assert.ok(startedActivities.every((activity) => !Object.keys(activity).some((key) => /token|header|body|html|cookie/iu.test(key))));
 });
 
-test("Buybacks retain the staggered two-lane cadence after the live simultaneous-pair failure", async () => {
+test("Buybacks keep the staggered two-lane cadence", async () => {
   const fixture = harness([
     { success: 1, code: "OK", data: { rendered: "<article data-page=\"2\"></article>", page: 2, pagecount: 16 } },
     { success: 1, code: "OK", data: { rendered: "<article data-page=\"3\"></article>", page: 3, pagecount: 16 } }

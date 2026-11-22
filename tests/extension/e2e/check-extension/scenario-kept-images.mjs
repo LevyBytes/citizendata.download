@@ -34,6 +34,8 @@ export async function keptImages() {
   assert.equal(mediaRequests.length, planned, "Each planned image is asked for once.");
   assertStep(mediaRequests.every((request) => !request.hasCookie && !request.referrer), `An image request carried a cookie or a referrer: ${JSON.stringify(mediaRequests.find((request) => request.hasCookie || request.referrer))}`);
   assert.deepEqual(await keptImageTotals(), { count: 0, bytes: 0 }, "With build history off the extension must keep no image.");
+  // The browser writes the ZIP a moment after the dashboard hands it over.
+  for (const deadline = Date.now() + 10000; (await zipFiles()).length < 1 && Date.now() < deadline;) await pause(POLL_MS);
   assert.equal((await zipFiles()).length, 1, "The Images ZIP was not saved.");
 
   // Build history on: the same download, reusing the open ZIP, hands every image to the extension.
@@ -48,6 +50,7 @@ export async function keptImages() {
   const kept = await keptImageTotals();
   assert.equal(kept.count, planned, "The extension does not keep every downloaded image.");
   assertStep(kept.bytes > planned * PNG.length, `The kept images are smaller than what was downloaded: ${JSON.stringify(kept)}`);
+  for (const deadline = Date.now() + 10000; (await zipFiles()).length < 2 && Date.now() < deadline;) await pause(POLL_MS);
   assert.equal((await zipFiles()).length, 2);
 
   // A new visit: the kept images are opened from the extension and shown, and nothing is downloaded.

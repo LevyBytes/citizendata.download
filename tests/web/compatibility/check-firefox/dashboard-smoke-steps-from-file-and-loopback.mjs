@@ -8,11 +8,15 @@ import { fixtureFile } from "./firefox-profile-and-account-fixture-file.mjs";
 import { downloads, out, source } from "./options-and-evidence-folders.mjs";
 import { check, checks, click, evaluate, modes, screenshot, waitFor } from "./page-checks-and-screenshots.mjs";
 
+// The scripts a browser would run: no type, a JavaScript type, or a module. The policy pages' JSON-LD is data and never
+// runs, so it does not count against "renders without scripts".
+const RUNNABLE_SCRIPTS = "[...document.scripts].filter((script) => ['', 'module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript'].includes(script.type.trim().toLowerCase())).length";
+
 for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html')).href], ['loopback', hosted]]) {
   await command('browsingContext.setViewport', { context, viewport: { width: 1440, height: 1000 }, devicePixelRatio: 1 });
   await command('browsingContext.navigate', { context, url, wait: 'complete' });
   await waitFor("document.getElementById('accountHandle')?.textContent === 'DownloadCitizen'");
-  await evaluate('Promise.all([300, 500, 700].map(weight => document.fonts.load(`${weight} 16px Orbitron`))).then(() => document.fonts.ready).then(() => true)');
+  await evaluate('Promise.all([300, 500, 700].map(weight => document.fonts.load(weight + " 16px Orbitron"))).then(() => document.fonts.ready).then(() => true)');
   await check(`${mode}: three example hangar records`, "document.querySelectorAll('tr[data-record-key]').length === 3");
   await check(`${mode}: bundled fonts loaded`, "[...document.fonts].filter(font => font.family === 'Orbitron').every(font => font.status === 'loaded')");
   const support = await evaluate("({container: CSS.supports('container-type', 'inline-size'), has: CSS.supports('selector(:has(*))'), dvh: CSS.supports('height', '100dvh'), backdrop: CSS.supports('backdrop-filter', 'blur(2px)'), mask: "
@@ -63,7 +67,7 @@ for (const [mode, url] of [['file', pathToFileURL(path.join(source, 'index.html'
     await command('browsingContext.setViewport', { context, viewport: { width: 320, height: 1000 }, devicePixelRatio: 1 });
     await command('browsingContext.navigate', { context, url: new URL(page, url).href, wait: 'complete' });
     await evaluate('document.fonts.ready.then(() => true)');
-    await check(`${mode}: ${page} renders without scripts`, `document.querySelector('h1').textContent === ${JSON.stringify(title)} && document.scripts.length === 0`);
+    await check(`${mode}: ${page} renders without scripts`, `document.querySelector('h1').textContent === ${JSON.stringify(title)} && ${RUNNABLE_SCRIPTS} === 0`);
     await check(`${mode}: ${page} fits 320px`, 'document.documentElement.scrollWidth <= innerWidth + 1');
     await command('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: '\uE004' }, { type: 'keyUp', value: '\uE004' }] }] });
     await check(`${mode}: ${page} keyboard focus`, "document.activeElement.matches('.legal-header a') && document.activeElement.matches(':focus-visible')");

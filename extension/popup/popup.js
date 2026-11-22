@@ -2,6 +2,8 @@
   "use strict";
 
   const RSI_ORIGIN = "https://robertsspaceindustries.com/*";
+  // RSI's status page, optional and only for diagnosis (PARSER_HARDENING.md §9.3): asked for with the account host.
+  const RSI_STATUS_ORIGIN = "https://status.robertsspaceindustries.com/*";
   const HOSTED_DASHBOARD = "https://citizendata.download/";
   const byId = (id) => document.getElementById(id);
   const stateTitle = byId("stateTitle");
@@ -338,7 +340,7 @@
   });
 
   grantRsiAccess.addEventListener("click", async () => {
-    const granted = await chrome.permissions.request({ origins: [RSI_ORIGIN] }).catch(() => false);
+    const granted = await chrome.permissions.request({ origins: [RSI_ORIGIN, RSI_STATUS_ORIGIN] }).catch(() => false);
     notice.textContent = granted ? "RSI read access allowed." : "RSI read access was not allowed.";
     await refresh();
   });

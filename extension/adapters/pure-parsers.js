@@ -184,6 +184,22 @@
     return Object.freeze({ ...result("profile", value, 1, context, metadata), accountMetadata: Object.freeze({ ueeCitizenRecord }) });
   }
 
+  // The nested rows of a record: each normalized on its own. A row that fails is left out and reported through
+  // `metadata.onNestedAnomaly` with the record's one-based index; without that callback the failure stops the record,
+  // as before (§5.7).
+  async function nestedRows(sourceList, label, recordIndex, metadata, normalize) {
+    const rows = [];
+    for (const [itemIndex, item] of N.list(sourceList ?? [], label).entries()) {
+      try {
+        rows.push(await normalize(item, itemIndex));
+      } catch (error) {
+        if (typeof metadata.onNestedAnomaly !== "function") throw error;
+        metadata.onNestedAnomaly({ recordIndex, keySuffix: `${label.replace(/^[^.]*\./u, "")}.${itemIndex}`, issueCode: "PARSER_REJECTED_NESTED_ROW", message: `${label}[${itemIndex}] was left out of its record: ${error?.message ?? "the row could not be read"}`, raw: item, retainedInNormalizedData: false });
+      }
+    }
+    return rows;
+  }
+
   async function parsePledges(input, contextInput, metadata = {}) {
     const context = N.context(contextInput, PARSER_VERSION);
     const sourceRecords = N.list(input, "Pledge payload");
@@ -197,8 +213,7 @@
         : pledgeId === null
           ? await N.stableKey("pledge", [title, source.createdDateRaw ?? null, source.containsSummary ?? null])
           : `pledge:${pledgeId}`;
-      const items = [];
-      for (const [itemIndex, item] of N.list(source.items ?? [], `pledges[${index}].items`).entries()) items.push(await containedItem(item, recordKey, itemIndex));
+      const items = await nestedRows(source.items, `pledges[${index}].items`, index + 1, metadata, (item, itemIndex) => containedItem(item, recordKey, itemIndex));
       const record = {
         pledgeId,
         recordKey,
@@ -221,8 +236,7 @@
         catalogIdentifiers: catalogIdentifiers(source.catalogIdentifiers, `pledges[${index}].catalogIdentifiers`)
       };
       if (Array.isArray(source.ccuHistory)) {
-        const history = [];
-        for (const [stepIndex, step] of source.ccuHistory.entries()) history.push(await normalizeCcuStep(step, stepIndex, recordKey));
+        const history = await nestedRows(source.ccuHistory, `pledges[${index}].ccuHistory`, index + 1, metadata, (step, stepIndex) => normalizeCcuStep(step, stepIndex, recordKey));
         record.ccuHistory = Object.freeze(history);
       }
       value.push(Object.freeze(record));
@@ -259,8 +273,7 @@
         : buybackId === null
           ? await N.stableKey("buyback", [title, source.reclaimDateRaw ?? null, source.containsSummary ?? null])
           : `buyback:${buybackId}`;
-      const items = [];
-      for (const [itemIndex, item] of N.list(source.items ?? [], `buybacks[${index}].items`).entries()) items.push(await containedItem(item, recordKey, itemIndex));
+      const items = await nestedRows(source.items, `buybacks[${index}].items`, index + 1, metadata, (item, itemIndex) => containedItem(item, recordKey, itemIndex));
       const record = {
         buybackId,
         recordKey,

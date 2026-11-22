@@ -9,7 +9,8 @@ test("a failed run offers what it collected and continues from where it stopped"
   const harness = await createExtensionHarness();
   const tab = harness.openTab();
   // RSI fails once, on the second page of buybacks.
-  harness.rsi.failNext((request) => request.path === "/api/account/buybackPledges" && request.page === 2, { status: 503 });
+  // A 401 signs the session out and stops the run; a 410 would set the section aside (§10.1), and a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === "/api/account/buybackPledges" && request.page === 2, { status: 401 });
   await tab.build();
   const failed = await harness.finishJob();
   assert.equal(failed.status, "failed");
@@ -17,8 +18,8 @@ test("a failed run offers what it collected and continues from where it stopped"
   assert.deepEqual([...harness.alarms.keys()], []);
   const failure = tab.lastEvent();
   assert.equal(failure.event, "failed");
-  assert.equal(failure.status.activeJob.failure.code, "RSI_READ_FAILED");
-  assert.match(failure.status.activeJob.failure.message, /RSI_BUYBACKS_HTTP_503/u);
+  assert.equal(failure.status.activeJob.failure.code, "RSI_SIGNED_OUT");
+  assert.equal(failure.status.activeJob.failure.message, "The RSI session is signed out.");
   assert.equal(failure.status.activeJob.currentSection, "buybacks");
   assert.equal(failure.status.partialAvailable, true);
   assert.equal(failure.status.continuable, true);
@@ -37,7 +38,7 @@ test("a failed run offers what it collected and continues from where it stopped"
 
   // The popup lists it as an incomplete run.
   const incomplete = await harness.popup.request("LIST_INCOMPLETE_RUNS");
-  assert.deepEqual(incomplete.runs.map((run) => [run.status, run.failure.code]), [["failed", "RSI_READ_FAILED"]]);
+  assert.deepEqual(incomplete.runs.map((run) => [run.status, run.failure.code]), [["failed", "RSI_SIGNED_OUT"]]);
 
   // Another origin can neither read nor continue it.
   const local = harness.openTab(LOCAL_DASHBOARD_URL);

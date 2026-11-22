@@ -19,7 +19,7 @@
   function records(value, label, validate = () => {}) {
     if (!Array.isArray(value)) throw new Error(`${label} must be an array.`);
     if (value.length > LIMITS.array) throw new Error(`${label} contains too many records.`);
-    value.forEach((record, index) => validate(object(record, `${label}[${index}]`), `${label}[${index}]`));
+    value.forEach((record, index) => { validate(object(record, `${label}[${index}]`), `${label}[${index}]`); });
     return value;
   }
 

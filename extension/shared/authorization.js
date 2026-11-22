@@ -30,6 +30,17 @@
     return new Date(value).toISOString();
   }
 
+  // The actual request bounds of a run (PARSER_HARDENING.md §7.13), one count for each allowance; none borrows from
+  // another. Absent, the runner derives them from the plan, as for an authorization issued before them.
+  const REQUEST_ALLOWANCES = Object.freeze(["baseline", "retries", "canaryAndSessionChecks", "probes", "statusChecks"]);
+
+  function requestAllowances(value) {
+    if (!isPlainObject(value)) return null;
+    const keys = Object.keys(value);
+    if (keys.length !== REQUEST_ALLOWANCES.length || !REQUEST_ALLOWANCES.every((name) => Number.isSafeInteger(value[name]) && value[name] >= 0)) return null;
+    return Object.freeze(Object.fromEntries(REQUEST_ALLOWANCES.map((name) => [name, value[name]])));
+  }
+
   function createProposal(input) {
     if (!isPlainObject(input) || !isPlainObject(input.plan)) throw new TypeError("A validated plan is required.");
     if (typeof input.proposalId !== "string" || input.proposalId.length < 16) throw new TypeError("A proposal ID is required.");
@@ -69,6 +80,8 @@
     if (!UUID_PATTERN.test(input.localAccountId)) return { ok: false, code: "INVALID_LOCAL_ACCOUNT_ID" };
     if (!SHA256_PATTERN.test(input.planHash)) return { ok: false, code: "INVALID_PLAN_HASH" };
     if (typeof input.extensionVersion !== "string" || input.extensionVersion.trim().length === 0) return { ok: false, code: "INVALID_EXTENSION_VERSION" };
+    const maximumActualRequests = input.maximumActualRequests === undefined ? null : requestAllowances(input.maximumActualRequests);
+    if (input.maximumActualRequests !== undefined && maximumActualRequests === null) return { ok: false, code: "INVALID_REQUEST_ALLOWANCES" };
     const nowMs = Number.isFinite(input.nowMs) ? input.nowMs : Date.now();
     const requestedRunTtl = Number.isFinite(input.runTtlMs) ? input.runTtlMs : DEFAULT_RUN_TTL_MS;
     const runTtlMs = Math.max(1, Math.min(requestedRunTtl, MAXIMUM_RUN_TTL_MS));
@@ -89,6 +102,7 @@
       selectedSections: Object.freeze([...proposal.plan.selectedSections]),
       maximumRecordsBySection: Object.freeze({ ...proposal.plan.maximumRecordsBySection }),
       minimumInterRequestDelayMs: proposal.plan.minimumInterRequestDelayMs,
+      maximumActualRequests,
       parserVersions: Object.freeze({ ...proposal.parserVersions }),
       planHash: input.planHash,
       extensionVersion: input.extensionVersion.trim(),
@@ -129,6 +143,18 @@
         idleExpiresAt: iso(Math.min(hardExpiry, nowMs + authorization.idleTtlMs))
       })
     };
+  }
+
+  // An explicit Resume from the bound dashboard renews the idle lease of a paused run (PARSER_HARDENING.md §12.4): it is
+  // valid while the authorization is neither revoked nor consumed and has not reached its hard expiry. The idle lease is
+  // not checked, so a run paused for longer than it resumes; abandoned runs still end, since nothing else renews it.
+  function resumeLease(authorization, nowMs = Date.now()) {
+    if (!isPlainObject(authorization) || authorization.policyVersion !== POLICY_VERSION) return { ok: false, code: "INVALID_AUTHORIZATION" };
+    if (authorization.revokedAt) return { ok: false, code: "AUTHORIZATION_REVOKED" };
+    if (authorization.consumedAt) return { ok: false, code: "AUTHORIZATION_CONSUMED" };
+    const hardExpiry = Date.parse(authorization.expiresAt);
+    if (!(nowMs < hardExpiry)) return { ok: false, code: "AUTHORIZATION_EXPIRED" };
+    return { ok: true, value: Object.freeze({ ...authorization, lastActivityAt: iso(nowMs), idleExpiresAt: iso(Math.min(hardExpiry, nowMs + authorization.idleTtlMs)) }) };
   }
 
   function createRebindRequest(authorization, input) {
@@ -231,6 +257,7 @@
     proposalIsCurrent,
     createAuthorization,
     validateAuthorization,
+    resumeLease,
     touchAuthorization,
     createRebindRequest,
     rebindRequestIsCurrent,

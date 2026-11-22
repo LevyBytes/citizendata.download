@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { load, png, policy } from "./media-materializer-in-a-sandbox.mjs";
+import { load, pacing, png, policy } from "./media-materializer-in-a-sandbox.mjs";
 
 test("materializer spaces concurrent starts, omits credentials, validates magic, and keeps content-addressed paths", async () => {
   const api = load();
@@ -17,6 +17,8 @@ test("materializer spaces concurrent starts, omits credentials, validates magic,
       return { status: 200, url, headers: { get: () => "image/png; charset=binary" }, arrayBuffer: async () => bytes.buffer };
     },
     sleep: async (delay) => delays.push(delay),
+    // Today's schedule, from the 1x pace; the image run itself starts slower (§14, §15.3).
+    initialPace: pacing().atBaseline(),
     random: () => 0.5,
     now: () => "2026-11-17T00:00:00.000Z"
   });

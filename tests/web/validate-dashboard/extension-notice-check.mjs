@@ -15,7 +15,7 @@ export async function checkExtensionNotice() {
   assert(missing.detail.includes("Once the extension is on, reload this page"), `The install notice must say to reload this page once the extension is on: ${missing.detail}`);
 
   if (localCopy) {
-    await evaluate(extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'LOCAL_APPROVAL_REQUIRED'}"));
+    await evaluate(extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'LOCAL_APPROVAL_REQUIRED'}"));
     await waitFor("document.getElementById('extensionNoticeTitle').textContent==='Allow this local copy'");
     const approval = await evaluate(buildChooserState);
     assert(
@@ -26,7 +26,7 @@ export async function checkExtensionNotice() {
   await evaluate("document.querySelector('#closeOverlay').click()");
 
   // An extension that speaks another bridge protocol version is reported; its release number alone is never compared.
-  await evaluate(extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:crypto.randomUUID(),nonce:'b'.repeat(40),payload:{extensionVersion:'9.0.0',"
+  await evaluate(extensionMessage("{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:crypto.randomUUID(),nonce:'b'.repeat(40),payload:{extensionVersion:'9.0.0',"
     + "capabilities:{buildJson:true}}}"));
   await waitFor("document.querySelector('#overlaySummary').textContent==='UPDATE REQUIRED' && document.querySelector('#messageDialog').open");
   assert(await evaluate("document.querySelector('#overlayState').textContent==='Extension and dashboard do not match' && document.querySelector('#dialogTitle').textContent==='CitizenData update required' && document.querySelector('#dialogMessage')"

@@ -1,10 +1,10 @@
 (function initializeCitizenDataDocumentAssembler(root, factory) {
   "use strict";
 
-  const api = factory(root.CitizenDataAccountDocument, root.CITIZENDATA_ACCOUNT_SCHEMA, root.CitizenDataRemovalTracking, root.CitizenDataUpdateDelta);
+  const api = factory(root.CitizenDataAccountDocument, root.CITIZENDATA_ACCOUNT_SCHEMA, root.CitizenDataRemovalTracking, root.CitizenDataUpdateDelta, root.CitizenDataJobOutcomes);
   root.CitizenDataDocumentAssembler = api;
   if (typeof module === "object" && module?.exports) module.exports = api;
-})(globalThis, function createCitizenDataDocumentAssembler(AccountDocument, AccountSchema, RemovalTracking, Delta) {
+})(globalThis, function createCitizenDataDocumentAssembler(AccountDocument, AccountSchema, RemovalTracking, Delta, JobOutcomes) {
   "use strict";
 
   const REQUIRED_OUTCOMES = Object.freeze([
@@ -186,6 +186,25 @@
     }
   }
 
+  // W-14, the warning of a section set aside (§10.3). The technical code stays in the contract findings.
+  const SET_ASIDE_WARNING = "Not read because CitizenData could not recognize RSI's page.";
+
+  // The sections the run set aside (§10.3): each result section's outcome is "failed" with W-14. Its values stay as
+  // they are: the saved backup's in an update, the empty skeleton in a first build.
+  function applySetAside(document, entries) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (typeof entry?.section !== "string" || typeof entry.at !== "string") continue;
+      const resultSections = typeof JobOutcomes?.outcomesForJob === "function" ? JobOutcomes.outcomesForJob(entry.section) : [entry.section];
+      for (const resultSection of resultSections) {
+        const roster = isRoster(resultSection);
+        const outcomes = roster ? document.sync.organizationMemberOutcomes : document.sync.sectionOutcomes;
+        const key = roster ? resultSection.slice("organizations.members.".length) : resultSection;
+        const records = Number.isSafeInteger(outcomes[key]?.records) ? outcomes[key].records : 0;
+        outcomes[key] = { status: "failed", parserVersion: typeof entry.parserVersion === "string" ? entry.parserVersion : null, startedAt: entry.at, endedAt: entry.at, records, pagesOrBatches: 0, warnings: [SET_ASIDE_WARNING] };
+      }
+    }
+  }
+
   function applyResult(document, result, previous, retainedSections) {
     if (!result || typeof result.section !== "string" || !result.outcome) throw new TypeError("Parser results require a section and outcome.");
     if (!document.dataQuality) document.dataQuality = { anomalies: [] };
@@ -265,8 +284,16 @@
     }
     finishBuybackUpgradePrices(document);
     finishHangarUpgradeShips(document, options.results);
+    applySetAside(document, options.setAsideSections);
     // Records kept from an earlier build may still hold RSI's placeholder picture.
     AccountDocument?.removePlaceholderImages(document);
+    // The run's contract findings join those of earlier builds, each once by its key, the newest 100 kept (§5.7).
+    const findings = [...(document.dataQuality.contractFindings ?? []), ...(options.contractFindings ?? [])];
+    if (findings.length > 0) {
+      const byKey = new Map();
+      for (const finding of findings) if (typeof finding?.findingKey === "string") byKey.set(finding.findingKey, clone(finding));
+      document.dataQuality.contractFindings = [...byKey.values()].sort((left, right) => left.observedAt.localeCompare(right.observedAt)).slice(-100);
+    }
     if (options.checkpoints) document.sync.checkpoints = clone(options.checkpoints);
     if (options.runs) document.sync.runs = clone(options.runs);
     document.integrity = { algorithm: "SHA-256", contentHash: "0".repeat(64) };
@@ -279,5 +306,5 @@
     return Object.freeze({ document: stamped, retainedSections: Object.freeze(retainedSections) });
   }
 
-  return Object.freeze({ REQUIRED_OUTCOMES, assemble, skeleton, valueAt });
+  return Object.freeze({ REQUIRED_OUTCOMES, SET_ASIDE_WARNING, assemble, skeleton, valueAt });
 });

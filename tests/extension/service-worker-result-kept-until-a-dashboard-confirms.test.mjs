@@ -25,7 +25,7 @@ test("a run that finishes with no dashboard open keeps its result until a dashbo
 
   const reopened = harness.openTab();
   const status = await reopened.status();
-  assert.deepEqual(status.completedResultPending, { runId: finished.pendingResult.runId, jobKind: "accountData" });
+  assert.deepEqual(status.completedResultPending, { runId: finished.pendingResult.runId, jobKind: "accountData", status: "complete" });
   const fetched = await reopened.request("GET_COMPLETED_RESULT");
   assert.equal(fetched.ok, true);
   assert.equal(fetched.runId, finished.pendingResult.runId);

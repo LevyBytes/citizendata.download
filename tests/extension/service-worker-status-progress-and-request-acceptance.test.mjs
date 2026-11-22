@@ -20,7 +20,7 @@ test("status reports progress the dashboard can show, with a bounded activity lo
   for (const activity of job.activityLog) {
     assert.ok(["section-started", "request-started", "request-completed", "section-completed"].includes(activity.kind));
     // Activity names a fixed route and page only; it never carries a query string, a body, or a header.
-    assert.deepEqual(Object.keys(activity).filter((key) => !["kind", "section", "method", "route", "page", "pageCount", "responseStatus", "recordsReceived", "recordsTotal", "requestsTotal", "elapsedMs", "at"].includes(key)), []);
+    assert.deepEqual(Object.keys(activity).filter((key) => !["kind", "section", "method", "route", "page", "pageCount", "responseStatus", "recordsReceived", "recordsTotal", "requestsTotal", "retryAfterMs", "elapsedMs", "at", "seq"].includes(key)), []);
     if (activity.route) assert.match(activity.route, /^\/[A-Za-z0-9/_-]+$/u);
   }
   const finished = await harness.finishJob();
@@ -59,7 +59,7 @@ test("a request is accepted once, and a bridge session keeps the nonce it starte
   assert.equal((await tab.request("GET_STATUS", null, { envelope: { requestId } })).ok, true);
   assert.equal((await tab.request("GET_STATUS", null, { envelope: { requestId } })).code, "REPLAYED_REQUEST");
   assert.equal((await tab.request("GET_STATUS", null, { envelope: { nonce: "f".repeat(72) } })).code, "NONCE_MISMATCH");
-  assert.equal((await tab.request("GET_STATUS", null, { envelope: { protocolVersion: 2 } })).ok, false);
+  assert.equal((await tab.request("GET_STATUS", null, { envelope: { protocolVersion: 1 } })).code, "PROTOCOL_MISMATCH");
   assert.equal((await tab.request("GET_STATUS", null, { envelope: { extra: true } })).code, "UNEXPECTED_ENVELOPE_FIELD");
   assert.equal((await tab.request("GET_STATUS")).ok, true);
   // The record of used request identifiers survives a worker restart.

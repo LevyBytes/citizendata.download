@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 await import("../synthetic-rsi.js");
 await import("../../../extension/shared/protocol.js");
+await import("../../../docs/scripts/request-pacing-settings.js");
 await import("../../../docs/scripts/dashboard-model.js");
 
 export const { createSyntheticRsi } = globalThis.CitizenDataSyntheticRsi;

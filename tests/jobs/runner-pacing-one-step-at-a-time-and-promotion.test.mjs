@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assembleCanonical, profile } from "./runner-fixture-authorization-profile-and-assembly.mjs";
-import { accountDocumentApi, authorizationApi, databaseApi, localAccountId, runnerApi, sectionOutcome } from "./runner-under-test.mjs";
+import { accountDocumentApi, atBaseline, authorizationApi, databaseApi, localAccountId, runnerApi, sectionOutcome } from "./runner-under-test.mjs";
 
 test("serial runner honors pacing, executes one adapter step at a time, and atomically promotes", async () => {
   let clock = 10_000;
@@ -35,7 +35,7 @@ test("serial runner honors pacing, executes one adapter step at a time, and atom
   }));
   const schedules = [];
   const runner = runnerApi.createSerialRunner({ repository, registry: { adapters }, nowMs: () => clock, random: () => 1, assembleDocument: assembleCanonical, schedule: async (_job, when) => schedules.push(when) });
-  const job = runnerApi.createJob({ jobId: "job-1", runId: authorization.runId, accountId: authorization.accountId, authorizationId: authorization.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() });
+  const job = atBaseline(runnerApi.createJob({ jobId: "job-1", runId: authorization.runId, accountId: authorization.accountId, authorizationId: authorization.authorizationId, localAccountId, plan, now: new Date(clock).toISOString() }));
   await repository.saveAuthorization(authorization);
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], receipts: [] });

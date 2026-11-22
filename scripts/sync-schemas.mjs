@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,8 @@ const accountSource = path.join(repositoryRoot, "schema", "account-export.schema
 const offlineSource = path.join(repositoryRoot, "schema", "offline-package.schema.json");
 const accountDocumentSource = path.join(repositoryRoot, "shared", "account-document.js");
 const organizationDocumentSource = path.join(repositoryRoot, "shared", "organization-document.js");
+// The shared pacing files that exist; pace-controller.js and pace-history.js join request-pacing-settings.js.
+const SHARED_PACING_FILES = ["request-pacing-settings.js", "pace-controller.js", "pace-history.js"].filter((name) => existsSync(path.join(repositoryRoot, "shared", name)));
 
 function schemaScript(schema, globalName) {
   const json = JSON.stringify(schema, null, 2)
@@ -102,9 +105,17 @@ for (const relativePath of [
   await synchronize(path.join(repositoryRoot, relativePath), organizationDocumentBytes, mismatches);
 }
 
+// The request pacing settings and the pace controller and history that read them: one source each in shared/,
+// copied byte for byte to the extension and the dashboard.
+for (const name of SHARED_PACING_FILES) {
+  const bytes = await readFile(path.join(repositoryRoot, "shared", name));
+  for (const relativePath of [`extension/shared/${name}`, `docs/scripts/${name}`]) {
+    await synchronize(path.join(repositoryRoot, relativePath), bytes, mismatches);
+  }
+}
+
 if (mismatches.length > 0) {
   throw new Error(`Generated schema copies are stale or missing:\n${mismatches.map((item) => `- ${item}`).join("\n")}`);
 }
 
 console.log(checkOnly ? "PASS schema copies are current" : "PASS schema copies synchronized");
-

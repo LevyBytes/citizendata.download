@@ -38,3 +38,50 @@ export function virtualDateClass(clock) {
   }
   return VirtualDate;
 }
+
+// The answer a limiter gives when it refuses a request: 429 with a Retry-After of 60 seconds, unless one is given.
+const REFUSAL = Object.freeze({ status: 429, contentType: "text/html", body: "Too Many Requests", headers: Object.freeze({ "retry-after": "60" }) });
+
+// Whether a limiter keyed on `key` counts a request: "connection" counts every request to RSI, "account" only those
+// that carry the account's cookies. The status host is never limited.
+function counted(record, key) {
+  if (record.origin && record.origin !== "https://robertsspaceindustries.com") return false;
+  return key === "account" ? record.credentialsOmitted !== true : true;
+}
+
+// A limiter on the clock that refuses the requests over `limit` in any window of `windowMs`.
+export function throttle({ limit, windowMs, answer = REFUSAL, key = "connection" }, now) {
+  const seen = [];
+  return {
+    answer(record) {
+      if (!counted(record, key)) return null;
+      const at = now();
+      while (seen.length > 0 && seen[0] <= at - windowMs) seen.shift();
+      seen.push(at);
+      return seen.length > limit ? { ...answer, headers: { ...answer.headers } } : null;
+    }
+  };
+}
+
+// A limiter on the clock that, once more than `trigger.limit` requests come in a window of `trigger.windowMs`,
+// refuses every request for `durationMs`.
+export function ban({ trigger, durationMs, answer = REFUSAL, key = "connection" }, now) {
+  const seen = [];
+  let bannedUntil = -Infinity;
+  return {
+    get bannedUntil() { return bannedUntil; },
+    answer(record) {
+      if (!counted(record, key)) return null;
+      const at = now();
+      if (at < bannedUntil) return { ...answer, headers: { ...answer.headers } };
+      while (seen.length > 0 && seen[0] <= at - trigger.windowMs) seen.shift();
+      seen.push(at);
+      if (seen.length > trigger.limit) {
+        bannedUntil = at + durationMs;
+        seen.length = 0;
+        return { ...answer, headers: { ...answer.headers } };
+      }
+      return null;
+    }
+  };
+}

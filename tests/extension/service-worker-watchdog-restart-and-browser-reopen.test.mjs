@@ -25,7 +25,9 @@ test("a worker Chrome stopped is restarted by the watchdog alarm and the job fin
 
   const finished = await harness.finishJob();
   assert.equal(finished.status, "complete");
-  assert.ok(longestGap(harness.rsi.requests.filter((request) => request.at >= resumedAt)) <= 1500, "pacing is back to normal after the restart");
+  // The slow start's interval is the longest: 1,800 ms and up to 269 ms of jitter, with the margin today's bound had. A
+  // billing section that reads the kept billing page sends no request, so two intervals can lie between two requests (D23).
+  assert.ok(longestGap(harness.rsi.requests.filter((request) => request.at >= resumedAt)) <= 2 * 2500, "pacing is back to normal after the restart");
   const snapshot = await harness.repository.getSnapshot("SyntheticCitizen");
   await assertCompleteDocument(snapshot.document, harness.rsi);
   assert.deepEqual([...harness.alarms.keys()], []);

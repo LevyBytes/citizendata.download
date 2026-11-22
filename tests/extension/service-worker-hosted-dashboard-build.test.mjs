@@ -31,13 +31,16 @@ test("a build from the hosted dashboard collects every section at its pacing and
   assert.match(document.sync.runs[0].authorization.planHash, /^[0-9a-f]{64}$/u);
   assert.equal(document.sync.runs[0].authorization.extensionVersion, "0.42.1");
 
-  // About one step a second for the whole run, and never a long pause. The account's buy-backs are a few items
-  // many times over, and one page is read for an item, so the run is a few dozen steps.
+  // About one step a second for the whole run once the slow start has passed, and never a long pause. Every run starts
+  // at half the pace and reaches it about 80 seconds in, which adds at most 30 seconds (§6.6 A). The account's
+  // buy-backs are a few items many times over, and one page is read for an item, so the run is a few dozen steps.
   const seconds = (harness.clock.now - startedAt) / 1000;
   const requests = harness.rsi.requests;
   const steps = [...harness.repository.inspect().jobs.values()][0].requestCount;
-  assert.ok(steps > 25 && seconds / steps > 0.9 && seconds / steps < 1.3, `the run took ${seconds} s of extension time for ${steps} steps`);
-  assert.ok(longestGap(requests) <= 1500, `longest pause between requests was ${longestGap(requests)} ms`);
+  assert.ok(steps > 25 && seconds / steps > 0.9 && (seconds - 30) / steps < 1.3, `the run took ${seconds} s of extension time for ${steps} steps`);
+  // The slow start's interval is the longest: 1,800 ms and up to 269 ms of jitter, with the margin today's bound had. A
+  // billing section that reads the kept billing page sends no request, so two intervals can lie between two requests (D23).
+  assert.ok(longestGap(requests) <= 2 * 2500, `longest pause between requests was ${longestGap(requests)} ms`);
 
   // The page parser is created on demand for exactly one stated purpose. It is given a document parser and nothing
   // that can make a request or read a cookie (tests/support/extension-harness.mjs), so reading a page is all it does.

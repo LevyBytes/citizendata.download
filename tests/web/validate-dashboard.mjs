@@ -24,6 +24,7 @@ try {
     await import("./validate-dashboard/full-run-rejected-account-files-steps.mjs");
     await import("./validate-dashboard/full-run-zero-balances-affiliate-only-and-redacted-fixtures-steps.mjs");
     await import("./validate-dashboard/full-run-remaining-checks-and-pass-report-steps.mjs");
+    await import("./validate-dashboard/full-run-build-status-caution-and-renderer-steps.mjs");
   }
 } finally {
   if (socket?.readyState === WebSocket.OPEN) socket.close();

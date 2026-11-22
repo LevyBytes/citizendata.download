@@ -74,7 +74,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const context = message.context && typeof message.context === "object" ? message.context : {};
     const document = inertDocument(message.fragmentType, message.html);
     const parsed = parser(document, context);
-    sendResponse({ ok: true, ...parsed });
+    // Page identity (PARSER_HARDENING.md §5.3): whether the page's marker is present, and its first title's text.
+    const title = document.querySelector("title");
+    sendResponse({ ok: true, ...parsed, pageRecognized: globalThis.CitizenDataDomExtractors.pageRecognized(document, message.fragmentType), pageTitle: title ? title.textContent.trim() : null });
   } catch (error) {
     sendResponse({ ok: false, message: String(error?.message ?? error) });
   }

@@ -5,12 +5,17 @@ import { loadClassicScripts } from "../extension/load-classic-script.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const context = await loadClassicScripts([
+  path.join(root, "extension", "shared", "request-pacing-settings.js"),
+  path.join(root, "extension", "shared", "pace-controller.js"),
+  path.join(root, "extension", "shared", "pace-history.js"),
   path.join(root, "extension", "shared", "authorization.js"),
   path.join(root, "extension", "storage", "database.js"),
   path.join(root, "extension", "jobs", "runner.js")
 ], { crypto: globalThis.crypto, TextEncoder, Uint8Array });
 export const databaseApi = context.CitizenDataDatabase;
 export const runnerApi = context.CitizenDataRunner;
+// Today's schedule, for the tests that assert it: a job that starts at the fastest baseline (§15.3).
+export const atBaseline = (job) => ({ ...job, pace: context.CitizenDataPaceController.atBaseline(context.CITIZENDATA_REQUEST_PACING) });
 export const plain = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 export const RUN_ID = "33333333-3333-4333-8333-333333333333";

@@ -1,11 +1,15 @@
 (function initializeCitizenDataAdapterCatalog(root, factory) {
   "use strict";
 
-  const api = factory();
+  const api = factory(root);
   root.CitizenDataAdapterCatalog = api;
   if (typeof module === "object" && module?.exports) module.exports = api;
-})(globalThis, function createCitizenDataAdapterCatalog() {
+})(globalThis, function createCitizenDataAdapterCatalog(root) {
   "use strict";
+
+  // The request pacing settings (shared/request-pacing-settings.js) load before this file.
+  const PACING = root.CITIZENDATA_REQUEST_PACING;
+  if (!PACING) throw new Error("request-pacing-settings.js must load before catalog.js.");
 
   const ORGANIZATION_SID_PATTERN = /^[A-Z0-9][A-Z0-9_-]{0,63}$/u;
 
@@ -16,7 +20,7 @@
     { id: "buybacks", version: "0.42.1", route: "/api/account/buybackPledges", transport: "background", extractor: "extractBuybacks", parser: "parseBuybacks" },
     // Read last and one page per buy-back. `inputs` names the sections whose results it reads, `carriesForward` keeps
     // details captured by earlier backups, and `recordsPerStep` bounds its steps by its record cap.
-    { id: "buybackDetails", version: "0.42.1", route: "/pledge/buyback/{id}", transport: "background", extractor: "extractBuybackDetail", parser: "parseBuybackDetails", inputs: Object.freeze(["buybacks"]), carriesForward: true, recordsPerStep: 2 },
+    { id: "buybackDetails", version: "0.42.1", route: "/pledge/buyback/{id}", transport: "background", extractor: "extractBuybackDetail", parser: "parseBuybackDetails", inputs: Object.freeze(["buybacks"]), carriesForward: true, recordsPerStep: PACING.accountBuild.sections.buybackDetails.lanes },
     // The price RSI asks now for each different CCU buy-back, read from the store upgrade page's own calls. These
     // prices change, so nothing is carried forward: every build reads them again, one upgrade a step.
     { id: "buybackUpgradePrices", version: "0.42.1", route: "/pledge-store/api/upgrade/graphql", transport: "background", extractor: null, parser: "parseBuybackUpgradePrices", inputs: Object.freeze(["buybacks", "pledges"]), recordsPerStep: 1 },
@@ -45,7 +49,7 @@
       parser: "parseOrganizationMembers",
       parserOptions: Object.freeze({ organizationSid: sid }),
       separateAuthorization: true,
-      minimumInterRequestDelayMs: 10000,
+      minimumInterRequestDelayMs: PACING.organizationRosters.intervalMs,
       maximumRecords: 50000
     });
   }

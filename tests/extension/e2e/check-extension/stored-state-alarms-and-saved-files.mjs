@@ -20,6 +20,29 @@ export async function waitForState(predicate, timeoutMs, description) {
   throw new Error(`Timed out waiting for ${description}. Last extension state: ${JSON.stringify(state)}`);
 }
 
+// The extension's own database, opened from its page, which shares the worker's origin. `change` is the source of a
+// function that is given the store and returns nothing.
+function withStore(store, change) {
+  return extensionPage.evaluate(`new Promise((resolve, reject) => {
+    const open = indexedDB.open('citizendata.jobs.v1');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const database = open.result; const transaction = database.transaction(${JSON.stringify(store)}, 'readwrite');
+      transaction.oncomplete = () => { database.close(); resolve(true); };
+      transaction.onerror = () => { database.close(); reject(transaction.error); };
+      (${change})(transaction.objectStore(${JSON.stringify(store)}));
+    };
+  })`);
+}
+
+// Empties one store, as the status feed's cache before a scenario that needs the feed asked.
+export const clearStore = (store) => withStore(store, "(objects) => objects.clear()");
+
+// Changes the stored job with this id: `change` is the source of a function from the job to the job to store.
+export function changeStoredJob(jobId, change) {
+  return withStore("jobs", `(objects) => { const read = objects.get(${JSON.stringify(jobId)}); read.onsuccess = () => objects.put((${change})(read.result)); }`);
+}
+
 export function alarms() {
   return extensionPage.evaluate("chrome.alarms.getAll().then((all) => all.map((alarm) => ({ name: alarm.name, period: alarm.periodInMinutes, scheduledTime: alarm.scheduledTime })))");
 }

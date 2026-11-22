@@ -19,7 +19,10 @@
   function canonicalFileName(accountDocument) {
     const handle = accountDocument?.account?.handle ?? "account";
     const timestamp = root.CitizenDataFileTimestamp?.format?.(accountDocument?.exportedAt) ?? "undated-000000-000Z";
-    return `citizendata-${safeStem(handle)}-${timestamp}.json`;
+    // A run that set a section aside is saved as partial (§10.3).
+    const runs = accountDocument?.sync?.runs;
+    const partial = Array.isArray(runs) && runs.at(-1)?.status === "partial" ? "-partial" : "";
+    return `citizendata-${safeStem(handle)}-${timestamp}${partial}.json`;
   }
 
   function organizationFileName(organizationDocument) {

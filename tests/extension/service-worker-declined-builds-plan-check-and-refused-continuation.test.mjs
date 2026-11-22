@@ -48,7 +48,8 @@ test("a build plan is checked by the extension, not trusted from the page", asyn
 test("a partial backup cannot be continued for a different RSI account", async () => {
   const harness = await createExtensionHarness();
   const tab = harness.openTab();
-  harness.rsi.failNext((request) => request.path === "/api/account/buybackPledges", { status: 500 });
+  // A 401 signs the session out and stops the run; a 410 would set the section aside (§10.1), and a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === "/api/account/buybackPledges", { status: 401 });
   await tab.build();
   assert.equal((await harness.finishJob()).status, "failed");
   harness.switchAccount({ handle: "SomeoneElse" });
@@ -63,7 +64,8 @@ test("a partial backup cannot be continued for a different RSI account", async (
 test("a run that fails before the account is verified leaves nothing to open or continue", async () => {
   const harness = await createExtensionHarness();
   const tab = harness.openTab();
-  harness.rsi.failNext((request) => request.path === "/en/citizens/SyntheticCitizen", { status: 500 });
+  // A 410 is a changed contract and stops the run; a passing 500 or 503 would be retried (§6.4 rule 8, §7.4).
+  harness.rsi.failNext((request) => request.path === "/en/citizens/SyntheticCitizen", { status: 410 });
   await tab.build();
   assert.equal((await harness.finishJob()).status, "failed");
   const status = await tab.status();

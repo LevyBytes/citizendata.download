@@ -7,10 +7,20 @@ const chooserState = `(() => {
     accountDisabled: document.getElementById("buildAccountAction").disabled };
 })()`;
 
+// Presses Build and reads the chooser in the same turn of the page: Build opens it at once, and a status render that
+// lands later hands the panel back to the status, so a separate wait could miss a chooser that did open. Build is
+// pressed again, at most for 8 seconds, while the page shows something else, such as a status of a run in progress.
 export async function openChooser(page) {
-  await click(page, "buildButton");
-  await page.waitFor("!document.getElementById('parserOverlay').hidden && !document.getElementById('buildChoices').hidden", 8000, "the Build chooser to open");
-  return page.evaluate(chooserState);
+  const deadline = Date.now() + 8000;
+  for (;;) {
+    const response = await page.send("Runtime.evaluate", { expression: `(() => { document.getElementById("buildButton").click();
+      const open = !document.getElementById("parserOverlay").hidden && !document.getElementById("buildChoices").hidden;
+      return { open, shown: { summary: document.getElementById("overlaySummary").textContent, dialog: document.getElementById("messageDialog").open }, ...${chooserState} }; })()`, returnByValue: true, userGesture: true });
+    const { open, shown, ...state } = response.result.value;
+    if (open) return state;
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for the Build chooser to open: ${JSON.stringify(shown)}`);
+    await pause(POLL_MS);
+  }
 }
 
 async function closeChooser(page) {

@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+await import("../../docs/scripts/request-pacing-settings.js");
 await import("../../docs/scripts/media-policy.js");
 const policy = globalThis.CITIZENDATA_MEDIA_POLICY;
 

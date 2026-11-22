@@ -11,17 +11,17 @@ export async function checkStatusPanelLifecycle() {
     window.__statusOnlyBridge={session,nonce,origin};
     window.__statusOnlyStatus={status:'running',activeJob,hasActiveJob:true,controlSessionBound:true,requiresRebind:false,partialAvailable:false,continuable:false};
     window.__emitStatusOnly=(status)=>{window.__statusOnlyStatus=status;window.dispatchEvent(new MessageEvent('message',
-      {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'STATUS',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{status}}}));};
+      {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'STATUS',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{status}}}));};
     window.addEventListener('message',(event)=>{
       const request=event.data;
       if(event.source!==window||request?.channel!=='citizendata.dashboard.v1'||!['GET_STATUS','PROPOSE_BUILD'].includes(request.type))return;
       const payload=request.type==='PROPOSE_BUILD'
         ? {ok:false,code:'TEST_DECLINED',message:'Synthetic proposal declined.',status:window.__statusOnlyStatus}
         : {ok:true,status:window.__statusOnlyStatus};
-      window.dispatchEvent(new MessageEvent('message',{source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'RESPONSE',requestId:request.requestId,bridgeSessionId:session,nonce,payload}}));
+      window.dispatchEvent(new MessageEvent('message',{source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'RESPONSE',requestId:request.requestId,bridgeSessionId:session,nonce,payload}}));
     });
     window.dispatchEvent(new MessageEvent('message',
-      {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:1,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{extensionVersion:'0.42.1',capabilities:{buildJson:true}}}}));
+      {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{extensionVersion:'0.42.1',capabilities:{buildJson:true}}}}));
     window.__emitStatusOnly(window.__statusOnlyStatus);return true;
   })()`);
   await waitFor("document.querySelector('#overlaySummary').textContent==='COLLECTING' && !document.querySelector('#collectionActivityImage').hidden");

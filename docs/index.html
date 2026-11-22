@@ -129,7 +129,7 @@
     <div class="top-actions">
       <input id="jsonFileInput" type="file" accept="application/json,.json" hidden>
       <button class="button button-quiet" type="button" id="loadButton"><span class="rsi-icon icon-download" aria-hidden="true"></span>Load JSON</button>
-      <button class="button button-build" type="button" id="buildButton" aria-controls="parserOverlay"><span class="rsi-icon icon-gear" aria-hidden="true"></span><span id="buildButtonLabel">Build</span></button>
+      <button class="button button-build" type="button" id="buildButton" aria-controls="parserOverlay"><span class="rsi-icon icon-gear" aria-hidden="true"></span><span id="buildButtonLabel">Build</span></button><span class="sr-only" id="coolDownExplanation"></span>
     </div>
   </header>
 
@@ -202,10 +202,10 @@
       <details class="panel badge-panel" id="badges">
         <summary><span><small>BADGES</small><b>Account titles and badges</b></span><span class="summary-total" id="badgeSummaryCount">No badge data</span></summary>
         <div class="badge-content">
-          <div class="badge-grid" id="unlockedBadgeGrid" aria-label="RSI account badges"></div>
+          <ul class="badge-grid" id="unlockedBadgeGrid" aria-label="RSI account badges"></ul>
           <p class="badge-note" id="unlockedBadgeNote" hidden></p>
           <p class="badge-empty" id="unlockedBadgeEmpty" hidden>No account badge records were found in this file.</p>
-          <details class="unlockable-badges" id="unlockableBadges"><summary><span>Unlockable badges</span><span id="unlockableBadgeCount">Catalogue unavailable</span></summary><div class="badge-grid" id="unlockableBadgeGrid" aria-label="Unlockable badges not present in the RSI account badge list"></div><p class="badge-empty" id="unlockableBadgeEmpty">Load the maintained unlockable badge catalogue before comparing badges.</p></details>
+          <details class="unlockable-badges" id="unlockableBadges"><summary><span>Unlockable badges</span><span id="unlockableBadgeCount">Catalogue unavailable</span></summary><ul class="badge-grid" id="unlockableBadgeGrid" aria-label="Unlockable badges not present in the RSI account badge list"></ul><p class="badge-empty" id="unlockableBadgeEmpty">Load the maintained unlockable badge catalogue before comparing badges.</p></details>
         </div>
       </details>
 
@@ -227,14 +227,14 @@
         </div>
         <div class="inventory-layout" id="inventoryPanel" role="tabpanel" aria-labelledby="hangarTab">
           <div class="inventory-list">
-          <div class="table-shell" tabindex="0" role="region" aria-label="Account inventory">
+          <section class="table-shell" aria-label="Account inventory">
             <table role="table"><caption id="inventoryCaption"></caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Record</th><th scope="col" role="columnheader">Category</th><th scope="col" role="columnheader" id="inventoryValueHeading">Melt Value</th><th scope="col" role="columnheader">Date</th><th scope="col" role="columnheader">Media</th></tr></thead><tbody id="inventoryRows" role="rowgroup"></tbody></table>
             <div class="empty-state" id="emptyState" hidden><b>No record matches these filters.</b><span>Clear the filters or search to restore rows.</span></div>
-          </div>
+          </section>
           <div class="collection-pagination inventory-pagination" id="inventoryPagination" hidden><button class="text-button" id="inventoryPrevious" type="button">Previous</button><span id="inventoryPageStatus"></span><button class="text-button" id="inventoryNext" type="button">Next</button></div>
           </div>
           <aside class="record-inspector" id="recordInspector" tabindex="-1" aria-label="Selected record details">
-            <div class="inspector-art"><button class="inspector-gallery-main" id="inspectorGalleryOpen" type="button" aria-haspopup="dialog" aria-controls="mediaGalleryDialog" hidden><img class="inspector-image" id="inspectorImage" alt="" hidden></button><div class="inspector-gallery-thumbnails" id="inspectorGalleryThumbnails" hidden></div><span class="rsi-icon icon-media-pending" id="inspectorIcon" aria-hidden="true"></span><small id="inspectorMedia">NO IMAGES</small></div>
+            <div class="inspector-art"><button class="inspector-gallery-main" id="inspectorGalleryOpen" type="button" aria-haspopup="dialog" aria-controls="mediaGalleryDialog" hidden><img class="inspector-image" id="inspectorImage" alt="" hidden></button><ul class="inspector-gallery-thumbnails" id="inspectorGalleryThumbnails" aria-label="Selected record image thumbnails" hidden></ul><span class="rsi-icon icon-media-pending" id="inspectorIcon" aria-hidden="true"></span><small id="inspectorMedia">NO IMAGES</small></div>
             <div class="inspector-body"><span class="eyebrow" id="inspectorGroup">RECORD</span><div class="inspector-title-row"><h3 id="inspectorTitle">Select a record</h3><button type="button" class="ccu-history-button" id="inspectorCcu" aria-label="View CCU history" aria-haspopup="dialog" aria-controls="ccuDialog" hidden><span class="rsi-icon icon-computer" aria-hidden="true"></span></button></div><p id="inspectorSubtitle">Choose a record to see its details.</p><div class="inspector-wiki" id="inspectorWiki" hidden></div><dl id="inspectorFacts"></dl><section class="inspector-items" id="inspectorItems" aria-labelledby="inspectorItemsTitle" hidden><span class="eyebrow" id="inspectorItemsTitle">CONTAINED ITEMS</span><div id="inspectorItemList"></div><small id="inspectorItemRemainder"></small></section><div class="inspector-note"><b>About this record</b><span id="inspectorNote">Details from your account file.</span></div><a class="button button-quiet wide" id="inspectorSource" href="#inventory" hidden>Open RSI page</a><span class="source-pending" id="inspectorSourcePending">Page link unavailable</span></div>
           </aside>
         </div>
@@ -277,7 +277,7 @@
           <div class="details-content">
             <div class="referral-grid" id="referralCards"></div>
             <section class="collection-browser" aria-labelledby="referralListTitle">
-              <div class="collection-toolbar"><div><span class="eyebrow">REFERRAL RECORDS</span><h3 id="referralListTitle">Current prospects</h3><span class="referral-outcome" id="referralOutcome">Example data</span></div><form class="collection-search referral-search" id="referralSearchForm" role="search"><label class="sr-only" id="referralSearchLabel" for="referralSearch">Search current prospects by moniker or username</label><input id="referralSearch" type="search" placeholder="Search moniker or username" autocomplete="off"><span id="referralSearchCount" role="status"></span></form><button class="sort-button" id="referralSortButton" type="button" aria-label="Sort referral records oldest first" data-order="newest"><img src="assets/icons/sort-direction.svg" alt="">Newest first</button></div>
+              <div class="collection-toolbar"><div><span class="eyebrow">REFERRAL RECORDS</span><h3 id="referralListTitle">Current prospects</h3><span class="referral-outcome" id="referralOutcome">Example data</span></div><search class="collection-search referral-search" id="referralSearchForm"><label class="sr-only" id="referralSearchLabel" for="referralSearch">Search current prospects by moniker or username</label><input id="referralSearch" type="search" placeholder="Search moniker or username" autocomplete="off"><span id="referralSearchCount" role="status"></span></search><button class="sort-button" id="referralSortButton" type="button" aria-label="Sort referral records oldest first" data-order="newest"><img src="assets/icons/sort-direction.svg" alt="">Newest first</button></div>
               <div class="collection-table-shell"><table role="table"><caption id="referralCaption">Current prospect records, newest first.</caption><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Moniker</th><th role="columnheader" scope="col">Username</th><th role="columnheader" scope="col">Date</th></tr></thead><tbody id="referralRows" role="rowgroup"></tbody></table></div>
               <div class="collection-pagination"><button class="text-button" id="referralPrevious" type="button">Previous</button><span id="referralPageStatus" role="status"></span><button class="text-button" id="referralNext" type="button">Next</button></div>
             </section>
@@ -288,7 +288,7 @@
           <summary><span class="summary-icon"><span class="rsi-icon icon-organizations" aria-hidden="true"></span></span><span><small>ORGANIZATIONS</small><b id="organizationSummaryName">Example Exploration Group</b></span><span class="summary-total" id="organizationSummaryCount">5 members</span></summary>
           <div class="details-content">
             <section class="collection-browser" aria-labelledby="organizationListTitle">
-              <div class="collection-toolbar organization-toolbar"><div><span class="eyebrow">MEMBER ROSTER</span><div class="organization-title-row"><h3 id="organizationListTitle">TEST</h3><details class="organization-selector" id="organizationSelector"><summary aria-label="Choose organization"></summary><div class="membership-list" id="membershipList" role="list" aria-label="Organization memberships"></div></details><span class="organization-selector-label">Choose organization</span></div></div><div class="organization-data-actions" aria-label="Organization data actions"><input id="orgFileInput" type="file" accept=".json,application/json" hidden><button class="button button-quiet" id="loadOrgButton" type="button" aria-label="Load Orgs JSON">LOAD</button><button class="button button-primary" id="buildOrgButton" type="button" aria-label="Build Orgs JSON">BUILD</button></div></div>
+              <div class="collection-toolbar organization-toolbar"><div><span class="eyebrow">MEMBER ROSTER</span><div class="organization-title-row"><h3 id="organizationListTitle">TEST</h3><details class="organization-selector" id="organizationSelector"><summary aria-label="Choose organization"></summary><ul class="membership-list" id="membershipList" aria-label="Organization memberships"></ul></details><span class="organization-selector-label">Choose organization</span></div></div><fieldset class="organization-data-actions" aria-label="Organization data actions"><input id="orgFileInput" type="file" accept=".json,application/json" hidden><button class="button button-quiet" id="loadOrgButton" type="button" aria-label="Load Orgs JSON">LOAD</button><button class="button button-primary" id="buildOrgButton" type="button" aria-label="Build Orgs JSON">BUILD</button></fieldset></div>
               <p class="collection-note">Some members keep their profile private. Unavailable details appear as a dash.</p>
               <label class="collection-search"><span class="sr-only">Search organization members by moniker or username</span><input id="organizationSearch" type="search" placeholder="Search moniker or username"><span id="organizationSearchCount" role="status"></span></label>
               <div class="collection-table-shell"><table role="table"><caption id="organizationCaption">Organization members.</caption><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Moniker</th><th role="columnheader" scope="col">Username</th><th role="columnheader" scope="col">Rank</th><th role="columnheader" scope="col">Role</th><th role="columnheader" scope="col">Membership</th></tr></thead><tbody id="organizationRows" role="rowgroup"></tbody></table></div>
@@ -322,8 +322,14 @@
   </div>
 
   <aside class="parser-overlay minimized" id="parserOverlay" aria-label="Build status" hidden>
+    <div class="caution-tape" id="cautionTape">
+      <span class="caution-tape-word" aria-hidden="true">CAUTION</span>
+      <b class="caution-tape-text" id="cautionTapeText" role="status"></b>
+    </div>
+    <p class="sr-only" id="buildStatusAnnouncement" role="status" aria-live="polite" aria-atomic="false"></p>
     <div class="overlay-header" id="overlayHeader"><span class="overlay-header-decor" aria-hidden="true"><span class="overlay-header-art" id="overlayHeaderArt" aria-hidden="true"></span></span><span class="overlay-heading"><span class="pulse idle"></span><b id="overlayTitle">BUILD STATUS</b><small id="overlaySummary">Not connected</small></span><span class="overlay-window-controls"><button class="overlay-window-button" type="button" id="minimizeOverlay" aria-label="Expand build status" aria-expanded="false" aria-controls="parserOverlayBody"><span id="overlayToggleSymbol" aria-hidden="true">+</span></button><button class="overlay-window-button" type="button" id="closeOverlay" aria-label="Close build status"><span aria-hidden="true">×</span></button></span></div>
     <div class="overlay-body" id="parserOverlayBody">
+      <div class="parser-change-notice" id="parserChangeNotice" role="alert" aria-atomic="false" hidden></div>
       <div class="overlay-route"><small id="overlayOperation">ACCOUNT BACKUP</small><b id="overlayState">Install or connect the extension</b><span id="overlayDetail">This website cannot read an RSI account on its own.</span></div>
       <div class="build-choice-grid" id="buildChoices" hidden><p class="extension-notice" id="extensionNotice" hidden><b id="extensionNoticeTitle">CitizenData extension not detected</b><span id="extensionNoticeDetail">This page cannot read an RSI account on its own. The extension does that in your browser. Install the extension. Once the extension is on, reload this page.</span></p><button class="build-choice" type="button" id="buildAccountAction"><b id="buildAccountActionTitle">Build account backup</b><span id="buildAccountActionDetail">Read your RSI account and update the open document.</span></button><a class="build-choice build-choice-install" id="installExtensionAction" href="https://chromewebstore.google.com/" target="_blank" rel="noopener noreferrer" hidden><b id="installExtensionTitle">Get the CitizenData extension</b><span id="installExtensionDetail">Opens the Chrome Web Store in a new tab. Reload this page after installing.</span></a><button class="build-choice" type="button" id="buildImagesAction"><b id="buildImagesActionTitle">Download offline images</b><span id="buildImagesActionDetail">Use the public image links in the open document.</span></button></div>
       <div class="collection-activity" id="collectionActivity" hidden><img id="collectionActivityImage" alt="Collection activity" hidden><div><b id="collectionActivityLabel">Gathering account data</b><progress id="collectionActivityProgress" max="100" value="0"></progress><span id="collectionActivityText">Starting…</span><div class="request-progress" id="requestProgress" hidden><b id="requestProgressLabel">Current section</b><progress id="collectionRequestProgress" max="100" value="0"></progress><span id="requestProgressText">Discovering request total…</span></div></div></div>
@@ -335,28 +341,28 @@
 
   <dialog id="ccuDialog" class="ccu-dialog" aria-labelledby="ccuTitle" aria-describedby="ccuPledgeName">
     <form method="dialog">
-      <button class="dialog-close" value="cancel" aria-label="Close CCU history" autofocus>×</button>
+      <button class="dialog-close" type="submit" value="cancel" aria-label="Close CCU history" autofocus>×</button>
       <h2 id="ccuTitle">CCU history</h2>
       <p id="ccuPledgeName" class="ccu-pledge-name"></p>
       <div class="ccu-summary"><span class="evidence-badge">Example data</span><span>Base value <b id="ccuBaseValue"></b></span></div>
       <ol id="ccuSteps" class="ccu-steps" aria-label="Applied upgrades"></ol>
-      <button class="button button-quiet wide" value="cancel">Close</button>
+      <button class="button button-quiet wide" type="submit" value="cancel">Close</button>
     </form>
   </dialog>
 
-  <dialog id="messageDialog"><form method="dialog"><button class="dialog-close" value="cancel" aria-label="Close">×</button><span class="eyebrow" id="dialogEyebrow">LOCAL DATA</span><h2 id="dialogTitle">Status</h2><p id="dialogMessage"></p><button class="button button-primary wide" value="cancel">Close</button></form></dialog>
+  <dialog id="messageDialog" aria-labelledby="dialogTitle"><form method="dialog"><button class="dialog-close" type="submit" value="cancel" aria-label="Close">×</button><span class="eyebrow" id="dialogEyebrow">LOCAL DATA</span><h2 id="dialogTitle">Status</h2><p id="dialogMessage"></p><button class="button button-primary wide" type="submit" value="cancel">Close</button></form></dialog>
   <dialog class="media-gallery-dialog" id="mediaGalleryDialog" aria-labelledby="mediaGalleryTitle" aria-describedby="mediaGalleryStatus">
     <form method="dialog">
-      <button class="dialog-close" value="cancel" aria-label="Close image gallery" autofocus>×</button>
+      <button class="dialog-close" type="submit" value="cancel" aria-label="Close image gallery" autofocus>×</button>
       <span class="eyebrow">RECORD IMAGES</span>
       <h2 id="mediaGalleryTitle">Record images</h2>
       <p id="mediaGalleryStatus" role="status"></p>
       <div class="media-gallery-viewer">
-        <a id="mediaGalleryFull" target="_blank" rel="noopener noreferrer" hidden><img id="mediaGalleryImage" alt=""></a>
+        <a id="mediaGalleryFull" href="#mediaGalleryImage" target="_blank" rel="noopener noreferrer" hidden><img id="mediaGalleryImage" alt="Full size view of the selected record"></a>
         <p id="mediaGalleryPlaceholder">Load the offline image ZIP to view this image.</p>
       </div>
-      <div class="media-gallery-thumbnails" id="mediaGalleryThumbnails" aria-label="Record image thumbnails"></div>
-      <button class="button button-quiet wide" value="cancel">Close</button>
+      <ul class="media-gallery-thumbnails" id="mediaGalleryThumbnails" aria-label="Record image thumbnails"></ul>
+      <button class="button button-quiet wide" type="submit" value="cancel">Close</button>
     </form>
   </dialog>
   <dialog id="orgBuildDialog" aria-labelledby="orgBuildDialogTitle" aria-describedby="orgBuildDialogMessage"><form id="orgBuildForm"><button class="dialog-close" type="button" id="orgBuildClose" aria-label="Cancel organization data plan">×</button><span class="eyebrow">ORGANIZATION DATA</span><h2 id="orgBuildDialogTitle">Choose member rosters</h2><p id="orgBuildDialogMessage">Select the organizations to include in this Organization JSON run. Nothing downloads until you start the job.</p><p class="operation-blocker" id="orgBuildAvailability" role="status" hidden></p><div class="org-roster-checklist" id="orgRosterChecklist"></div><div class="dialog-actions"><button class="button button-quiet" type="button" id="orgBuildCancel">Cancel</button><button class="button button-primary" type="submit" id="orgBuildStart">Start selected job</button></div></form></dialog>
@@ -390,6 +396,9 @@
   <script src="scripts/organization-document.js"></script>
   <script src="scripts/file-timestamp.js"></script>
   <script src="scripts/zip-store.js"></script>
+  <script src="scripts/request-pacing-settings.js"></script>
+  <script src="scripts/pace-controller.js"></script>
+  <script src="scripts/pace-history.js"></script>
   <script src="scripts/media-policy.js"></script>
   <script src="scripts/media-file-names.js"></script>
   <script src="scripts/media-materializer.js"></script>

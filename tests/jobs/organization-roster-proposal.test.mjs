@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+await import("../../extension/shared/request-pacing-settings.js");
 await import("../../extension/jobs/plan-validation.js");
 await import("../../extension/adapters/catalog.js");
 await import("../../extension/adapters/live-runtime.js");

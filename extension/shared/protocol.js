@@ -7,7 +7,9 @@
 })(globalThis, function createCitizenDataProtocol() {
   "use strict";
 
-  const VERSION = 1;
+  // 2: terminal `partial`, the bounded failure and the ordered status fields (PARSER_HARDENING.md §12.6). The dashboard's
+  // PROTOCOL_VERSION must be the same number.
+  const VERSION = 2;
   const CHANNEL = "citizendata.dashboard.v1";
   // The hosted dashboard. It connects without asking.
   const DASHBOARD_ORIGIN = "https://citizendata.download";
@@ -37,7 +39,12 @@
     RESUME: "RESUME",
     CANCEL: "CANCEL",
     // Ends the reading of CCU buy-back prices where it stands; the build goes on to finish.
-    SKIP_CCU_PRICES: "SKIP_CCU_PRICES"
+    SKIP_CCU_PRICES: "SKIP_CCU_PRICES",
+    // RSI's status feed, for the image run (PARSER_HARDENING.md §12.7).
+    CHECK_RSI_STATUS: "CHECK_RSI_STATUS",
+    // The image hosts' own pace history (§14): read it, and add one finished image run to it.
+    GET_IMAGE_PACE_HISTORY: "GET_IMAGE_PACE_HISTORY",
+    ADD_IMAGE_PACE_RUN: "ADD_IMAGE_PACE_RUN"
   });
   const UI_REQUEST_TYPES = Object.freeze({
     GET_STATUS: "GET_STATUS",
@@ -161,9 +168,16 @@
     return { ok: true, value };
   }
 
-  function publicCapabilities(registry = {}) {
+  // `settings` is the extension's copy of the pacing settings; its plan floors tell a dashboard of another version the
+  // slowest floor this extension accepts (§4.6).
+  function publicCapabilities(registry = {}, settings = null) {
     const collectionEnabled = Array.isArray(registry.adapters) && registry.adapters.length > 0;
+    const sections = Object.values(settings?.accountBuild?.sections ?? {}).map((section) => section?.intervalMs).filter(Number.isSafeInteger);
+    const rosterFloorMs = settings?.organizationRosters?.intervalMs;
     return Object.freeze({
+      pacing: sections.length > 0 && Number.isSafeInteger(rosterFloorMs)
+        ? Object.freeze({ accountPlanFloorMs: Math.min(...sections), rosterPlanFloorMs: rosterFloorMs })
+        : null,
       buildJson: collectionEnabled,
       loadJson: true,
       accountCollection: collectionEnabled,

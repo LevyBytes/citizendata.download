@@ -18,20 +18,30 @@ test("every image of a finished build, buy-back pages included, is referenced by
   assert.ok(fromPages.every((reference) => reference.recordType === "buyback"));
 });
 
-test("a buy-back page whose layout changed stops the build instead of recording empty details", async () => {
+test("a buy-back page whose layout changed is set aside, and the rest of the account finishes into a partial backup", async () => {
   const harness = await createExtensionHarness({ account: SMALL });
   const tab = harness.openTab();
   harness.rsi.state.buybackPagesWithoutHeading.add(ordinary(harness.rsi)[0].id);
   const { finished } = await build(harness, tab);
-  assert.equal(finished.status, "failed");
-  const failure = tab.lastEvent();
-  assert.equal(failure.status.activeJob.failure.code, "RSI_READ_FAILED");
-  assert.match(failure.status.activeJob.failure.message, /RSI_BUYBACK_DETAIL_CONTRACT_CHANGED/u);
-  // The account data read before it is intact in the partial backup.
-  const partial = plain((await tab.request("GET_PARTIAL_RESULT")).partialResult);
+  assert.equal(finished.status, "partial");
+  const status = await tab.status();
+  assert.deepEqual(plain(status.activeJob.setAsideSections), ["buybackDetails"]);
+  assert.deepEqual(plain(status.activeJob.detectedChanges).map((entry) => [entry.section, entry.code, entry.setAside, entry.dependents]), [["buybackDetails", "RSI_BUYBACK_DETAIL_CONTRACT_CHANGED", true, []]]);
+  assert.equal(status.activeJob.failure, null);
+  // The partial backup holds the account data, and the details section as not read, with no empty details.
+  const waiting = await tab.request("GET_COMPLETED_RESULT");
+  assert.equal(waiting.jobStatus, "partial");
+  const partial = plain(waiting.result);
   await assertValid(partial);
   assert.equal(partial.sync.sectionOutcomes.buybacks.status, "complete");
   assert.equal(partial.pledges.length, harness.rsi.state.pledges.length);
+  assert.deepEqual([partial.sync.sectionOutcomes.buybackDetails.status, partial.sync.sectionOutcomes.buybackDetails.warnings], ["failed", ["Not read because CitizenData could not recognize RSI's page."]]);
+  assert.deepEqual(partial.buybackDetails ?? [], []);
+  assert.equal(partial.sync.runs.at(-1).status, "partial");
+  assert.match(partial.sync.runs.at(-1).pacing.settingsFingerprint, /^[0-9a-f]{64}$/u);
+  assert.equal(partial.dataQuality.contractFindings.at(-1).code, "RSI_BUYBACK_DETAIL_CONTRACT_CHANGED");
+  // It is not the saved backup.
+  assert.ok(!await harness.repository.getSnapshot("SyntheticCitizen"), "a partial run is not the saved backup");
 });
 
 test("an account with no ordinary buy-backs finishes the section without a request", async () => {

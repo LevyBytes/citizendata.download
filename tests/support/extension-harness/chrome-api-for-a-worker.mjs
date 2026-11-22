@@ -41,7 +41,8 @@ export function chromeApi(world, instance, guard) {
       getAll: guard(async () => [...harness.alarms.values()].map((alarm) => ({ name: alarm.name, scheduledTime: alarm.scheduledTime, ...(alarm.periodInMinutes ? { periodInMinutes: alarm.periodInMinutes } : {}) }))),
       clear: guard(async (name) => clearAlarm(name))
     },
-    permissions: { contains: guard(async () => harness.rsiPermission) },
+    // The account host's grant, and the optional status host's, granted unless a test sets `statusPermission` false.
+    permissions: { contains: guard(async ({ origins = [] } = {}) => origins.every((origin) => (origin.startsWith("https://status.robertsspaceindustries.com/") ? harness.statusPermission !== false : harness.rsiPermission))) },
     cookies: {
       get: guard(async (details) => {
         harness.cookieReads += 1;

@@ -26,5 +26,7 @@ export async function checkExtensionManifest() {
   if (Object.hasOwn(manifest, "externally_connectable")) fail("externally_connectable is outside the approved bridge design.");
   const requiredHosts = manifest.host_permissions ?? [];
   if (requiredHosts.length !== 1 || requiredHosts[0] !== "https://robertsspaceindustries.com/*") fail("The only required host permission must be the exact RSI HTTPS host.");
-  if ((manifest.optional_host_permissions ?? []).length !== 0) fail("CitizenData must not carry additional optional host permissions.");
+  // RSI's status page is the one optional host, used only for diagnosis (PARSER_HARDENING.md §9.3).
+  const optionalHosts = manifest.optional_host_permissions ?? [];
+  if (optionalHosts.length !== 1 || optionalHosts[0] !== "https://status.robertsspaceindustries.com/*") fail("The only optional host permission must be RSI's status host.");
 }

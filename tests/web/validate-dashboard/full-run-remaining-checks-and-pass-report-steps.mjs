@@ -7,6 +7,7 @@ import { checkBuildStatusHeader, checkInventoryValueColumn } from "./build-statu
 import { checkBuybackDetails, checkCcuLeadImage } from "./ccu-lead-image-and-buyback-details-checks.mjs";
 import { exceptions, remoteRequests } from "./chrome-process-and-devtools-commands.mjs";
 import { checkExampleAccount } from "./example-account-check.mjs";
+import { checkSemanticStructures } from "./semantic-structures-and-keyboard-scrolling-check.mjs";
 import { checkLoadedExampleHasNoDummyHistory } from "./example-ccu-history-checks.mjs";
 import { checkExtensionRequests } from "./extension-requests-check.mjs";
 import { checkHangarLinkExport } from "./hangar-link-export-check.mjs";
@@ -29,6 +30,7 @@ await checkBuybackDetails();
 await checkRemovedRecords();
 await checkExampleAccount();
 await checkPageStructure();
+await checkSemanticStructures();
 await checkInventoryValueColumn();
 await checkBuildStatusHeader();
 await checkLatestBuildOnLoad();

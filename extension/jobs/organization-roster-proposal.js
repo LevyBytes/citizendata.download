@@ -32,7 +32,7 @@
     if (new Set(sections).size !== sections.length) return { ok: false, code: "DUPLICATE_ORGANIZATION_SID", message: "Each organization may be selected once." };
     const expectedRoute = "/api/orgs/getOrgMembers";
     const adapters = sections.map((section) => registry?.getCandidateAdapter?.(section));
-    if (adapters.some((adapter, index) => !adapter || adapter.separateAuthorization !== true || adapter.route !== expectedRoute || adapter.section !== sections[index])) {
+    if (adapters.some((adapter, index) => adapter?.separateAuthorization !== true || adapter.route !== expectedRoute || adapter.section !== sections[index])) {
       return { ok: false, code: "ROSTER_ADAPTER_UNAVAILABLE", message: "A fixed organization-roster adapter is unavailable." };
     }
     const checked = Plans.validatePlan({
