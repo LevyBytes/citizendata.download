@@ -6,6 +6,6 @@ import { checkSupportPanelLayout } from "./organization-selection-offline-placem
 await checkSupportPanelLayout();
 assert(exceptions.length===0,`Browser exceptions: ${exceptions.join(' | ')}`);
 assert(remoteRequests.length===0,`Unexpected remote requests: ${remoteRequests.join(', ')}`);
-console.log('PASS focused support/cards: constant 288/130/146 desktop heights across old wrap boundaries; shared top/bottom; export button bounds; 12px gap; mobile stacking; opened-content growth; doubled fonts and longer text without clipping; zero '
+console.log('PASS focused support/cards: two equal export actions with narrow stacking; support/export bounds; mobile stacking; opened-content growth; doubled fonts and longer text without clipping; zero '
   + 'remote requests');
 console.log('NOT RUN in --support-only mode: unrelated account,subscription,CCU and export suites.');

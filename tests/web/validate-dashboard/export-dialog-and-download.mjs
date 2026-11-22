@@ -45,13 +45,13 @@ export async function checkExportDialog(label) {
   assert(failures.length === 0, `${label}: ${failures.join('; ')}`);
 }
 
-export async function downloadExport(expectedName) {
+export async function downloadExport(expectedName, selector = '#exportDownload') {
   const expectedStem = expectedName.replace(/\.json$/u, "");
   const escapedStem = expectedStem.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const expectedPattern = new RegExp(`^${escapedStem}-\\d{4}-\\d{2}-\\d{2}-\\d{6}-\\d{3}Z\\.json$`, "u");
   const previous = new Set(await readdir(downloadDirectory));
-  assert(await evaluate("!document.querySelector('#exportDownload').disabled"), `${expectedName}: download control is disabled.`);
-  await command('Runtime.evaluate', {expression:"document.querySelector('#exportDownload').click()",userGesture:true,returnByValue:true});
+  assert(await evaluate(`!document.querySelector(${JSON.stringify(selector)}).disabled`), `${expectedName}: download control is disabled.`);
+  await command('Runtime.evaluate', {expression:`document.querySelector(${JSON.stringify(selector)}).click()`,userGesture:true,returnByValue:true});
   const deadline = Date.now() + 12000;
   while (Date.now() < deadline) {
     const newFiles = (await readdir(downloadDirectory)).filter(name => !previous.has(name) && name.endsWith('.json'));

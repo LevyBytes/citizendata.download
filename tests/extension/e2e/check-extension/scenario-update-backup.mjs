@@ -45,7 +45,7 @@ export async function updateBackup() {
   const shown = await dashboard.evaluate(`(() => {
     document.querySelector('[data-view="buybacks"]').click();
     const row = document.querySelector('#inventoryRows tr');
-    return { classes: [...row.classList], label: row.querySelector('.state-label').textContent, title: row.querySelector('.record-button b').textContent, background: getComputedStyle(row.querySelector('td')).backgroundColor };
+    return { classes: [...row.classList], label: row.querySelector('.record-warning').textContent, title: row.querySelector('.record-button b').textContent, background: getComputedStyle(row.querySelector('td')).backgroundColor };
   })()`);
   assertStep(shown.classes.includes("record-ghost") && shown.label === "POTENTIAL GHOST REMOVAL" && shown.title === gone.title, `The dashboard did not show the removed buy-back first in its own row: ${JSON.stringify(shown)}`);
   await writeFile(path.join(out, "dashboard-potential-ghost-removal.png"), await dashboard.screenshot());

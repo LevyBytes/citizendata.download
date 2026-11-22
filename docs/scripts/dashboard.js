@@ -21,6 +21,8 @@
     activeGroup: "all",
     activeRecordKey: null,
     inventoryPage: 1,
+    inventorySortKey: null,
+    inventorySortDirection: "ascending",
     referralPath: "current.prospects",
     referralOrder: "newest",
     referralPage: 1,
@@ -123,6 +125,7 @@
     organizationEmblemImage: byId("organizationEmblemImage"),
     organizationEmblemFallback: byId("organizationEmblemFallback"),
     collectionActivity: byId("collectionActivity"),
+    collectionActivityLink: byId("collectionActivityLink"),
     collectionActivityImage: byId("collectionActivityImage"),
     collectionActivityProgress: byId("collectionActivityProgress"),
     requestProgress: byId("requestProgress"),
@@ -866,13 +869,81 @@
     return Object.hasOwn(labels, category) ? labels[category] : "Unclassified";
   }
 
+  function decimalParts(value) {
+    const match = String(value ?? "").match(/^(-?)(\d+)(?:\.(\d+))?$/u);
+    if (!match) return null;
+    return { negative: match[1] === "-", integer: match[2].replace(/^0+(?=\d)/u, ""), fraction: (match[3] ?? "").replace(/0+$/u, "") };
+  }
+
+  function compareDecimalStrings(left, right) {
+    const a = decimalParts(left);
+    const b = decimalParts(right);
+    if (!a || !b) return String(left).localeCompare(String(right), "en", { numeric: true, sensitivity: "base" });
+    if (a.negative !== b.negative) return a.negative ? -1 : 1;
+    const sign = a.negative ? -1 : 1;
+    if (a.integer.length !== b.integer.length) return (a.integer.length - b.integer.length) * sign;
+    const integer = a.integer.localeCompare(b.integer, "en");
+    if (integer) return integer * sign;
+    const width = Math.max(a.fraction.length, b.fraction.length);
+    return a.fraction.padEnd(width, "0").localeCompare(b.fraction.padEnd(width, "0"), "en") * sign;
+  }
+
+  function inventorySortValue(record, key) {
+    if (key === "record") return record.title ?? "Untitled record";
+    if (key === "category") return categoryLabel(record.category);
+    if (key === "media") return Model.inventoryMediaEntries(record).length;
+    if (key === "date") {
+      const time = Date.parse(recordDate(record));
+      return Number.isFinite(time) ? time : null;
+    }
+    const details = pledgeDetails(record);
+    const money = state.activeInventory === "buybacks" ? details.buybackPrice : details.meltValue;
+    return money?.amount === null || money?.amount === undefined || !money?.currency ? null : money;
+  }
+
+  function compareInventoryValues(left, right, key) {
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+    if (key === "value") {
+      const currency = left.currency.localeCompare(right.currency, "en", { sensitivity: "base" });
+      return currency || compareDecimalStrings(left.amount, right.amount);
+    }
+    if (typeof left === "number" && typeof right === "number") return left - right;
+    return String(left).localeCompare(String(right), "en", { numeric: true, sensitivity: "base" });
+  }
+
+  function compareInventoryRecords(left, right) {
+    if (isRemoved(left) !== isRemoved(right)) return isRemoved(left) ? -1 : 1;
+    const key = state.inventorySortKey;
+    if (!key) return 0;
+    const leftValue = inventorySortValue(left, key);
+    const rightValue = inventorySortValue(right, key);
+    const comparison = compareInventoryValues(leftValue, rightValue, key);
+    if (!comparison || leftValue === null || rightValue === null) return comparison;
+    return state.inventorySortDirection === "descending" ? -comparison : comparison;
+  }
+
+  function updateInventorySortHeaders() {
+    for (const button of document.querySelectorAll("[data-inventory-sort]")) {
+      const active = button.dataset.inventorySort === state.inventorySortKey;
+      const direction = active ? state.inventorySortDirection : "none";
+      button.closest("th").setAttribute("aria-sort", direction);
+      button.classList.toggle("active", active);
+      button.classList.toggle("descending", active && direction === "descending");
+      const label = button.querySelector("span").textContent;
+      const next = active && direction === "ascending" ? "descending" : "ascending";
+      button.setAttribute("aria-label", `Sort by ${label}, ${next}`);
+    }
+  }
+
   function visibleInventory() {
     const query = refs.search.value.trim().toLocaleLowerCase();
     return inventoryRecords().filter((record) => {
       const groupMatch = state.activeGroup === "all" || record.category === state.activeGroup;
       const queryMatch = !query || Model.inventorySearchText(record).includes(query) || stateLabel(record).toLocaleLowerCase().includes(query);
       return groupMatch && queryMatch;
-    });
+    }).sort(compareInventoryRecords);
   }
 
   function makeFact(label, value) {
@@ -1204,6 +1275,7 @@
   // Search and category filters run over the whole dataset first; only the matching records are paged.
   function renderInventory() {
     text("inventoryValueHeading", inventoryValueHeading());
+    updateInventorySortHeaders();
     const visible = visibleInventory();
     const page = Model.paginate(visible, state.inventoryPage, INVENTORY_PAGE_SIZE);
     state.inventoryPage = page.page;
@@ -1242,11 +1314,10 @@
       const entry = element("div", "record-entry");
       entry.append(button);
       if (Model.asArray(pledgeDetails(record).ccuHistory).length) entry.append(makeCcuButton(record));
+      if (removed) recordCell.append(element("div", "record-warning", stateLabel(record)));
       recordCell.append(entry);
       const categoryCell = element("td", "", categoryLabel(record.category));
-      // A removed record keeps its label, above the amount.
       const valueCell = element("td", "inventory-value");
-      if (removed) valueCell.append(element("span", "state-label state-removed", stateLabel(record)));
       valueCell.append(element("span", "inventory-amount", inventoryValueText(record)));
       const dateCell = element("td", "", recordDate(record));
       const mediaCell = element("td");
@@ -2176,14 +2247,16 @@
   }
 
   function setCollectionActivityImage(show) {
-    const shown = !refs.collectionActivityImage.hidden && refs.collectionActivityImage.hasAttribute("src");
+    const shown = !refs.collectionActivityLink.hidden && !refs.collectionActivityImage.hidden && refs.collectionActivityImage.hasAttribute("src");
     if (show === shown) return;
     refs.collectionActivity.classList.toggle("has-activity-image", show);
     if (show) {
       refs.collectionActivityImage.src = "assets/activity/dancing-ben.gif";
       refs.collectionActivityImage.hidden = false;
+      refs.collectionActivityLink.hidden = false;
       return;
     }
+    refs.collectionActivityLink.hidden = true;
     refs.collectionActivityImage.hidden = true;
     refs.collectionActivityImage.removeAttribute("src");
   }
@@ -3158,6 +3231,18 @@
     });
     refs.inventoryPrevious.addEventListener("click", () => setInventoryPage(state.inventoryPage - 1));
     refs.inventoryNext.addEventListener("click", () => setInventoryPage(state.inventoryPage + 1));
+    for (const button of document.querySelectorAll("[data-inventory-sort]")) button.addEventListener("click", () => {
+      const key = button.dataset.inventorySort;
+      if (state.inventorySortKey === key) state.inventorySortDirection = state.inventorySortDirection === "ascending" ? "descending" : "ascending";
+      else {
+        state.inventorySortKey = key;
+        state.inventorySortDirection = "ascending";
+      }
+      state.inventoryPage = 1;
+      state.activeRecordKey = null;
+      renderInventory();
+      refs.tableShell.scrollTop = 0;
+    });
     refs.filterButton.addEventListener("click", () => {
       refs.filterPanel.hidden = !refs.filterPanel.hidden;
       refs.filterButton.setAttribute("aria-expanded", String(!refs.filterPanel.hidden));
@@ -3224,7 +3309,8 @@
     bindEvents();
     globalThis.CitizenDataExportControls.bind({
           getSnapshot: () => ({ document: documentForSelectedExports(), sourceName: state.source === "demo" ? "Example data" : state.fileName, sourceFileName: state.source === "demo" ? "example.json" : state.fileName, example: state.source === "demo" }),
-      onDownloadStarted: (fileName) => showToast(`Download started: ${fileName}`)
+      onDownloadStarted: (fileName, warnings = []) => showToast(`Download started: ${fileName}${warnings.length ? ` · ${formatInteger(warnings.length)} export warning${warnings.length === 1 ? "" : "s"}. Use Choose Export to review.` : ""}`),
+      onDownloadFailed: (message) => showToast(`Export could not start: ${message}`)
     });
     renderAll();
     void prepareMediaPlan();

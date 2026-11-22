@@ -22,6 +22,9 @@ export async function checkHangarLinkExport() {
     });
     documentCopy.buybacks.forEach((record, index) => { record.buybackId = 21000001 + index; record.sourcePage = 1; });
   `);
+  const fleet = await downloadExport('citizendata-hangar-hangar-link.json', '#fleetviewExportButton');
+  assert(fleet.type === 'hangarlink' && fleet.version === 1 && fleet.pledges.length === 3, 'Export FleetView did not immediately write the three hangar pledges.');
+  assert(fleet.pledges.every(record => record.buyback === false), 'Export FleetView included a buy-back record.');
   await evaluate("document.querySelector('#exportButton').click()");
   await chooseExport({exportPreset:'inventory', exportInventoryScope:'both', exportFormat:'hangar-link'});
   const offered = await evaluate("({summary:document.querySelector('#exportSummary').textContent, disabled:document.querySelector('#exportDownload').disabled, errors:document.querySelectorAll('#exportMessages .export-error').length, "

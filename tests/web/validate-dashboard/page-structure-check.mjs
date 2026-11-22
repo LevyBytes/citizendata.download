@@ -15,7 +15,7 @@ export async function checkPageStructure() {
         "resumeCollection", "cancelCollection", "mediaControls", "mediaCancelOverlay", "mediaSaveOverlay", "mediaStatus", "mediaZipLoadedState", "loadMediaZipButton", "offlineImages", "orgBuildDialog", "orgRosterChecklist", "loadOrgButton",
         "buildOrgButton", "organizationSelector", "membershipList", "organizationSearch", "referralSearchForm", "referralSearch", "referralSearchLabel", "referralSearchCount", "referralOutcome", "badges", "unlockedBadgeGrid", "unlockedBadgeNote",
         "unlockableBadges", "unlockableBadgeGrid", "mediaGalleryDialog", "mediaGalleryImage", "mediaGalleryThumbnails", "inspectorGalleryOpen", "inspectorGalleryThumbnails", "healthAccountFile", "orgFileStatus", "imageFileStatus",
-        "collectionActivityImage"])}.filter(id=>!document.getElementById(id)),
+        "collectionActivityLink", "collectionActivityImage"])}.filter(id=>!document.getElementById(id)),
       retired:${JSON.stringify(["offlineButton", "densityButton", "rosterConfirmDialog", "organizationRosterButton", "organizationOutcome", "lockedBadges", "buildDialog", "mediaAccount"])}.filter(id=>document.getElementById(id)),
       categories:${JSON.stringify(["gamePackage", "standaloneShip", "shipUpgrade", "reward", "hangarItem", "armor", "weapon", "other", "unknown"])}.filter(group=>!document.querySelector('[data-group="'+group+'"]')),
       loadBeforeBuild:before('#loadButton','#buildButton'),
@@ -26,6 +26,7 @@ export async function checkPageStructure() {
       fileStatusInOffline:['healthAccountFile','orgFileStatus','imageFileStatus','mediaStatus'].every(id=>document.getElementById('offlineImages').contains(document.getElementById(id))),
       buildLabel:document.getElementById('buildButtonLabel').textContent,
       activityImage:{hidden:document.getElementById('collectionActivityImage').hidden,hasSource:document.getElementById('collectionActivityImage').hasAttribute('src')},
+      activityLink:(()=>{const link=document.getElementById('collectionActivityLink');return {hidden:link.hidden,href:link.href,target:link.target,rel:link.rel,label:link.getAttribute('aria-label')}})(),
       noSnippet:['#overview','#inventory','.secondary-grid'].filter(selector=>!document.querySelector(selector).hasAttribute('data-nosnippet')),
       privacyLinksInBody:document.body.querySelectorAll('a[href*="privacy-policy"]').length,
       termsLinks:[...document.body.querySelectorAll('a[href="terms-of-service.html"]')].map(link=>Boolean(link.closest('#projectSupport'))),
@@ -43,6 +44,15 @@ export async function checkPageStructure() {
   );
   assert(page.loadBeforeBuild && page.offlineBeforeReferrals && page.offlineBeforeSupport && page.balancesBeforeHangar && page.selectorBeforeMemberships && page.fileStatusInOffline, `The page's sections are out of order: ${JSON.stringify(page)}`);
   assert(page.buildLabel === "Build" && page.activityImage.hidden && !page.activityImage.hasSource && page.noSnippet.length === 0, `The Build button, the idle activity image, or the no-snippet marks are wrong: ${JSON.stringify(page)}`);
+  assert(
+    page.activityLink.hidden
+      && page.activityLink.href === "https://www.youtube.com/watch?v=_d4b32OhcYI&t=2183s"
+      && page.activityLink.target === "_blank"
+      && page.activityLink.rel.includes("noopener")
+      && page.activityLink.rel.includes("noreferrer")
+      && page.activityLink.label.includes("opens in a new tab"),
+    `The activity image link is unsafe or does not identify the timestamped source: ${JSON.stringify(page.activityLink)}`
+  );
   assert(page.privacyLinksInBody === 0 && page.termsLinks.length === 1 && page.termsLinks[0] === true, `The policy links are not one Terms link inside Support the project: ${JSON.stringify(page.termsLinks)} and ${page.privacyLinksInBody} privacy links`);
   // Every badge is a link to its page on the community wiki, or to the wiki's list of titles.
   assert(

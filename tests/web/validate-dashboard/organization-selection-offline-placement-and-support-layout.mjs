@@ -35,15 +35,18 @@ export async function checkSupportPanelLayout() {
     const result = await evaluate(`(() => {
       const support=document.querySelector('#projectSupport').getBoundingClientRect();
       const exportCard=document.querySelector('#exportData').getBoundingClientRect();
+      const buttons=[...document.querySelectorAll('#exportData .button')].map(node=>node.getBoundingClientRect());
       const overlap=Math.min(support.right,exportCard.right)>Math.max(support.left,exportCard.left)+1
         && Math.min(support.bottom,exportCard.bottom)>Math.max(support.top,exportCard.top)+1;
-      return {width:innerWidth,overlap,pageOverflow:document.documentElement.scrollWidth>innerWidth+1};
+      const inside=buttons.length===2&&buttons.every(button=>button.left>=exportCard.left-1&&button.right<=exportCard.right+1);
+      const expectedLayout=innerWidth<=420?buttons[1].top>=buttons[0].bottom:Math.abs(buttons[0].top-buttons[1].top)<=1&&Math.abs(buttons[0].width-buttons[1].width)<=1;
+      return {width:innerWidth,overlap,inside,expectedLayout,pageOverflow:document.documentElement.scrollWidth>innerWidth+1};
     })()`);
-    assert(!result.overlap&&!result.pageOverflow,`Support and Export layout failed at ${width}px: ${JSON.stringify(result)}`);
+    assert(!result.overlap&&result.inside&&result.expectedLayout&&!result.pageOverflow,`Support and Export layout failed at ${width}px: ${JSON.stringify(result)}`);
     results.push(result);
     await evaluate("document.querySelector('#offlineImages').open=true");
     await checkDashboardGeometry(`expanded Offline Images at ${width}px`);
     await evaluate("document.querySelector('#offlineImages').open=false");
   }
-  if (captureScreenshots) await writeFile(path.join(testDirectory,'work-temp-support-layout-results.json'),`${JSON.stringify({results,checks:'section order,full width disclosures,support export nonoverlap'},null,2)}\\n`);
+  if (captureScreenshots) await writeFile(path.join(testDirectory,'work-temp-support-layout-results.json'),`${JSON.stringify({results,checks:'section order,full width disclosures,support export nonoverlap,two equal export actions'},null,2)}\\n`);
 }

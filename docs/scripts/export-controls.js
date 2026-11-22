@@ -1,11 +1,12 @@
 (() => {
   "use strict";
 
-  function bind({ getSnapshot, onDownloadStarted }) {
+  function bind({ getSnapshot, onDownloadStarted, onDownloadFailed }) {
     const byId = (id) => document.getElementById(id);
     const dialog = byId("exportDialog");
     const form = byId("exportForm");
     const opener = byId("exportButton");
+    const fleetview = byId("fleetviewExportButton");
     const preset = byId("exportPreset");
     const organization = byId("exportOrganizationSid");
     const download = byId("exportDownload");
@@ -91,10 +92,11 @@
       URL.revokeObjectURL(url);
     }
 
-    function downloadJson(event) {
-      event.preventDefault();
-      const inspection = refresh();
-      if (!inspection?.result.canExport || download.disabled) return;
+    function startDownload(inspection, reportFailure = false) {
+      if (!inspection?.result.canExport) {
+        if (reportFailure) onDownloadFailed?.(inspection?.result.errors?.[0] ?? "The FleetView export is unavailable.");
+        return;
+      }
       let url;
       let anchor;
       try {
@@ -109,13 +111,32 @@
         anchor.click();
         // Keep the object alive while Chrome accepts the download, then release it.
         pendingUrls.set(url, window.setTimeout(() => releaseUrl(url), 30000));
-        onDownloadStarted?.(output.fileName);
+        onDownloadStarted?.(output.fileName, output.warnings ?? []);
       } catch (error) {
         if (url) releaseUrl(url);
-        renderMessages([error.message ?? "The JSON download could not be started."]);
+        const message = error.message ?? "The JSON download could not be started.";
+        if (reportFailure) onDownloadFailed?.(message);
+        else renderMessages([message]);
       } finally {
         anchor?.remove();
       }
+    }
+
+    function downloadJson(event) {
+      event.preventDefault();
+      const inspection = refresh();
+      if (!inspection?.result.canExport || download.disabled) return;
+      startDownload(inspection);
+    }
+
+    function downloadFleetview() {
+      const snapshot = getSnapshot();
+      const chosen = {
+        preset: "inventory", inventoryScope: "hangar", format: "hangar-link",
+        example: snapshot.example === true, sourceFileName: snapshot.sourceFileName
+      };
+      const result = globalThis.CitizenDataExports.inspectExport(snapshot.document, chosen);
+      startDownload({ snapshot, chosen, result }, true);
     }
 
     opener.addEventListener("click", () => {
@@ -123,6 +144,7 @@
       dialog.showModal();
       preset.focus({ preventScroll: true });
     });
+    fleetview.addEventListener("click", downloadFleetview);
     byId("exportClose").addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => opener.focus({ preventScroll: true }));
     form.addEventListener("change", refresh);

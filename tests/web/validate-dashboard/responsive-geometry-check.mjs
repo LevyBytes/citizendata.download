@@ -58,7 +58,7 @@ export async function checkResponsiveGeometry(label) {
         if (!visible(cell) || !within(cell.getBoundingClientRect(), shellRect)) failures.push('inventory field is hidden or outside the viewport');
         textFits(cell, cell.getBoundingClientRect(), 'inventory cell');
       }
-      for (const badge of row.querySelectorAll('.state-label')) {
+      for (const badge of row.querySelectorAll('.record-warning')) {
         const bounds = badge.getBoundingClientRect();
         const walker = document.createTreeWalker(badge, NodeFilter.SHOW_TEXT);
         while (walker.nextNode()) {

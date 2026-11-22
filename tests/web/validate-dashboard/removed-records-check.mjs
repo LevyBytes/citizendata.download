@@ -30,7 +30,7 @@ export async function checkRemovedRecords() {
     const cells = [...row.querySelectorAll('td')];
     const backgrounds = [...new Set(cells.map((cell) => getComputedStyle(cell).backgroundColor))];
     // Only a removed record carries a label; every row shows its amount in that cell.
-    const label = row.querySelector('.state-label');
+    const label = row.querySelector('.record-warning');
     const texts = [label, row.querySelector('.inventory-amount'), row.querySelector('.record-button b'), row.querySelector('.record-button small'), ...cells.slice(1)].filter(Boolean);
     const labelBox = (label ?? row).getBoundingClientRect();
     const rowBox = row.getBoundingClientRect();
@@ -38,6 +38,8 @@ export async function checkRemovedRecords() {
       first: document.querySelector('#inventoryRows tr') === row, classes: [...row.classList].sort(), label: label?.textContent ?? null, amount: row.querySelector('.inventory-amount')?.textContent ?? null, backgrounds, channels: channels(backgrounds[0]),
       lowestContrast: Math.min(...texts.map((node) => ratio(getComputedStyle(node).color, backgrounds[0]))),
       labelInsideRow: labelBox.left >= rowBox.left - 1 && labelBox.right <= rowBox.right + 1 && labelBox.width > 0,
+      labelCentered: Math.abs((labelBox.left + labelBox.right) / 2 - (rowBox.left + rowBox.right) / 2) <= 2,
+      labelAboveData: labelBox.bottom <= Math.min(...cells.map((cell) => cell.getBoundingClientRect().bottom)) && labelBox.bottom <= row.querySelector('.record-entry').getBoundingClientRect().top + 1,
       hangar: document.querySelector('#hangarTotal').textContent + '/' + document.querySelector('#hangarTabCount').textContent + '/' + document.querySelector('#railHangarCount').textContent,
       buybacks: document.querySelector('#buybackTotal').textContent + '/' + document.querySelector('#buybacksTabCount').textContent + '/' + document.querySelector('#railBuybackCount').textContent,
       rows: document.querySelectorAll('#inventoryRows tr').length, counts: window.__removed,
@@ -54,7 +56,7 @@ export async function checkRemovedRecords() {
       `${width}: a potential ghost removal is not the first hangar row with its own label and one row colour: ${JSON.stringify(ghost)}`
     );
     assert(red > green * 2 && red > blue * 2, `${width}: the potential ghost removal row is not red: ${ghost.backgrounds[0]}`);
-    assert(ghost.lowestContrast >= 4.5 && ghost.labelInsideRow, `${width}: the potential ghost removal row is not readable (lowest contrast ${ghost.lowestContrast.toFixed(2)}, label inside row ${ghost.labelInsideRow}).`);
+    assert(ghost.lowestContrast >= 4.5 && ghost.labelInsideRow && ghost.labelCentered && ghost.labelAboveData, `${width}: the potential ghost removal warning is not a readable centered row above its record data: ${JSON.stringify(ghost)}`);
     // The account's counts are what RSI lists; the removed record is shown in the list without being counted.
     assert(ghost.rows === ghost.counts.pledges && ghost.hangar === `${ghost.counts.pledges - 1}/${ghost.counts.pledges - 1}/${ghost.counts.pledges - 1} records`, `${width}: a removed pledge was counted as held: ${ghost.hangar} for ${ghost.rows} rows`);
     const selected = await rowState('hangar', 'ghost', true);
