@@ -599,7 +599,7 @@ async function setActionAttention(tabId, attention) {
   try {
     await chrome.action.setBadgeText({ tabId, text: attention ? "!" : "" });
     if (attention) await chrome.action.setBadgeBackgroundColor({ tabId, color: "#d9b86a" });
-    await chrome.action.setTitle({ tabId, title: attention ? "CitizenData: allow this local dashboard" : "CitizenData" });
+    await chrome.action.setTitle({ tabId, title: attention ? "Star Citizen Data Downloader: allow this local dashboard" : "Star Citizen Data Downloader" });
   } catch {
     // The tab closed; there is nothing left to mark.
   }
@@ -916,7 +916,7 @@ async function startAuthorizedRun(proposal, state, capability, continuation = nu
   if (capability !== true) return decline("COLLECTION_GATED", Adapters.reason);
   const permissionGranted = await chrome.permissions.contains({ origins: [RSI_ORIGIN] });
   if (!permissionGranted) {
-    return decline("HOST_PERMISSION_REQUIRED", "CitizenData is not allowed to read robertsspaceindustries.com. Click the CitizenData icon in the Chrome toolbar, choose Allow RSI access, then build again.");
+    return decline("HOST_PERMISSION_REQUIRED", "Star Citizen Data Downloader is not allowed to read robertsspaceindustries.com. Click the Star Citizen Data Downloader icon in the Chrome toolbar, choose Allow RSI access, then build again.");
   }
 
   const discovered = await discoverWithRetry({ budgetMs: RequestPacing.settings.runStart.identifyRetryBudgetMs });
@@ -951,7 +951,7 @@ async function startAuthorizedRun(proposal, state, capability, continuation = nu
     maximumActualRequests: runner.actualRequestAllowances(proposal.plan),
     permissionGranted
   });
-  if (!authorization.ok) return decline(authorization.code, authorization.message ?? "CitizenData could not authorize this backup run.");
+  if (!authorization.ok) return decline(authorization.code, authorization.message ?? "Star Citizen Data Downloader could not authorize this backup run.");
   const rosterSections = proposal.plan.selectedSections.filter((section) => section.startsWith("organizations.members."));
   const memberships = previousSnapshot?.document?.organizations?.memberships ?? [];
   const organizationMemberAuthorization = rosterSections.length === proposal.plan.selectedSections.length
@@ -1217,7 +1217,7 @@ const runner = Runner.createSerialRunner({
 
 async function handleDashboardRequest(message, sender) {
   if (!await isTrustedDashboardSender(message, sender)) {
-    return { ok: false, code: "UNTRUSTED_DASHBOARD", message: "The dashboard sender did not match an approved CitizenData location." };
+    return { ok: false, code: "UNTRUSTED_DASHBOARD", message: "The dashboard sender did not match an approved Star Citizen Data Downloader location." };
   }
   const checked = Protocol.validatePageEnvelope(message.envelope);
   if (!checked.ok) return { ok: false, code: checked.code, message: "The dashboard request failed protocol validation." };
@@ -1508,7 +1508,7 @@ async function handleDashboardRequest(message, sender) {
   }
 
   const activeJob = state.activeJobId ? await repository.getJob(state.activeJobId) : null;
-  if (!activeJob) return { ok: false, code: "NO_ACTIVE_JOB", message: "There is no active CitizenData collection job.", status: await publicStatus(state) };
+  if (!activeJob) return { ok: false, code: "NO_ACTIVE_JOB", message: "There is no active Star Citizen Data Downloader collection job.", status: await publicStatus(state) };
   const authorization = await repository.getAuthorization(activeJob.authorizationId);
   if (authorization?.bridgeSessionId !== request.bridgeSessionId || authorization?.dashboardOrigin !== message.dashboardOrigin) {
     return { ok: false, code: "JOB_BINDING_MISMATCH", message: "This dashboard session does not own the active run." };
@@ -1665,7 +1665,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   operation.then(sendResponse, () => sendResponse({
     ok: false,
     code: "INTERNAL_ERROR",
-    message: "CitizenData could not complete the internal request."
+    message: "Star Citizen Data Downloader could not complete the internal request."
   }));
   return true;
 });

@@ -110,7 +110,7 @@
 
   function validateBackup(backup) {
     const expected = STORES_BY_VERSION[backup?.databaseVersion];
-    if (!backup || !expected || !backup.stores || typeof backup.stores !== "object") throw new Error("Unsupported CitizenData recovery backup.");
+    if (!backup || !expected || !backup.stores || typeof backup.stores !== "object") throw new Error("Unsupported Star Citizen Data Downloader recovery backup.");
     const actual = Object.keys(backup.stores).sort();
     const sorted = [...expected].sort();
     if (sorted.length !== actual.length || sorted.some((name, index) => name !== actual[index])) throw new Error("Recovery backup store set is invalid.");

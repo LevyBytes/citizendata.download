@@ -18,6 +18,6 @@
       const dynamic = catalog?.get?.(section) ?? null;
       return dynamic ? runtime.createAdapter(dynamic) : null;
     },
-    reason: "Account collection is ready from the CitizenData dashboard."
+    reason: "Account collection is ready from the Star Citizen Data Downloader dashboard."
   });
 })(globalThis);

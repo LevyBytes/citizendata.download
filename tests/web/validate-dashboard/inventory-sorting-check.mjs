@@ -46,14 +46,17 @@ export async function checkInventorySorting() {
     await evaluate(`document.querySelector('[data-view="${dataset.view}"]').click()`);
     const expected = {...commonExpected,record:[`${dataset.prefix} 001`,`${dataset.prefix} 105`],value:dataset.value};
     for (const key of Object.keys(expected)) {
-      const ascending = await clickAndRead(key);
-      const descending = await clickAndRead(key);
-      assert(ascending.ariaSort === "ascending" && ascending.value === expected[key][0], `${dataset.view} ${key} ascending failed: ${JSON.stringify(ascending)}`);
-      assert(descending.ariaSort === "descending" && descending.value === expected[key][1], `${dataset.view} ${key} descending failed: ${JSON.stringify(descending)}`);
-      assert(ascending.rows === 100 && descending.rows === 100, `${dataset.view} ${key} did not retain the 100-row first page.`);
+      const first = await clickAndRead(key);
+      const second = await clickAndRead(key);
+      const firstIndex = first.ariaSort === "ascending" ? 0 : 1;
+      assert(["ascending", "descending"].includes(first.ariaSort) && first.value === expected[key][firstIndex], `${dataset.view} ${key} first sort failed: ${JSON.stringify(first)}`);
+      assert(second.ariaSort !== first.ariaSort && second.value === expected[key][1 - firstIndex], `${dataset.view} ${key} reverse sort failed: ${JSON.stringify(second)}`);
+      assert(first.rows === 100 && second.rows === 100, `${dataset.view} ${key} did not retain the 100-row first page.`);
     }
     const secondPage = await evaluate(`(() => {
-      document.querySelector('[data-inventory-sort="record"]').click();
+      const button = document.querySelector('[data-inventory-sort="record"]');
+      button.click();
+      if (button.closest('th').getAttribute('aria-sort') !== 'ascending') button.click();
       document.querySelector('#inventoryNext').click();
       return [...document.querySelectorAll('#inventoryRows .record-button b')].map((node) => node.textContent);
     })()`);

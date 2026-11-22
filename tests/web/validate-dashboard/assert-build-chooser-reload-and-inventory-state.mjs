@@ -23,6 +23,7 @@ export const buildChooserState = `(()=>{
   return {
     notice:shown('extensionNotice'),title:document.getElementById('extensionNoticeTitle').textContent,detail:document.getElementById('extensionNoticeDetail').textContent,
     link:shown('installExtensionAction'),href:link.href,target:link.target,rel:link.rel,linkTitle:document.getElementById('installExtensionTitle').textContent,
+    linkDetail:document.getElementById('installExtensionDetail').textContent,
     account:shown('buildAccountAction'),accountDisabled:document.getElementById('buildAccountAction').disabled,images:shown('buildImagesAction'),
     state:document.getElementById('overlayState').textContent,line:document.getElementById('overlayDetail').textContent,imagesDisabled:document.getElementById('buildImagesAction').disabled,logHidden:document.getElementById('eventLog').hidden,
       controlsHidden:document.getElementById('collectionControls').hidden

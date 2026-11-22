@@ -46,7 +46,7 @@
     approvalView.dataset.state = "asking";
     byId("approvalEyebrow").textContent = "LOCAL DASHBOARD";
     byId("approvalTitle").textContent = "Allow this local copy?";
-    byId("approvalLead").textContent = "A CitizenData dashboard opened from your own disk is asking to connect.";
+    byId("approvalLead").textContent = "A Star Citizen Data Downloader dashboard opened from your own disk is asking to connect.";
     byId("approvalPath").textContent = displayPath(pending.path);
     byId("approvalNote").hidden = false;
     byId("approvalActions").hidden = false;
@@ -294,7 +294,7 @@
       : hasRsiAccess
         ? "Open the dashboard and choose Build. Your account data stays on this device."
         : "Allow RSI access under Recovery and permissions before building a backup.";
-    permissionState.textContent = hasRsiAccess ? "RSI read access is allowed." : "RSI read access is turned off in Chrome. CitizenData cannot build a backup without it.";
+    permissionState.textContent = hasRsiAccess ? "RSI read access is allowed." : "RSI read access is turned off in Chrome. Star Citizen Data Downloader cannot build a backup without it.";
     grantRsiAccess.hidden = hasRsiAccess;
     fileAccessState.textContent = hasFileAccess
       ? "A copy of the dashboard downloaded to your disk can connect after you allow it here. File access is on."
@@ -368,7 +368,7 @@
     const file = importBackup.files?.[0];
     importBackup.value = "";
     if (!file || file.size > 50 * 1024 * 1024) {
-      notice.textContent = "Choose a CitizenData recovery JSON file no larger than 50 MB.";
+      notice.textContent = "Choose a Star Citizen Data Downloader recovery JSON file no larger than 50 MB.";
       return;
     }
     try {
@@ -447,7 +447,7 @@
       clearDeadline = now + 10000;
       clearAllData.setAttribute("aria-pressed", "true");
       clearAllData.textContent = "Confirm clear all local data";
-      notice.textContent = "Click the confirmation button again within 10 seconds to delete all CitizenData jobs, snapshots, kept builds, receipts, recovery state, and local dashboard approvals.";
+      notice.textContent = "Click the confirmation button again within 10 seconds to delete all Star Citizen Data Downloader jobs, snapshots, kept builds, receipts, recovery state, and local dashboard approvals.";
       clearTimer = setTimeout(() => {
         disarmClear();
         notice.textContent = "Clear cancelled; local extension data was preserved.";
@@ -458,7 +458,7 @@
     const response = await request("CLEAR_ALL").catch(() => null);
     disarmClear();
     clearAllData.disabled = false;
-    notice.textContent = response?.ok ? "All local CitizenData extension data was cleared." : "Local extension data was preserved because clearing failed.";
+    notice.textContent = response?.ok ? "All local Star Citizen Data Downloader extension data was cleared." : "Local extension data was preserved because clearing failed.";
     if (response?.ok) await refresh();
   });
 

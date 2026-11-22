@@ -35,7 +35,7 @@ test("a buy-back page whose layout changed is set aside, and the rest of the acc
   await assertValid(partial);
   assert.equal(partial.sync.sectionOutcomes.buybacks.status, "complete");
   assert.equal(partial.pledges.length, harness.rsi.state.pledges.length);
-  assert.deepEqual([partial.sync.sectionOutcomes.buybackDetails.status, partial.sync.sectionOutcomes.buybackDetails.warnings], ["failed", ["Not read because CitizenData could not recognize RSI's page."]]);
+  assert.deepEqual([partial.sync.sectionOutcomes.buybackDetails.status, partial.sync.sectionOutcomes.buybackDetails.warnings], ["failed", ["Not read because Star Citizen Data Downloader could not recognize RSI's page."]]);
   assert.deepEqual(partial.buybackDetails ?? [], []);
   assert.equal(partial.sync.runs.at(-1).status, "partial");
   assert.match(partial.sync.runs.at(-1).pacing.settingsFingerprint, /^[0-9a-f]{64}$/u);

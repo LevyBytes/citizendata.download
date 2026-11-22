@@ -19,7 +19,7 @@
   // buy-back from one with no recorded price), and every image.
   const GENERATOR_NAME = "Hangar Link import";
   const PARSER_VERSION = "hangar-link-import-1";
-  const LIST_WARNING = "Imported from a Hangar Link file. CitizenData did not read this list from RSI.";
+  const LIST_WARNING = "Imported from a Hangar Link file. Star Citizen Data Downloader did not read this list from RSI.";
   const HANGAR_PAGE_SIZE = 10;
   const BUYBACK_PAGE_SIZE = 100;
   const MONTH_NAMES = Object.freeze(["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]);
@@ -181,7 +181,7 @@
   // Builds the account document. It still needs its integrity stamp, which the caller adds.
   function toAccountDocument(file, { importedAt, localAccountId, generatorVersion } = {}) {
     if (!isHangarLinkFile(file)) throw new Error("This is not a Hangar Link file.");
-    if (file.version !== 1) throw new Error(`This Hangar Link file is version ${typeof file.version === "number" ? file.version : "unknown"}. CitizenData reads version 1.`);
+    if (file.version !== 1) throw new Error(`This Hangar Link file is version ${typeof file.version === "number" ? file.version : "unknown"}. Star Citizen Data Downloader reads version 1.`);
     if (typeof importedAt !== "string" || Number.isNaN(Date.parse(importedAt))) throw new TypeError("An import time is required.");
     if (typeof localAccountId !== "string" || typeof generatorVersion !== "string" || !generatorVersion) throw new TypeError("A local account identifier and a generator version are required.");
 
@@ -213,7 +213,7 @@
     }
     counts.hangar = pledges.length;
     counts.buybacks = buybacks.length;
-    if (handles.size > 1) throw new Error("This Hangar Link file holds records of more than one RSI account. CitizenData opens one account at a time.");
+    if (handles.size > 1) throw new Error("This Hangar Link file holds records of more than one RSI account. Star Citizen Data Downloader opens one account at a time.");
     if (!pledges.length && !buybacks.length) {
       throw new Error(counts.leftOut ? "No record in this Hangar Link file could be read: each needs a pledge number, a name, a date, and its RSI account." : "This Hangar Link file holds no records.");
     }

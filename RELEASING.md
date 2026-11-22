@@ -81,7 +81,7 @@ Search and sharing metadata in `docs/index.html` uses `https://citizendata.downl
 
 The factual WebApplication data intentionally contains no fabricated offer, review, or rating and does not claim eligibility for Google's software-app rich result. Keep title, description, canonical, Open Graph, X tags, and WebSite identity consistent. When the share image's artwork changes, keep its file name, which carries no version number, and have the platforms fetch it again with their own tools, such as Meta's Sharing Debugger and LinkedIn's Post Inspector. Account JSON must never change public metadata.
 
-Before advertising an installable extension, replace the placeholder store address with the extension's Chrome Web Store listing. The dashboard's "Get the CitizenData extension" link uses the constant `EXTENSION_STORE_URL` in `docs/scripts/dashboard.js`, which is `https://chromewebstore.google.com/` until the listing exists.
+Chrome Web Store approval was submitted on November 22, 2026. While approval is pending, the dashboard's install card uses `EXTENSION_INSTALL_URL` in `docs/scripts/dashboard.js` to link to the GitHub `extension` folder for developer-mode installation. When Google approves the extension, remove the temporary approval sentence and replace that URL with the exact Chrome Web Store listing.
 
 ## Automation
 

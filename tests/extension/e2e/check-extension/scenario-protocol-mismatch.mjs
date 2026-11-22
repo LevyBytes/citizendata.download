@@ -25,7 +25,7 @@ export async function protocolMismatch() {
   try {
     await hosted.waitFor("document.getElementById('overlaySummary').textContent === 'UPDATE REQUIRED'", 15000, "the dashboard to show that it does not match the extension");
     const shown = await hosted.evaluate("({ state: document.getElementById('overlayState').textContent, detail: document.getElementById('overlayDetail').textContent, dialog: document.getElementById('messageDialog').open })");
-    assertStep(shown.state === "Extension and dashboard do not match" && /^CitizenData extension [0-9.]+ uses a different connection version than this page\./u.test(shown.detail),
+    assertStep(shown.state === "Extension and dashboard do not match" && /^Star Citizen Data Downloader extension [0-9.]+ uses a different connection version than this page\./u.test(shown.detail),
       `The mismatch is not told as §11 writes it: ${JSON.stringify(shown)}`);
     // The user tries anyway: Build, and the account backup if it is offered.
     await hosted.evaluate("document.getElementById('messageDialog').open && document.getElementById('messageDialog').close(); document.getElementById('buildButton').click(); true");

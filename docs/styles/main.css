@@ -265,9 +265,11 @@ caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-pa
 thead { position: sticky; z-index: 4; top: 0; }
 th { padding: 10px 12px; color: #91abb0; border-bottom: 1px solid var(--line-bright); background: #06191f; text-align: left; text-transform: uppercase; font: 700 11px var(--display-font); letter-spacing: .07em; }
 .inventory-sort-button { display: inline-flex; align-items: center; gap: 6px; padding: 0; color: inherit; border: 0; background: transparent; cursor: pointer; text-align: left; text-transform: inherit; font: inherit; letter-spacing: inherit; }
+.inventory-sort-button span { white-space: nowrap; }
 .inventory-sort-icon { width: 15px; height: 15px; opacity: .42; filter: invert(85%) sepia(47%) saturate(856%) hue-rotate(150deg) brightness(102%) contrast(93%); transition: opacity .18s ease, transform .18s ease; }
+.inventory-sort-button.active { color: var(--cyan); }
 .inventory-sort-button:hover .inventory-sort-icon, .inventory-sort-button:focus-visible .inventory-sort-icon, .inventory-sort-button.active .inventory-sort-icon { opacity: .72; }
-.inventory-sort-button.descending .inventory-sort-icon { transform: rotate(180deg); }
+.inventory-sort-button.ascending .inventory-sort-icon { transform: rotate(180deg); }
 th:first-child { position: sticky; z-index: 5; left: 0; min-width: 330px; }
 td { height: 56px; padding: 7px 12px; color: #a9bdc1; border-bottom: 1px solid rgba(111, 193, 205, .14); background: rgba(3, 14, 17, .92); font-size: 13px; }
 td:first-child { position: sticky; z-index: 2; left: 0; background: #05161b; }
@@ -673,10 +675,11 @@ tbody tr.record-ghost td, tbody tr.record-ghost td:first-child { background: var
 tbody tr.record-ghost:hover td, tbody tr.record-ghost.selected td { background: var(--removed-surface-active); }
 .record-warning { position: absolute; z-index: 3; top: 8px; left: 10px; right: 10px; display: flex; align-items: center; justify-content: center; min-height: 27px; padding: 3px 9px; color: var(--failure); border: 1px solid var(--failure-strong); background: rgba(39, 8, 12, .58); font: 700 11px var(--display-font); letter-spacing: .08em; text-align: center; white-space: nowrap; }
 .record-warning::before { content: ""; flex: 0 0 6px; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--failure-strong); }
-.table-shell th:nth-child(2) { width: 15%; }
-.table-shell th:nth-child(3) { width: 15%; }
-.table-shell th:nth-child(4) { width: 16%; }
-.table-shell th:nth-child(5) { width: 12%; }
+.inventory-col-record { width: auto; }
+.inventory-col-category { width: 8.75rem; }
+.inventory-col-value { width: 8.5rem; }
+.inventory-col-date { width: 6.5rem; }
+.inventory-col-media { width: 7rem; }
 .table-shell .record-button { min-width: 0; grid-template-columns: 34px minmax(0, 1fr); min-height: 44px; }
 .table-shell .media-label { max-width: 100%; white-space: normal; }
 .inventory-amount { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -684,6 +687,7 @@ tbody tr.record-ghost:hover td, tbody tr.record-ghost.selected td { background: 
 
 @container inventory-table (max-width: 680px) {
   .table-shell table, .table-shell tbody { display: block; }
+  .table-shell colgroup { display: none; }
   .table-shell thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .table-shell tr { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .85fr) minmax(0, 1.2fr) minmax(0, .85fr); border-bottom: 1px solid var(--line); }
   .table-shell td { width: auto; height: auto; border: 0; padding: 6px 10px 10px; }

@@ -299,7 +299,7 @@
       };
     }
     if (section === "referrals.current.prospects" && descriptor.parserOptions?.sharedProspects === true) {
-      const warning = "RSI exposes one shared prospects dataset. CitizenData collected it once and retained it in both ladder views.";
+      const warning = "RSI exposes one shared prospects dataset. Star Citizen Data Downloader collected it once and retained it in both ladder views.";
       const sharedMetadata = { ...metadata, warnings: [...(metadata.warnings ?? []), warning] };
       const current = await parseArrayResilient(parsers.parseReferrals, raw, context, sharedMetadata, { ladder: "current", kind: "prospects" }, "referrals.current.prospects");
       const legacy = await parseArrayResilient(parsers.parseReferrals, raw, context, sharedMetadata, { ladder: "legacy", kind: "prospects" }, "referrals.legacy.prospects");
@@ -383,7 +383,7 @@
       ));
       if (collectorAnomalies.length > ANOMALIES_PER_PAGE || (state?.anomalies?.length ?? 0) + collectorAnomalies.length > ANOMALIES_PER_SECTION) {
         await closeCollectorTab();
-        return { ok: false, code: "ANOMALY_LIMIT_EXCEEDED", message: `${descriptor.id} held more unexpected source records than CitizenData keeps.`, requestActivities: pageResult.requestActivities ?? [] };
+        return { ok: false, code: "ANOMALY_LIMIT_EXCEEDED", message: `${descriptor.id} held more unexpected source records than Star Citizen Data Downloader keeps.`, requestActivities: pageResult.requestActivities ?? [] };
       }
 
       const observedAccountId = descriptor.id === "profile" ? pageResult.accountId : input.accountId;
@@ -439,7 +439,7 @@
       const anomalies = markRetainedReferralRows(mergeAnomalies(state?.anomalies, parsed.anomalies, collectorAnomalies), parsed.parserResults);
       if (anomalies.length > ANOMALIES_PER_SECTION) {
         await closeCollectorTab();
-        return { ok: false, code: "ANOMALY_LIMIT_EXCEEDED", message: `${descriptor.id} held more unexpected source records than CitizenData keeps.`, requestActivities: pageResult.requestActivities ?? [] };
+        return { ok: false, code: "ANOMALY_LIMIT_EXCEEDED", message: `${descriptor.id} held more unexpected source records than Star Citizen Data Downloader keeps.`, requestActivities: pageResult.requestActivities ?? [] };
       }
       rsiApi.clearTransientCaches(sectionEndRetain(input));
       return {

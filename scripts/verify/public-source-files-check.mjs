@@ -3,6 +3,7 @@ import path from "node:path";
 import { fail, repositoryRoot } from "./repository-root-and-failure.mjs";
 
 const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".svg", ".txt", ".yaml", ".yml"]);
+const skippedFolder = /^(?:node_modules|work-temp-.*)$/u;
 const forbiddenPrivateMarkers = [
   ["109", "5494"].join(""),
   ["$49,", "022.91"].join(""),
@@ -18,7 +19,7 @@ const allowedMarkerUses = {
 async function walk(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if ([".git", "dist", "node_modules"].includes(entry.name)) continue;
+    if ([".git", "dist"].includes(entry.name) || skippedFolder.test(entry.name)) continue;
     const absolute = path.join(directory, entry.name);
     const stat = await lstat(absolute);
     if (stat.isSymbolicLink()) fail(`Symbolic links are not accepted in release source: ${absolute}`);

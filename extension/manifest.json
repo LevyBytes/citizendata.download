@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "CitizenData",
-  "short_name": "CitizenData",
+  "name": "Citizen Data Downloader",
+  "short_name": "Star Citizen Data Downloader",
   "version": "0.42.1",
   "version_name": "0.42.1",
-  "description": "Build and review a local Star Citizen account data backup with explicit user control.",
+  "description": "Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. No upload, no tracking.",
   "minimum_chrome_version": "120",
   "homepage_url": "https://citizendata.download/",
   "incognito": "not_allowed",
@@ -15,7 +15,7 @@
     "128": "icons/citizendata-128.png"
   },
   "action": {
-    "default_title": "CitizenData",
+    "default_title": "Star Citizen Data Downloader",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/citizendata-16.png",

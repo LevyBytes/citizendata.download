@@ -26,6 +26,10 @@ export async function checkHangarLinkRoundTripCreditCostAndRefusal() {
   })()`);
   await waitFor("document.querySelector('#messageDialog').open");
   const refused = await evaluate("({detail:document.querySelector('#messageDialog p').textContent, exported:document.querySelector('#railExported').textContent})");
-  assert(refused.detail.includes('This Hangar Link file is version 2. CitizenData reads version 1.') && refused.exported === 'hangarlink-example.json', `A newer Hangar Link file was not refused with its reason: ${JSON.stringify(refused)}`);
+  assert(
+    refused.detail.includes('This Hangar Link file is version 2. Star Citizen Data Downloader reads version 1.')
+      && refused.exported === 'hangarlink-example.json',
+    `A newer Hangar Link file was not refused with its reason: ${JSON.stringify(refused)}`
+  );
   await evaluate("document.querySelector('#messageDialog').close()");
 }

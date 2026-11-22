@@ -271,15 +271,15 @@
 
     if (context.protocolMismatch === true) {
       const version = typeof context.extensionVersion === "string" ? context.extensionVersion.slice(0, 32) : "unknown";
-      return make(1, { jobKind: null, badge: "UPDATE REQUIRED", operation: "Extension and dashboard do not match", summary: `CitizenData extension ${version} uses a different connection version than this page. Update the extension, then reload this page.`, tone: "warning" });
+      return make(1, { jobKind: null, badge: "UPDATE REQUIRED", operation: "Extension and dashboard do not match", summary: `Star Citizen Data Downloader extension ${version} uses a different connection version than this page. Update the extension, then reload this page.`, tone: "warning" });
     }
     if (media?.phase === "running") return make(2, { jobKind: "media", badge: "DOWNLOADING", operation: media.operation ?? "Downloading offline images", summary: media.detail ?? "", tone: "active", active: true });
     if (media?.phase === "ready") return make(3, { jobKind: "media", badge: "READY TO SAVE", operation: media.operation ?? "Offline image ZIP ready", summary: media.detail ?? "", tone: "warning" });
     if (media && ["completed", "cancelled", "failed", "idle"].includes(media.phase)) {
       return make(4, { jobKind: "media", badge: media.badge ?? "COMPLETED", operation: media.operation ?? "Offline images", summary: sentences(media.detail ?? "", media.stoppedWithRemaining === true ? TEXTS.imagesLeft : ""), tone: media.tone ?? "quiet", terminal: media.phase !== "idle" });
     }
-    if (context.connecting === true) return make(5, { badge: "CONNECTING", operation: roster ? "Preparing Organization Data" : "Verifying your signed in RSI account", summary: roster ? "CitizenData is preparing the selected organization roster job." : "CitizenData is establishing the read only backup run.", tone: "warning", active: true });
-    if (context.bridgeConnected !== true) return make(6, { jobKind: null, badge: "DISCONNECTED", operation: "Extension connection unavailable", summary: "The dashboard cannot currently communicate with CitizenData." });
+    if (context.connecting === true) return make(5, { badge: "CONNECTING", operation: roster ? "Preparing Organization Data" : "Verifying your signed in RSI account", summary: roster ? "Star Citizen Data Downloader is preparing the selected organization roster job." : "Star Citizen Data Downloader is establishing the read only backup run.", tone: "warning", active: true });
+    if (context.bridgeConnected !== true) return make(6, { jobKind: null, badge: "DISCONNECTED", operation: "Extension connection unavailable", summary: "The dashboard cannot currently communicate with Star Citizen Data Downloader." });
     if (status?.requiresRebind === true) return make(8, { badge: "RECONNECT REQUIRED", operation: section.operation, summary: "The durable run is paused until this dashboard session is explicitly reconnected.", tone: "warning", active: true, controls: { ...NO_CONTROLS, rebind: true } });
 
     const jobStatus = job?.status ?? null;
@@ -328,7 +328,7 @@
       return make(22, { badge: "FAILED", operation: roster ? "Organization Data stopped" : `Backup stopped in ${section.label}`, summary: message, tone: "failure", terminal: true });
     }
     if (jobStatus === "cancelled") return make(22, { badge: "CANCELLED", operation: roster ? "Organization Data cancelled" : "Account backup cancelled", summary: roster ? "The Organization Data job was cancelled." : "The account collection was cancelled.", terminal: true });
-    return make(23, { jobKind: null, badge: "CONNECTED", operation: "Ready to build your backup", summary: "CitizenData is connected and no account collection is active.", tone: "active" });
+    return make(23, { jobKind: null, badge: "CONNECTED", operation: "Ready to build your backup", summary: "Star Citizen Data Downloader is connected and no account collection is active.", tone: "active" });
   }
 
   // The earlier name, for the callers that ask for the account and roster presentation.

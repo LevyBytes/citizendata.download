@@ -79,7 +79,7 @@
     post(Protocol.EVENT_TYPES.RESPONSE, requestId, {
       ok: false,
       code: "EXTENSION_UNAVAILABLE",
-      message: "The CitizenData extension is unavailable or was reloaded."
+      message: "The Star Citizen Data Downloader extension is unavailable or was reloaded."
     });
     if (!activeRuntime()) stopInvalidatedBridge();
   }

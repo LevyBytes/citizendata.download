@@ -10,8 +10,8 @@
   const PROTOCOL_VERSION = 2;
   // Stamped into the documents this page itself assembles. Extension compatibility is decided by PROTOCOL_VERSION.
   const DASHBOARD_VERSION = "0.42.1";
-  // Placeholder until the Chrome Web Store listing exists; replace with the listing URL.
-  const EXTENSION_STORE_URL = "https://chromewebstore.google.com/";
+  // Temporary developer-mode source while Chrome Web Store approval is pending; replace with the listing URL.
+  const EXTENSION_INSTALL_URL = "https://github.com/LevyBytes/citizendata.download/tree/main/extension";
   const HERO_NAMES = Object.freeze(["radar", "holo-render", "staff-pick", "customize"]);
   const state = {
     document: globalThis.CITIZENDATA_DEMO_DATA,
@@ -913,15 +913,24 @@
     return String(left).localeCompare(String(right), "en", { numeric: true, sensitivity: "base" });
   }
 
-  function compareInventoryRecords(left, right) {
+  function compareInventoryRecordsFor(left, right, key, direction) {
     if (isRemoved(left) !== isRemoved(right)) return isRemoved(left) ? -1 : 1;
-    const key = state.inventorySortKey;
     if (!key) return 0;
     const leftValue = inventorySortValue(left, key);
     const rightValue = inventorySortValue(right, key);
     const comparison = compareInventoryValues(leftValue, rightValue, key);
     if (!comparison || leftValue === null || rightValue === null) return comparison;
-    return state.inventorySortDirection === "descending" ? -comparison : comparison;
+    return direction === "descending" ? -comparison : comparison;
+  }
+
+  function compareInventoryRecords(left, right) {
+    return compareInventoryRecordsFor(left, right, state.inventorySortKey, state.inventorySortDirection);
+  }
+
+  function initialInventorySortDirection(key) {
+    const current = visibleInventory();
+    const ascending = [...current].sort((left, right) => compareInventoryRecordsFor(left, right, key, "ascending"));
+    return current.every((record, index) => record === ascending[index]) ? "descending" : "ascending";
   }
 
   function updateInventorySortHeaders() {
@@ -930,10 +939,9 @@
       const direction = active ? state.inventorySortDirection : "none";
       button.closest("th").setAttribute("aria-sort", direction);
       button.classList.toggle("active", active);
-      button.classList.toggle("descending", active && direction === "descending");
+      button.classList.toggle("ascending", active && direction === "ascending");
       const label = button.querySelector("span").textContent;
-      const next = active && direction === "ascending" ? "descending" : "ascending";
-      button.setAttribute("aria-label", `Sort by ${label}, ${next}`);
+      button.setAttribute("aria-label", active ? `Sort by ${label}, ${direction === "ascending" ? "descending" : "ascending"}` : `Sort by ${label}`);
     }
   }
 
@@ -1633,8 +1641,8 @@
 
   function updateOrganizationActionAvailability() {
     const notice = activeOperationNotice()
-      || (state.extensionUpdateRequired ? "Update the CitizenData extension, then reload this page, before starting Organization Data." : "")
-      || (!state.bridge ? "Connect the CitizenData extension before starting Organization Data." : "");
+      || (state.extensionUpdateRequired ? "Update the Star Citizen Data Downloader extension, then reload this page, before starting Organization Data." : "")
+      || (!state.bridge ? "Connect the Star Citizen Data Downloader extension before starting Organization Data." : "");
     const hasMemberships = Model.asArray(state.document.organizations?.memberships).length > 0;
     refs.buildOrgButton.disabled = !hasMemberships || state.source === "demo" || !state.bridge || state.extensionUpdateRequired;
     refs.orgBuildAvailability.textContent = notice;
@@ -1652,25 +1660,25 @@
     // An installed extension that only awaits approval needs no store link.
     refs.installExtensionAction.hidden = !needsExtension || (state.localApprovalRequired && !state.extensionUpdateRequired);
     if (!needsExtension) return;
-    refs.installExtensionAction.href = EXTENSION_STORE_URL;
+    refs.installExtensionAction.href = EXTENSION_INSTALL_URL;
     if (state.extensionUpdateRequired) {
-      text("extensionNoticeTitle", "CitizenData extension needs an update");
+      text("extensionNoticeTitle", "Star Citizen Data Downloader extension needs an update");
       text("extensionNoticeDetail", "The installed extension and this page use different connection versions. Update the extension, then reload this page.");
-      text("installExtensionTitle", "Update the CitizenData extension");
-      text("installExtensionDetail", "Opens the Chrome Web Store in a new tab. Reload this page after updating.");
+      text("installExtensionTitle", "Update the Star Citizen Data Downloader extension.");
+      text("installExtensionDetail", "Google Chrome Extension Marketplace approval pending, submitted 11/22/2026. Use the GitHub-hosted extension in developer mode for now.");
       return;
     }
     if (state.localApprovalRequired) {
       text("extensionNoticeTitle", "Allow this local copy");
-      text("extensionNoticeDetail", "The CitizenData extension is installed and is waiting for your approval. Click the CitizenData icon in the Chrome toolbar, then choose Allow this local dashboard.");
+      text("extensionNoticeDetail", "The Star Citizen Data Downloader extension is installed and is waiting for your approval. Click the Star Citizen Data Downloader icon in the Chrome toolbar, then choose Allow this local dashboard.");
       return;
     }
-    text("extensionNoticeTitle", "CitizenData extension not detected");
+    text("extensionNoticeTitle", "Star Citizen Data Downloader extension not detected");
     text("extensionNoticeDetail", localCopy
-      ? "This page cannot read an RSI account on its own. For a downloaded copy: install the extension and turn on \u201cAllow access to file URLs\u201d in its Chrome details page. Once the extension is on, reload this page, then approve this copy from the CitizenData toolbar icon."
+      ? "This page cannot read an RSI account on its own. For a downloaded copy: install the extension and turn on \u201cAllow access to file URLs\u201d in its Chrome details page. Once the extension is on, reload this page, then approve this copy from the Star Citizen Data Downloader toolbar icon."
       : "This page cannot read an RSI account on its own. The extension does that in your browser. Install the extension. Once the extension is on, reload this page.");
-    text("installExtensionTitle", "Get the CitizenData extension");
-    text("installExtensionDetail", "Opens the Chrome Web Store in a new tab. Reload this page after installing.");
+    text("installExtensionTitle", "Get the Star Citizen Data Downloader extension.");
+    text("installExtensionDetail", "Google Chrome Extension Marketplace approval pending, submitted 11/22/2026. Use the GitHub-hosted extension in developer mode for now.");
   }
 
   function refreshBuildChoices() {
@@ -1679,7 +1687,7 @@
     const mediaReady = Boolean(state.pendingMediaPackage || state.loadedMediaPackage);
     refreshExtensionNotice(accountActive);
     text("buildAccountActionTitle", accountActive ? "View account backup" : state.source === "demo" ? "Build account backup" : "Update account backup");
-    text("buildAccountActionDetail", accountActive ? "Return to the active account collection status." : state.bridge ? "Read your RSI account and update the open document." : "Connect the CitizenData extension to build account data.");
+    text("buildAccountActionDetail", accountActive ? "Return to the active account collection status." : state.bridge ? "Read your RSI account and update the open document." : "Connect the Star Citizen Data Downloader extension to build account data.");
     refs.buildAccountAction.disabled = mediaActive || (!accountActive && (!state.bridge || state.extensionUpdateRequired));
     text("buildImagesActionTitle", mediaActive ? "View image download" : state.pendingMediaPackage ? "Review offline image ZIP" : state.loadedMediaPackage ? "Update offline images" : "Download offline images");
     text("buildImagesActionDetail", mediaActive ? "Return to image progress and controls." : state.pendingMediaPackage ? "Return to the completed image package or save it again." : state.loadedMediaPackage ? `${state.loadedMediaFileName ?? "The loaded Images ZIP"} is open. Download only the current image delta.` : state.mediaPlan.length ? `Download ${formatInteger(state.mediaPlan.length)} unique images from the open account document.` : "Load an account document and wait for its image plan.");
@@ -1693,10 +1701,10 @@
     const dataOffered = !refs.buildAccountAction.hidden && !refs.buildAccountAction.disabled;
     const imagesOffered = !refs.buildImagesAction.disabled;
     const dataNeeds = state.extensionUpdateRequired
-      ? "Data needs an update of the CitizenData extension."
+      ? "Data needs an update of the Star Citizen Data Downloader extension."
       : state.localApprovalRequired
-        ? "Data needs your approval of this copy in the CitizenData extension."
-        : "Data needs the CitizenData extension.";
+        ? "Data needs your approval of this copy in the Star Citizen Data Downloader extension."
+        : "Data needs the Star Citizen Data Downloader extension.";
     const imagesNeed = state.source === "demo" ? "Images need an open account document." : "Images are not ready for this document yet.";
     if (dataOffered && imagesOffered) setBridgeStatus("READY", "Choose what to build", "Nothing starts until you choose Data or Images.", "active", false);
     else if (dataOffered) setBridgeStatus("READY", "Choose what to build", `Nothing starts until you choose Data. ${imagesNeed}`, "active", false);
@@ -2744,7 +2752,7 @@
       state.view.pollSequence += 1;
       const pollSequence = state.view.pollSequence;
       const response = await requestBridge("GET_STATUS", null);
-      if (!response.ok || !response.status) throw new Error(response.message ?? response.code ?? "CitizenData status is unavailable.");
+      if (!response.ok || !response.status) throw new Error(response.message ?? response.code ?? "Star Citizen Data Downloader status is unavailable.");
       await applyDashboardPayload({ status: response.status }, { pollSequence });
     } catch {
       markBridgeDisconnected();
@@ -2753,8 +2761,8 @@
   }
 
   function requestBridge(type, payload) {
-    if (state.extensionUpdateRequired) return Promise.reject(new Error("Update the CitizenData extension, then reload this page."));
-    if (!state.bridge) return Promise.reject(new Error("The CitizenData extension bridge is not connected."));
+    if (state.extensionUpdateRequired) return Promise.reject(new Error("Update the Star Citizen Data Downloader extension, then reload this page."));
+    if (!state.bridge) return Promise.reject(new Error("The Star Citizen Data Downloader extension bridge is not connected."));
     const requestId = crypto.randomUUID();
     const envelope = { channel: BRIDGE_CHANNEL, protocolVersion: PROTOCOL_VERSION, type, requestId, bridgeSessionId: state.bridge.bridgeSessionId, nonce: state.bridge.nonce, payload };
     return new Promise((resolve, reject) => {
@@ -2783,13 +2791,13 @@
     refs.buildChoices.hidden = true;
     refs.collectionControls.hidden = true;
     refs.collectionActivity.hidden = true;
-    setBridgeStatus("UPDATE REQUIRED", "Extension and dashboard do not match", `CitizenData extension ${extensionVersion} uses a different connection version than this page. Update the extension, then reload this page.`, "warning", false);
+    setBridgeStatus("UPDATE REQUIRED", "Extension and dashboard do not match", `Star Citizen Data Downloader extension ${extensionVersion} uses a different connection version than this page. Update the extension, then reload this page.`, "warning", false);
     setOverlayMinimized(false);
     updateBuildAction();
     updateOrganizationActionAvailability();
     if (!state.extensionUpdateNotified) {
       state.extensionUpdateNotified = true;
-      showDialog("EXTENSION STATUS", "CitizenData update required", `The installed CitizenData extension (${extensionVersion}) and this dashboard use different connection versions. Update the extension, then reload this page. If the extension is already current, reloading this page loads the current dashboard.`);
+      showDialog("EXTENSION STATUS", "Star Citizen Data Downloader update required", `The installed Star Citizen Data Downloader extension (${extensionVersion}) and this dashboard use different connection versions. Update the extension, then reload this page. If the extension is already current, reloading this page loads the current dashboard.`);
     }
   }
 
@@ -3235,8 +3243,8 @@
       const key = button.dataset.inventorySort;
       if (state.inventorySortKey === key) state.inventorySortDirection = state.inventorySortDirection === "ascending" ? "descending" : "ascending";
       else {
+        state.inventorySortDirection = initialInventorySortDirection(key);
         state.inventorySortKey = key;
-        state.inventorySortDirection = "ascending";
       }
       state.inventoryPage = 1;
       state.activeRecordKey = null;

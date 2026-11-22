@@ -31,7 +31,7 @@ test("the opened file is a valid account document that says it is an incomplete 
   assert.equal(Object.values(statuses).includes("complete"), false);
   assert.deepEqual(
     document.sync.sectionOutcomes.pledges,
-    { status: "partial", parserVersion: "hangar-link-import-1", startedAt: IMPORTED_AT, endedAt: IMPORTED_AT, records: 1, pagesOrBatches: 0, warnings: ["Imported from a Hangar Link file. CitizenData did not read this list from RSI."] }
+    { status: "partial", parserVersion: "hangar-link-import-1", startedAt: IMPORTED_AT, endedAt: IMPORTED_AT, records: 1, pagesOrBatches: 0, warnings: ["Imported from a Hangar Link file. Star Citizen Data Downloader did not read this list from RSI."] }
   );
   assert.deepEqual(document.sync.sectionOutcomes.hangarLog, { status: "notRun", parserVersion: null, startedAt: null, endedAt: null, records: 0, pagesOrBatches: 0, warnings: [] });
   assert.deepEqual(document.hangarLog, []);

@@ -20,7 +20,7 @@ export async function popupClearAllData() {
   assert.deepEqual(await extensionPage.evaluate("({ pressed: document.getElementById('clearAllData').getAttribute('aria-pressed'), label: document.getElementById('clearAllData').textContent })"), { pressed: "true", label: "Confirm clear all local data" });
   assert.deepEqual(await kept(), before, "One click must not clear anything.");
   await click(extensionPage, "clearAllData");
-  await extensionPage.waitFor("document.getElementById('notice').textContent === 'All local CitizenData extension data was cleared.'", 8000, "the popup to confirm the clear");
+  await extensionPage.waitFor("document.getElementById('notice').textContent === 'All local Star Citizen Data Downloader extension data was cleared.'", 8000, "the popup to confirm the clear");
   assert.deepEqual(await kept(), { keys: [], snapshots: 0, jobs: 0, keptBuilds: 0 }, "Clearing must remove saved backups, kept builds, jobs, state, the history setting, and local dashboard approvals.");
   assert.equal(await extensionPage.evaluate("document.getElementById('clearAllData').getAttribute('aria-pressed')"), "false");
   return before;

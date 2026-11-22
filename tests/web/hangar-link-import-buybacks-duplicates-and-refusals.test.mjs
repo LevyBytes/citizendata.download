@@ -53,7 +53,7 @@ test("a record the file holds twice is read once, and an unreadable record is le
 });
 
 test("a file CitizenData cannot open as one account is refused with the reason", () => {
-  assert.throws(() => Import.toAccountDocument({ type: "hangarlink", version: 2, pledges: [record()] }, OPTIONS), /version 2\. CitizenData reads version 1/u);
+  assert.throws(() => Import.toAccountDocument({ type: "hangarlink", version: 2, pledges: [record()] }, OPTIONS), /version 2\. Star Citizen Data Downloader reads version 1/u);
   assert.throws(() => Import.toAccountDocument({ type: "hangarlink", pledges: [record()] }, OPTIONS), /version unknown/u);
   assert.throws(() => opened(record(), boughtBack({ hangar: "SomeoneElse" })), /more than one RSI account/u);
   assert.throws(() => opened(), /holds no records/u);

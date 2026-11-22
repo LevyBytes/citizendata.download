@@ -27,7 +27,8 @@ assert(await evaluate("!document.querySelector('#overview').innerText.includes('
 await waitFor("(()=>{const image=document.querySelector('.snapshot-state .state-emblem');return image.complete&&image.naturalWidth>0})()");
 assert(await evaluate("document.querySelector('#accountHandle').textContent==='DownloadCitizen' && document.querySelector('#railAccount').textContent==='DownloadCitizen' && document.querySelector('#railExported').textContent==='example.json' && "
   + "!document.querySelector('#railSchema') && !/schema/i.test(document.querySelector('.rail-evidence').innerText)"), "Example name, filename, or simplified loaded-document sidebar is incorrect.");
-assert(await evaluate("(()=>{const section=document.querySelector('#offlineImages'),loaded=document.querySelector('#mediaZipLoadedState');return section?.textContent.includes('CitizenData reads the public image links stored in the open document')"
+assert(await evaluate("(()=>{const section=document.querySelector('#offlineImages'),loaded=document.querySelector('#mediaZipLoadedState');return "
+  + "section?.textContent.includes('Star Citizen Data Downloader reads the public image links stored in the open document')"
   + "&&section.textContent.includes('Use Build in the header to start or return to an image download')&&loaded?.textContent==='Images Zip Loaded'&&!loaded.hidden&&document.querySelector('#loadMediaZipButton')?.textContent==='Load Images ZIP'})()"), "The"
   + " requested dashboard image workflow guidance or the example account's loaded ZIP state is missing.");
 assert(await evaluate("(()=>{const badge=document.querySelector('#mediaZipLoadedState'),button=document.querySelector('#loadMediaZipButton'),actions=badge.parentElement,badgeRect=badge.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),"

@@ -733,7 +733,7 @@
       const title = badge?.title ?? null;
       if (!(id === null || Number.isSafeInteger(id)) || !(title === null || typeof title === "string" && title.length > 0)
         || (id === null) !== (title === null)) {
-        anomalyRows.push({ recordIndex: sourceIndex + 1, pageOrBatch: 1, keySuffix: `badge.${sourceIndex}`, issueCode: "RSI_AUTHENTICATED_BADGE_ROW_CONTRACT_CHANGED", message: `Unlocked badge row ${sourceIndex + 1} did not have the shape CitizenData reads and was retained for review.`, raw: badge === undefined ? null : badge, retainedInNormalizedData: false });
+        anomalyRows.push({ recordIndex: sourceIndex + 1, pageOrBatch: 1, keySuffix: `badge.${sourceIndex}`, issueCode: "RSI_AUTHENTICATED_BADGE_ROW_CONTRACT_CHANGED", message: `Unlocked badge row ${sourceIndex + 1} did not have the shape Star Citizen Data Downloader reads and was retained for review.`, raw: badge === undefined ? null : badge, retainedInNormalizedData: false });
         return [];
       }
       return [{ sourceIndex, id, title, images: title === null ? [] : [...(imagesByTitle.get(title) ?? [])] }];

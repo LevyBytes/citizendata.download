@@ -12,7 +12,8 @@ import { captureScreenshots } from "./run-options-and-work-folders.mjs";
 await evaluate("document.querySelector('#buildButton').click()");
 await waitFor("!document.querySelector('#parserOverlay').hidden && !document.querySelector('#buildChoices').hidden");
 assert(await evaluate("document.querySelector('#buildAccountAction').disabled && document.querySelector('#buildImagesAction').disabled && document.querySelector('#overlayState').textContent==='Before you can build' && "
-  + "document.querySelector('#overlayDetail').textContent==='Data needs the CitizenData extension. Images need an open account document.'"), "Disconnected Build Status choices did not prevent automatic work or say what each choice needs.");
+  + "document.querySelector('#overlayDetail').textContent==='Data needs the Star Citizen Data Downloader extension. "
+  + "Images need an open account document.'"), "Disconnected Build Status choices did not prevent automatic work or say what each choice needs.");
 for (const [width,height] of [[1780,1000],[1000,1000],[390,844]]) {
   await setViewport(width,height);
   await checkFloatingGeometry('#parserOverlay', `disconnected Build Status choices at ${width}px`);

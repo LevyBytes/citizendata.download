@@ -184,7 +184,7 @@
       organizationRosterCollection: collectionEnabled && registry.organizationRosterCollection === true,
       offlineMediaPackage: registry.offlineMediaPackage === true,
       reason: collectionEnabled
-        ? "Account collection is ready from the CitizenData dashboard."
+        ? "Account collection is ready from the Star Citizen Data Downloader dashboard."
         : (registry.reason ?? "No account collection adapters are available in this build.")
     });
   }

@@ -24,7 +24,7 @@ export async function revokeLocalApproval() {
   await startBuild(dashboard);
   await dashboard.waitFor("document.getElementById('messageDialog').open", 15000, "the refused build to be reported");
   const refusal = await dashboard.evaluate("({ title: document.getElementById('dialogTitle').textContent, message: document.getElementById('dialogMessage').textContent })");
-  assertStep(/approved CitizenData location/u.test(refusal.message), `A revoked local copy was not refused: ${JSON.stringify(refusal)}`);
+  assertStep(/approved Star Citizen Data Downloader location/u.test(refusal.message), `A revoked local copy was not refused: ${JSON.stringify(refusal)}`);
   assert.equal(rsi.requests.length, before, "A revoked local copy caused an RSI request.");
   await dashboard.close();
   setDashboard(await openDashboard());

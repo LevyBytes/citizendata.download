@@ -66,11 +66,11 @@ export async function checkBuildChooserWording() {
 
   // No extension, the example: nothing can be chosen.
   await reloadDashboard();
-  same(await wording(), { badge: "READY", title: "Before you can build", line: "Data needs the CitizenData extension. Images need an open account document.", data: false, images: false }, "No extension and the example");
+  same(await wording(), { badge: "READY", title: "Before you can build", line: "Data needs the Star Citizen Data Downloader extension. Images need an open account document.", data: false, images: false }, "No extension and the example");
   // No extension, an account file with images: only the images.
   await loadFixture('chooser-wording-fixture.json', "documentCopy.account.handle='ChooserCitizen';documentCopy.profile.handle='ChooserCitizen';");
   await waitFor("/^[0-9]+ unique images$/u.test(document.getElementById('mediaSummary').textContent)");
-  same(await wording(), { badge: "READY", title: "Choose what to build", line: "Nothing starts until you choose Images. Data needs the CitizenData extension.", data: false, images: true }, "No extension and an account file");
+  same(await wording(), { badge: "READY", title: "Choose what to build", line: "Nothing starts until you choose Images. Data needs the Star Citizen Data Downloader extension.", data: false, images: true }, "No extension and an account file");
   // The extension and an account file: both, in the wording as it was.
   await connect();
   await waitFor("!document.getElementById('buildButton').classList.contains('bridge-gated')");

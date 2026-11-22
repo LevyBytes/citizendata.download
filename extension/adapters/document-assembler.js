@@ -187,7 +187,7 @@
   }
 
   // W-14, the warning of a section set aside (§10.3). The technical code stays in the contract findings.
-  const SET_ASIDE_WARNING = "Not read because CitizenData could not recognize RSI's page.";
+  const SET_ASIDE_WARNING = "Not read because Star Citizen Data Downloader could not recognize RSI's page.";
 
   // The sections the run set aside (§10.3): each result section's outcome is "failed" with W-14. Its values stay as
   // they are: the saved backup's in an update, the empty skeleton in a first build.
