@@ -38,7 +38,7 @@
           "url": "https://citizendata.download/privacy-policy.html",
           "name": "Star Citizen Data Downloader Privacy Policy",
           "inLanguage": "en",
-          "dateModified": "2026-11-19",
+          "dateModified": "2026-11-21",
           "isPartOf": {
             "@id": "https://citizendata.download/#website"
           },
@@ -74,11 +74,11 @@
 </head>
 <body>
   <div class="legal-shell">
-    <header class="legal-header"><a class="legal-brand" href="index.html"><img src="assets/citizendata.svg" alt="" width="40" height="40">CitizenData</a><a href="index.html">Back to dashboard</a></header>
+    <header class="legal-header"><a class="legal-brand" href="index.html"><img src="assets/citizendata.svg" alt="" width="40" height="40">Star Citizen Data Downloader</a><a href="index.html">Back to dashboard</a></header>
     <main id="mainContent">
       <h1>Privacy Policy</h1>
-      <p class="legal-date">Effective November 19, 2026</p>
-      <p class="legal-intro">CitizenData, developed by LevyBytes, lets you review and save account records locally. There is no server that receives your data: account files and backups are processed on your device and are not uploaded to the developer or to anyone else.</p>
+      <p class="legal-date">Effective November 21, 2026</p>
+      <p class="legal-intro">Star Citizen Data Downloader, developed by LevyBytes, lets you review and save account records locally. There is no server that receives your data: account files and backups are processed on your device and are not uploaded to the developer or to anyone else.</p>
 
       <h2>Account data and local processing</h2>
       <p>A file you choose may contain your player identity, pledges, buybacks, account balances, billing and subscription records, Hangar Log entries, referrals, organization memberships, and related image URLs. The dashboard reads that file in browser memory to display it and create exports you request. It has no account-data upload service or hosted account database.</p>
@@ -86,8 +86,9 @@
 
       <h2>Browser extension and permissions</h2>
       <p>The extension reads your account, and optionally the member rosters of organizations you choose, only when you start a build from the dashboard. It makes read only requests to a fixed list of RSI pages while you are signed in to RSI in the same browser: your dossier, balances, billing and subscription history, Hangar Log, current Hangar, buy-back list, the page of each buy-back for its price and contents, referrals, and organization memberships. The image workflow runs in the dashboard from the image links already present in the loaded account file and does not require an RSI sign in.</p>
-      <p>The extension asks Chrome for five permissions: storage and alarms to keep and continue a build, unlimited storage so that Chrome does not clear what the extension keeps when the disk runs low, an offscreen page to read the pages it fetched, and cookies. It uses the cookies permission for one purpose: RSI's own account requests need RSI's session token, and the extension reads that token from the browser for each request that needs it and sends it only to RSI. The token is read transiently, never stored: it is not written into the account JSON, dashboard messages, logs, or extension storage. CitizenData does not collect passwords or MFA values and does not provide account purchase, reclaim, gift, buyback, or upgrade actions. Account login remains with RSI.</p>
+      <p>The extension asks Chrome for five permissions: storage and alarms to keep and continue a build, unlimited storage so that Chrome does not clear what the extension keeps when the disk runs low, an offscreen page to read the pages it fetched, and cookies. It uses the cookies permission for one purpose: RSI's own account requests need RSI's session token, and the extension reads that token from the browser for each request that needs it and sends it only to RSI. The token is read transiently, never stored: it is not written into the account JSON, dashboard messages, logs, or extension storage. Star Citizen Data Downloader does not collect passwords or MFA values and does not provide account purchase, reclaim, gift, buyback, or upgrade actions. Account login remains with RSI.</p>
       <p>When RSI refuses or is slow to answer the account requests of a build, the extension may also read RSI's public status page at status.robertsspaceindustries.com, if you allowed it together with RSI access. That request carries no cookies and no account data; like any request, it gives RSI your IP address and ordinary request details. The extension keeps the status page's answer and the time it checked in its own storage, as diagnostic history of the build.</p>
+      <p>The use of information that the Star Citizen Data Downloader extension receives complies with the Chrome Web Store User Data Policy, including the Limited Use requirements.</p>
 
       <h2>Storage, retention, and deletion</h2>
       <p>The dashboard keeps the loaded account model in memory. Closing or reloading the page discards that model; it does not delete the original file. While Build history is on in the extension, the dashboard asks the extension for your latest finished build when it loads and opens it in place of the example; with Build history off it is given nothing until you build. While Build history is on, a complete account file you open with Load JSON is also handed to the extension, which keeps it as the latest build of that account when it holds none, or an older one; an Orgs JSON you open afterwards adds its rosters to that build. Neither goes anywhere else. A small browser session-storage value chooses the decorative hero artwork and contains no account records. Every finished build is saved to your device as a file; that file is yours to keep, move, or delete.</p>
@@ -95,23 +96,23 @@
       <p>Clear all local extension data in the extension popup removes everything the extension keeps, including kept builds. Removing the extension removes its storage as well, and Chrome can clear it if the device runs very low on disk space. Clear site data to remove the site's browser storage. Files you have downloaded, browser or operating-system backups, and copies you shared must be deleted separately. The developer cannot remotely access, restore, or delete your local files.</p>
 
       <h2>Exports and other people's information</h2>
-      <p>Downloads are created only when you request them. You choose which supported sections to export and whether to share the resulting file with another person or tool. CitizenData does not automatically upload, email, sell, or synchronize those exports.</p>
+      <p>Downloads are created only when you request them. You choose which supported sections to export and whether to share the resulting file with another person or tool. Star Citizen Data Downloader does not automatically upload, email, sell, or synchronize those exports.</p>
       <p>Billing records, referral lists, and organization rosters can contain personal information about you or other people. Protect these files and share only information you are entitled to disclose. Redacted or unavailable identities are not revealed by the tool. A third-party tool that receives a file you share handles it under its own policy.</p>
 
       <h2>Images, links, and website hosting</h2>
       <p>The dashboard uses bundled local example images, local media from a supported image package, and, when Build history is on in the extension, the images the extension keeps from an earlier download. It does not automatically load remote account images just because their URLs appear in a loaded file. When you explicitly start an offline image download, the dashboard contacts only RSI's two image hosts, robertsspaceindustries.com and media.robertsspaceindustries.com, with browser credentials and referrer information omitted. Those hosts can still receive your IP address and ordinary request information. Other hosts, invalid image bytes, and oversized files are rejected, and a cancelled run does not save a partial ZIP.</p>
       <p>Visiting the hosted website sends normal web requests to its hosting providers. The site is served by GitHub Pages through Cloudflare, and both receive your IP address and ordinary request information as any web host does. GitHub states that GitHub Pages logs visitors' IP addresses for security purposes; see <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener noreferrer">GitHub's Privacy Statement</a> and <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">Cloudflare's Privacy Policy</a>. The developer does not add analytics, advertising trackers, tracking cookies, or telemetry to the dashboard or the extension, and has no access to your cookies or your account data. Hosting requests do not include the account file you open locally. A copy of the dashboard opened from your own disk makes no request to the hosted site.</p>
-      <p>Following links to RSI, Spectrum, GitHub, a wiki, or another community service leaves CitizenData and makes a request to that service. Some example links contain the developer's RSI referral code. Those services apply their own privacy practices.</p>
+      <p>Following links to RSI, Spectrum, GitHub, a wiki, or another community service leaves Star Citizen Data Downloader and makes a request to that service. Some example links contain the developer's RSI referral code. Those services apply their own privacy practices.</p>
 
       <h2>Support and privacy requests</h2>
       <p>If you contact the developer, the messages and information you choose to provide are processed through that communication service to respond to you. GitHub issue reports are public. Do not post account backups, billing details, credentials, or personal information there. For a privacy question or request, <a href="https://robertsspaceindustries.com/spectrum/messages/member/DirectorGunner" rel="noopener noreferrer">message the developer on RSI Spectrum</a>; Spectrum's own privacy policy applies to that conversation.</p>
       <p>Depending on the law that applies to you, you may have rights concerning personal information provided in support communications. You can use the contact above to make a request. The developer cannot retrieve account data that remains only on your device. No account data is sold or shared for targeted advertising.</p>
 
       <h2>Children and policy changes</h2>
-      <p>CitizenData is not directed to children and must be used consistently with RSI's eligibility rules. Do not provide children's personal information through support channels. If you believe such information was provided, contact the developer.</p>
+      <p>Star Citizen Data Downloader is not directed to children and must be used consistently with RSI's eligibility rules. Do not provide children's personal information through support channels. If you believe such information was provided, contact the developer.</p>
       <p>Material changes to collection, permissions, storage, or sharing will be reflected in this policy before the changed feature is released, with any notice or consent required by law. The effective date identifies the current version.</p>
     </main>
-    <footer class="legal-footer">CitizenData is an independent community project, not affiliated with or endorsed by Cloud Imperium Games. All related intellectual property and marks remain the property of their respective owners.</footer>
+    <footer class="legal-footer">Star Citizen Data Downloader is an independent community project, not affiliated with or endorsed by Cloud Imperium Games. All related intellectual property and marks remain the property of their respective owners.</footer>
   </div>
 </body>
 </html>
