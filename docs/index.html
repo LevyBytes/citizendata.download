@@ -112,6 +112,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/citizendata.svg">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/notice.css">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Skip to account data</a>
@@ -124,6 +125,12 @@
       <img class="brand-icon" src="assets/citizendata.svg" alt="">
       <span><b>STAR CITIZEN DATA DOWNLOADER</b><small>LOCAL BACKUP TOOL FOR YOUR STAR CITIZEN ACCOUNT DATA</small></span>
     </a>
+    <div class="notice-row">
+      <a class="notice" id="noticeLink" href="https://github.com/LevyBytes/citizendata.download#chrome-warning" target="_blank" rel="noopener noreferrer">
+        <span class="notice-plate"><span class="notice-word" aria-hidden="true">NOTICE</span><span class="notice-text">Why Chrome warns on install (new)</span></span>
+      </a>
+      <button class="notice-close" type="button" id="noticeClose" aria-label="Hide notice"><span aria-hidden="true">×</span></button>
+    </div>
     <div class="topbar-status" role="status" id="documentStatus">
       <span class="status-dot"></span>
       <span><b id="documentStatusTitle">EXAMPLE DATA</b><small id="documentStatusDetail">No private account data · no upload</small></span>
@@ -443,5 +450,6 @@
   <script src="scripts/account-sessions.js"></script>
   <script src="scripts/dashboard.js"></script>
   <script src="scripts/hero-motion.js"></script>
+  <script src="scripts/notice.js"></script>
 </body>
 </html>

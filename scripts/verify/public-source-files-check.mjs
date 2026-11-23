@@ -9,11 +9,13 @@ const forbiddenPrivateMarkers = [
   ["$49,", "022.91"].join(""),
   ["TEST", " Squadron"].join("")
 ];
-// The owner's thanks line on the dashboard names the organization on purpose. That one link is allowed; the name is
-// still refused anywhere else, the example account included.
+// The owner's thanks line on the dashboard and the owner's introduction in the README's Chrome warning notice name the
+// organization on purpose. Those two links are allowed; the name is still refused anywhere else, the example account
+// included.
 const organizationMarker = forbiddenPrivateMarkers[2];
 const allowedMarkerUses = {
-  "docs/index.html": [`aria-label="${organizationMarker} (opens in a new tab)">${organizationMarker}</a>`]
+  "docs/index.html": [`aria-label="${organizationMarker} (opens in a new tab)">${organizationMarker}</a>`],
+  "README.md": [`[${organizationMarker}](https://testsquadron.com/threads/official-test-meme-thread.9550/)`]
 };
 
 async function walk(directory) {

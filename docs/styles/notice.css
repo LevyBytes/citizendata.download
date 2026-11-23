@@ -1,0 +1,28 @@
+/* A temporary header notice that links to the README's Chrome warning notice.
+   A full-width row right after the title and subtitle, above the buttons, at every width. The title,
+   subtitle and buttons keep main.css's own styles. The x in the top right corner hides the row until
+   the page is loaded again (scripts/notice.js). */
+.topbar { flex-wrap: wrap; }
+.brand { min-height: 72px; }
+.notice-row { --band-line: #ff8a5c; --band-fill: rgba(255, 106, 61, .45); --band-glow: rgba(255, 106, 61, .75); --band-text: #ffc6a8; --band-plate: rgba(20, 8, 5, .96); position: relative; flex: 1 0 100%; display: flex; }
+
+/* The notice reuses the parser's caution tape ("the approved B2 warning at the top of Build Status" in
+   main.css): the same colors, border, scan lines, stripe gradient, outlined word, text, and
+   caution-band-bars animation. To keep the row low, the word and the text share one plate on one line.
+   The side padding keeps the plate centered and clear of the x. */
+.notice { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 4px 40px; overflow: hidden; text-decoration: none; border-block: 2px solid var(--band-line); background: repeating-linear-gradient(0deg, rgba(255, 106, 61, .07) 0 1px, transparent 1px 3px), rgba(22, 7, 3, .8); box-shadow: 0 0 10px var(--band-glow), inset 0 0 12px rgba(255, 106, 61, .28); }
+.notice::before { content: ""; position: absolute; z-index: 0; inset: 0; background: linear-gradient(135deg, transparent 0 6%, var(--band-line) 6% 9%, var(--band-fill) 9% 35%, var(--band-line) 35% 38%, transparent 38% 56%, var(--band-line) 56% 59%, var(--band-fill) 59% 85%, var(--band-line) 85% 88%, transparent 88% 100%) 0 0 / 40px 40px; filter: drop-shadow(0 0 3px var(--band-glow)); animation: caution-band-bars 1.4s linear infinite; }
+.notice-plate { position: relative; z-index: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 14px; padding: 3px 14px; background: repeating-linear-gradient(0deg, rgba(255, 106, 61, .07) 0 1px, transparent 1px 3px), var(--band-plate); }
+.notice-word { padding-left: .16em; color: rgba(255, 106, 61, .28); -webkit-text-stroke: 1px var(--band-line); font: 700 22px/1 var(--display-font); letter-spacing: .16em; text-shadow: 0 0 8px var(--band-glow); }
+.notice-text { color: var(--band-text); font: 700 13px/1.35 var(--display-font); letter-spacing: .12em; text-align: center; text-transform: uppercase; text-shadow: 0 0 4px var(--band-glow), 0 0 10px rgba(255, 106, 61, .45); }
+.notice:focus-visible { outline: 2px solid var(--band-text); outline-offset: -4px; }
+
+/* The x: a small plate of the tape's own colors, pinned to the band's top right corner. */
+.notice-close { position: absolute; z-index: 2; top: 6px; right: 8px; width: 24px; height: 24px; display: grid; place-items: center; padding: 0 0 2px; color: var(--band-text); border: 1px solid var(--band-line); background: var(--band-plate); box-shadow: 0 0 6px var(--band-glow); cursor: pointer; font-size: 20px; line-height: 1; text-shadow: 0 0 4px var(--band-glow); }
+.notice-close:hover { color: #fff; border-color: var(--band-text); }
+.notice-close:focus-visible { outline: 2px solid var(--band-text); outline-offset: 2px; }
+
+/* Narrow screens: the word and the text stack on the plate, so the plate can use the full width; the x
+   sits in the corner beside the centered word, above the text line. */
+@media (max-width: 480px) { .notice { padding-inline: 12px; } .notice-plate { flex-direction: column; padding-inline: 8px; } .notice-text { font-size: 12px; letter-spacing: .05em; } }
+@media (forced-colors: active) { .notice::before { display: none; } .notice { border-color: LinkText; } .notice-text { color: LinkText; } }

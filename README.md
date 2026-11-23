@@ -6,6 +6,75 @@
 
 <p align="center"><a href="https://citizendata.download"><strong>Open citizendata.download</strong></a> · <a href="PRIVACY.md">Privacy</a> · <a href="SECURITY.md">Security</a></p>
 
+<a name="chrome-warning"></a>
+
+> [!IMPORTANT]
+> **When Enhanced Safe Browsing is enabled, Chrome will warn: "This extension is not trusted by Enhanced Safe Browsing."**
+>
+> My Chrome Web Store developer account is new. For the first few months after the initial release, this extension will carry that warning until my account matures, no matter how well built or safe the code is. Google's help page says: "For new developers, it generally takes a few months to become trusted." The extension passed Chrome Web Store review and is published there.
+>
+> I apologize for the false impression this warning gives. I made this to help anyone that wants to use it. Every line of the extension is in this repository for you to read before you choose **Continue to install**, and I'll remove this notice once Chrome stops showing the warning.
+>
+> David Levy ([LevyBytes](https://github.com/LevyBytes)), DirectorGunner in Star Citizen
+
+<details>
+<summary><strong>Screenshots of the warning, Google's explanation, and who I am</strong></summary>
+
+<br>
+
+**What the warning looks like**
+
+<p><img src=".github/readme/safe-browsing-install.png" width="620" alt="Chrome's Proceed with caution dialog: This extension is not trusted by Enhanced Safe Browsing. Learn more. Buttons: Continue to install and Close."></p>
+
+When you add the extension from the Chrome Web Store with Enhanced protection on.
+
+<p><img src=".github/readme/safe-browsing-extensions-page.png" width="500" alt="The Citizen Data Downloader card on chrome://extensions, with the line This extension is not trusted by Enhanced Safe Browsing and the ID ehklbfcpnadaeodflibpihhgimmmhjpd."></p>
+
+On `chrome://extensions` after installing. The card's ID, `ehklbfcpnadaeodflibpihhgimmmhjpd`, matches the [Chrome Web Store listing](https://chromewebstore.google.com/detail/citizen-data-downloader/ehklbfcpnadaeodflibpihhgimmmhjpd).
+
+**What Google says**
+
+The warning's **Learn more** link opens [Google Chrome Help](https://support.google.com/chrome?p=cws_enhanced_safe_browsing), which says:
+
+> If you enable Enhanced protection in Chrome, it warns you when an extension you want to install isn't trusted. Extensions are considered trusted when they're built by a developer who follows the Chrome Web Store Developer Program Policies.
+>
+> For new developers, it generally takes a few months to become trusted. Eventually, we strive for all developers with compliant extensions to reach this status upon meeting our developer program policies.
+
+I got no notice about this in my Chrome Web Store dashboard. I have contacted Google and will keep following their developer policies until the account is trusted.
+
+**Who am I? (Trust me bro section)**
+
+My name is David Levy: [LevyBytes](https://github.com/LevyBytes) on GitHub and [LinkedIn](https://www.linkedin.com/in/levybytes), and [DirectorGunner](https://robertsspaceindustries.com/en/citizens/DirectorGunner) in Star Citizen. I'm not well known in the community like SC YouTubers and streamers, but since 2015 I have helped backers with asset extraction, modding, cosplay and community tools.
+
+- **I help modders and cosplayers.** I wrote a [guide to extracting and modding Star Citizen assets](https://robertsspaceindustries.com/spectrum/community/SC/forum/50172/thread/how-to-start-modding-existing-star-citizen-assets/28079) on Spectrum and keep it updated [on GitHub](https://github.com/LevyBytes/How-to-Guide-for-Extracting-and-Modding-Star-Citizen-Assets). I also [petitioned CIG](https://robertsspaceindustries.com/spectrum/community/SC/forum/50172/thread/petition-for-access-to-high-poly-models-under-nda-/73577) for NDA access to high-poly models for the cosplay and modding communities.
+- **I have attended CIG events** in cosplay: the LA Concierge Dinner, CitizenCon 2948 in Austin, and the Star Citizen Live audience taping at the LA studio. My armor is 3D printed from the game files, and my [video entry](https://www.youtube.com/watch?v=0o-xIexfnDo) won [third place](https://robertsspaceindustries.com/spectrum/community/SC/forum/3/thread/virtual-star-citizen-cosplay-contest/226428) in CIG's 2020 cosplay contest.
+- **My cosplay has been on camera** in Red Bull Esports' [Levels episode on Star Citizen](https://www.youtube.com/watch?v=mhKrLCoUte0&t=600), Linus Media Group's [TechLinked video on Star Citizen](https://www.youtube.com/watch?v=bYs_zn2pTZo&t=1220), CIG's [Star Citizen Live](https://www.twitch.tv/videos/426109223?t=0h29m57s), and two Around the Verse episodes: [Austin Texas Cakewalk](https://www.youtube.com/watch?v=CSIOR84_Zbo&t=420) and [Aud Lang Sign-off](https://www.youtube.com/watch?v=tYVD0yX8GGk&t=314). Jared Huckaby also [mentioned me on Star Citizen Live in 2021](https://youtu.be/UjmgIl-fYkc?t=3284).
+
+  <img src=".github/readme/community/star-citizen-live-wave-2019.gif" width="280" alt="DirectorGunner, in armor, standing in the Star Citizen Live studio audience, waving to the camera and turning to show the lights on the armor's back, May 17, 2019">
+
+- **I manage communities** like the [Star Citizen Cosplay Discord](https://discord.gg/5Dx2wrQ) and the [Star Citizen Community](https://www.facebook.com/groups/StarCitizenCommunity) Facebook group, which I created. I am a long-time member and moderator of [TEST Squadron](https://testsquadron.com/threads/official-test-meme-thread.9550/). I also helped with logistics for [Quantum Vegas 2955](https://quantumvegas.space/), a fan-run Star Citizen convention in Las Vegas.
+
+<table>
+<tr>
+<td><img src=".github/readme/community/citizencon-2948-cosplay.jpg" width="380" alt="Ten Star Citizen cosplayers saluting in front of a CitizenCon 2948 backdrop, in CIG's photo frame"><br>CIG's group photo of cosplayers at CitizenCon 2948, Austin, Texas, October 10, 2018</td>
+<td><a href="https://www.youtube.com/watch?v=0o-xIexfnDo"><img src=".github/readme/community/cosplay-contest-2020.jpg" width="380" alt="A frame from the contest video: dark armor beside the Clark Defense Systems logo"></a><br>From <a href="https://www.youtube.com/watch?v=0o-xIexfnDo">my video entry</a>, third place in CIG's 2020 Virtual Star Citizen Cosplay Contest</td>
+</tr>
+<tr>
+<td><img src=".github/readme/community/subscriber-event-2019.jpg" width="420" alt="Chris Roberts with DirectorGunner in armor"><br>With Chris Roberts at the Star Citizen Live audience taping, LA studio, May 17, 2019</td>
+<td><img src=".github/readme/community/citizencon-2953-countdown.jpg" width="247" alt="CIG's CitizenCon countdown graphic, a large 2, over the cosplay booth: a cosplayer at a table of helmets and props, with the Made by Community logo projected on the wall"><br>Cosplay booth at CitizenCon 2953 by Kinshadow, Diabolus and me, 2023</td>
+</tr>
+</table>
+
+Cloud Imperium Games has not reviewed or endorsed this extension. Star Citizen Data Downloader is an independent community project.
+
+**If you are checking this extension for someone**
+
+- Google says the warning is about how new the developer account is. The extension passed Chrome Web Store review.
+- All the extension and dashboard code is in this repository, under the [MIT License](LICENSE). [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) explain how your data is handled.
+- You can build the extension yourself from this repository instead: see [Installing without the Chrome Web Store](#installing-without-the-chrome-web-store).
+
+</details>
+
 <p align="center"><img src=".github/readme/dashboard-example.jpg" width="900" alt="The dashboard with its example account: the Load JSON and Build buttons, the account's identity, and totals for the hangar, buybacks, store credit, UEC, subscriptions and billing"></p>
 
 Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. Free, no sign-up, no upload, no tracking.
