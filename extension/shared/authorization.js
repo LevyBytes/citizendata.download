@@ -41,6 +41,9 @@
     return Object.freeze(Object.fromEntries(REQUEST_ALLOWANCES.map((name) => [name, value[name]])));
   }
 
+  // A proposal, and the authorization made from it, are internal validation states. Build in the approved dashboard
+  // is the user's action; the extension asks for no second confirmation. What the authorization binds is that the run
+  // reads only the checked plan, for the account and the dashboard session that asked, within its request bounds.
   function createProposal(input) {
     if (!isPlainObject(input) || !isPlainObject(input.plan)) throw new TypeError("A validated plan is required.");
     if (typeof input.proposalId !== "string" || input.proposalId.length < 16) throw new TypeError("A proposal ID is required.");

@@ -50,7 +50,7 @@ test("stored image ZIP validates lazily and supplies only the plan delta", async
   const realmPolicy = vm.runInContext("JSON.parse(policySource)", context);
   const result = await context.CitizenDataMediaPackage.buildArchive({
     accountDocument: account, materialized: realmMaterialized, policy: realmPolicy, generatedAt: "2026-11-18T00:00:00.000Z", startedAt: "2026-11-18T00:00:00.000Z",
-    endedAt: "2026-11-18T00:00:00.000Z", version: "0.42.1"
+    endedAt: "2026-11-18T00:00:00.000Z", version: "0.42.2"
   });
   const loaded = await context.CitizenDataMediaPackageReader.open(new Blob([result.archive]));
   assert.deepEqual([...new Uint8Array(await (await loaded.fileBlob(relativePath, "image/png")).arrayBuffer())], [1, 2, 3, 4]);

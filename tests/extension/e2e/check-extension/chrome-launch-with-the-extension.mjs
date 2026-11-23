@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { launchReport, launchWithFallback } from "../../../support/chrome-test-launch.mjs";
+import path from "node:path";
+import { launchReport, launchWithFallback, startThroughHandshake } from "../../../support/chrome-test-launch.mjs";
 import { ChromePipe } from "../chrome-pipe.mjs";
 import { answerPausedRequest, downloadEvents } from "./answers-to-browser-requests.mjs";
 import { chrome, extensionId, extensionOrigin, setChrome, setExtensionId, setExtensionOrigin, setSettings, settings } from "./browser-pages-and-account-in-use.mjs";
@@ -7,11 +8,25 @@ import { extensionUnderTest } from "./extension-copy-without-pacing.mjs";
 import { downloads, executable, options, profile } from "./options-and-run-folders.mjs";
 import { TOKEN } from "./origins-keys-and-stand-in-image.mjs";
 
+// One start of the browser, which counts as started once its first page has answered Page.enable and Runtime.enable.
+// Each launch has a profile folder of its own, so a retry starts from nothing a failed start left.
+let launches = 0;
+function launch(renderingFlags, extraArguments, headless) {
+  const pipe = ChromePipe.spawnBrowser({ executable, profile: path.join(profile, `launch${++launches}`), headless, renderingFlags, extraArguments });
+  const handshake = async () => {
+    await pipe.send("Target.setDiscoverTargets", { discover: true });
+    const first = await pipe.newPage("about:blank");
+    await pipe.send("Target.closeTarget", { targetId: first.targetId });
+    return pipe;
+  };
+  return { exited: pipe.exited, handshake, stop: () => pipe.kill(), log: () => pipe.stderr, diagnose: () => pipe.diagnose() };
+}
+
 export async function launchChromeWithTheExtension() {
   // No name resolves, so nothing leaves this machine even if a request were to escape interception.
   const extraArguments = ["--host-resolver-rules=MAP * ~NOTFOUND"];
   const headless = !options.headed;
-  setChrome(await launchWithFallback((renderingFlags) => ChromePipe.launch({ executable, profile, headless, renderingFlags, extraArguments }), {
+  setChrome(await launchWithFallback((renderingFlags, name) => startThroughHandshake(async (flags) => launch(flags, extraArguments, headless), renderingFlags, name), {
     report: (name, flags, why = null) => console.log(`${launchReport(executable, name, [...flags, ...(headless ? ["--headless=new"] : []), ...extraArguments])}${why ? ` (${why})` : ""}`)
   }));
   chrome.on((message) => {

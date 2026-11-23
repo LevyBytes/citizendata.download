@@ -33,7 +33,7 @@ export async function runtime(answers) {
   const build = (value) => vm.runInContext(`(${typeof value === "string" ? value : JSON.stringify(value)})`, context);
   realmBuild = build;
   vm.runInContext(liveRuntimeSource, context, { filename: "live-runtime.js" });
-  return context.CitizenDataLiveRuntime.createAdapter({ id: "pledges", parser: "parsePledges", version: "0.42.1" });
+  return context.CitizenDataLiveRuntime.createAdapter({ id: "pledges", parser: "parsePledges", version: "0.42.2" });
 }
 
 export const pledge = (pledgeId, extra = {}) => ({ pledgeId, title: `Pledge ${pledgeId}`, items: [], ...extra });

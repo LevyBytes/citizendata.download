@@ -29,7 +29,7 @@ export async function contractRun(sections, script = {}, { mode = "baseline", sa
   await repository.saveAuthorization(auth);
   await repository.saveJob(job);
   await repository.saveStagedRun({ runId: job.runId, accountId: job.accountId, status: "collecting", results: [], checkpoints: [], receipts: [] });
-  if (saved) await repository.saveSnapshot({ accountId: job.accountId, runId: "44444444-4444-4444-8444-444444444444", promotedAt: new Date(state.clock - 86_400_000).toISOString(), document: saved });
+  if (saved) await repository.saveSnapshot({ accountId: job.accountId, runId: "44444444-4444-4444-8444-444444444444", promotedAt: new Date(state.clock - 86_400_000).toISOString(), source: "collected", document: saved });
   const adapters = sections.map((section) => ({
     section,
     version: "1",

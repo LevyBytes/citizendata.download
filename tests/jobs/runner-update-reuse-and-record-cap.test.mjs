@@ -8,11 +8,11 @@ test("update reuse retains current canonical section data without parser replace
   const prior = await assemblerApi.assemble({
     account: { localAccountId, ueeCitizenRecord: 42, handle: "Citizen" },
     exportedAt: "2026-11-18T19:00:00.000Z",
-    generator: { name: "CitizenData", version: "0.42.1" },
+    generator: { name: "CitizenData", version: "0.42.2" },
     results: [profile("Original profile")],
     runs: []
   });
-  const repository = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "prior-run", document: prior.document }] });
+  const repository = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "prior-run", source: "collected", document: prior.document }] });
   const plan = { selectedSections: ["profile"], maximumRecordsBySection: { profile: 1 }, minimumInterRequestDelayMs: 900 };
   const auth = authorizationRecord(clock, { authorizationId: "abababab-abab-4bab-8bab-abababababab", runId: "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd" });
   const job = runnerApi.createJob({ jobId: "job-update-reuse", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, mode: "update", now: new Date(clock).toISOString() });

@@ -276,11 +276,37 @@
     return value;
   }
 
+  // The instant a build's exportedAt names, in milliseconds since 1970; NaN when it is not a date-time the schema
+  // accepts. Builds are ordered by this instant and never by the text, since an offset changes the text and not the
+  // instant: "2026-11-22T01:00:00+02:00" is earlier than "2026-11-22T00:00:00Z".
+  function exportedInstant(value) {
+    return typeof value === "string" && validateFormat(value, "date-time") ? Date.parse(value) : Number.NaN;
+  }
+
+  // Below zero when `left` was exported before `right`, zero at the same instant, above zero after it. A value that is
+  // not a valid date-time is older than every valid one.
+  function compareExportedAt(left, right) {
+    const [first, second] = [exportedInstant(left), exportedInstant(right)];
+    if (Number.isNaN(first) || Number.isNaN(second)) return Number.isNaN(first) === Number.isNaN(second) ? 0 : Number.isNaN(first) ? -1 : 1;
+    return Math.sign(first - second);
+  }
+
+  // How far ahead of this computer's clock a handed-over build may be dated: room for two clocks that differ a little.
+  const FUTURE_EXPORT_ALLOWANCE_MS = 5 * 60 * 1000;
+
+  function exportedInTheFuture(value, now = Date.now()) {
+    return exportedInstant(value) > now + FUTURE_EXPORT_ALLOWANCE_MS;
+  }
+
   return Object.freeze({
+    FUTURE_EXPORT_ALLOWANCE_MS,
     acceptAccountDocument,
     assertValid,
     calculateIntegrity,
     canonicalize,
+    compareExportedAt,
+    exportedInTheFuture,
+    exportedInstant,
     integrityPayload,
     isPlaceholderImage,
     removePlaceholderImages,

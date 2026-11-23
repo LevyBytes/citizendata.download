@@ -1,6 +1,5 @@
-import path from "node:path";
 import vm from "node:vm";
-import { extensionRoot, source } from "./extension-files-and-identifiers.mjs";
+import { source, sourceFileName } from "./extension-files-and-identifiers.mjs";
 import { realmCopier } from "./message-copies-between-realms.mjs";
 import { chromeApi } from "./chrome-api-for-a-worker.mjs";
 import { workerSandbox } from "./worker-sandbox.mjs";
@@ -28,7 +27,7 @@ export function startWorker(world) {
   })`, context);
   sandbox.importScripts = (...files) => {
     for (const file of files) {
-      vm.runInContext(source(file), context, { filename: path.join(extensionRoot, file) });
+      vm.runInContext(source(file), context, { filename: sourceFileName(file) });
       if (file === "storage/database.js") {
         const database = sandbox.CitizenDataDatabase;
         harness.repository ??= database.createMemoryRepository();
@@ -44,7 +43,7 @@ export function startWorker(world) {
   };
   world.worker = instance;
   harness.workerStarts += 1;
-  vm.runInContext(source("service-worker.js"), context, { filename: path.join(extensionRoot, "service-worker.js") });
+  vm.runInContext(source("service-worker.js"), context, { filename: sourceFileName("service-worker.js") });
   if (harness.workerStarts === 1) for (const listener of instance.listeners.installed) listener({ reason: "install" });
   return instance;
 }

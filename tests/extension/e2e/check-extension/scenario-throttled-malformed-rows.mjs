@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, setRsi } from "./browser-pages-and-account-in-use.mjs";
 import { changeRsiAnswers } from "./answers-to-browser-requests.mjs";
-import { freshDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { refuseRsiWhen } from "./held-rsi-requests.mjs";
 import { assertStep } from "./scenario-runner.mjs";
 import { waitForExportedFile } from "./stored-state-alarms-and-saved-files.mjs";
@@ -51,6 +51,7 @@ async function buildWithMalformedRow(handle, throttled) {
   await freshDashboard();
   const account = createSyntheticRsi({ handle, counts: COUNTS });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, handle);
   // RSI holding a limit on referral reads only: a second referral request within 3 seconds is refused.
   const seen = [];
   const limit = throttled ? refuseRsiWhen((request) => {

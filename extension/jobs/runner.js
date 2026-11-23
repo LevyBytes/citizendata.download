@@ -548,8 +548,14 @@
       return pages;
     }
 
+    // The saved backup a build stands on: only one the extension collected. A build handed over from a file is read
+    // again in full by the next build, which claims no record removed on its word; `held` is the backup as stored,
+    // which the history keeps when this build replaces it.
     async function savedBackupFor(job) {
-      if (savedBackup?.jobId !== job.jobId) savedBackup = { jobId: job.jobId, snapshot: await repository.getSnapshot(job.accountId) ?? null };
+      if (savedBackup?.jobId !== job.jobId) {
+        const held = await repository.getSnapshot(job.accountId) ?? null;
+        savedBackup = { jobId: job.jobId, held, snapshot: held?.source === "collected" ? held : null };
+      }
       return savedBackup.snapshot;
     }
 
@@ -771,6 +777,7 @@
         repository.getStagedRun(job.runId),
         savedBackupFor(job)
       ]);
+      const heldSnapshot = savedBackup?.held ?? null;
       savedBackup = null;
       if (!staged) throw new Error("The staged run is no longer stored.");
       const paceRecords = job.paceHistory && typeof repository.listPaceHistory === "function" ? await repository.listPaceHistory() : null;
@@ -784,7 +791,7 @@
       });
       const document = assembled?.document ?? assembled;
       if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("The canonical document assembler returned an invalid account document.");
-      const history = planHistory ? await planHistory({ accountId: job.accountId, previous: previousSnapshot?.document ?? null, document, completedAt }) : null;
+      const history = planHistory ? await planHistory({ accountId: job.accountId, previous: heldSnapshot?.document ?? null, document, completedAt }) : null;
       const paceHistory = paceRecords ? closedHistory(paceRecords, job, completedAt) : null;
       // Once the document is the saved backup, the staged results it was assembled from are not kept a second time.
       const { results: _results, document: _document, ...stagedRecord } = staged;

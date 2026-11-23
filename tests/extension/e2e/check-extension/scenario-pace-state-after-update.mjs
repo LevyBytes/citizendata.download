@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, extensionPage, setRsi } from "./browser-pages-and-account-in-use.mjs";
 import { assertCompleteDocument } from "./complete-document-expectations.mjs";
-import { freshDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { afterRequests, holdRsiWhen, reach, settled } from "./held-rsi-requests.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
 import { assertStep } from "./scenario-runner.mjs";
@@ -37,6 +37,7 @@ async function stopsContinuablyAndContinues(handle, change) {
   await freshDashboard();
   const account = createSyntheticRsi({ handle, counts: COUNTS });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, handle);
   const jobId = await pausedAndChanged(account, change);
   const before = account.requests.length;
   await click(dashboard, "resumeCollection");
@@ -59,6 +60,7 @@ export async function paceStateAfterUpdate() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "MigrateCitizen", counts: COUNTS });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "MigrateCitizen");
   const jobId = await pausedAndChanged(account, `(job) => { const { pace, pendingStep, actualRequestCount, actualRequestsBySection, actualRequestsByAllowance, retriedHttpRequestCount, maximumActualRequests, paceHistory, ...older } = job; return older; }`);
   await click(dashboard, "resumeCollection");
   await waitForSavedDialog(dashboard, 120000);

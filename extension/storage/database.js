@@ -170,10 +170,17 @@
     return { add, remove: Array.isArray(history?.remove) ? history.remove.filter((id) => typeof id === "string" && id) : [] };
   }
 
-  // The saved backup of one account, as a handed-over build is stored.
+  // The same RSI account: handles that differ only in letter case.
+  function sameAccountId(left, right) {
+    return typeof left === "string" && typeof right === "string" && left.toLowerCase() === right.toLowerCase();
+  }
+
+  // The saved backup of one account, as a handed-over build is stored. `source` is outside the document: "collected"
+  // when the extension read it from RSI, "handed-over" when it came from a file, which is what a build kept before the
+  // mark existed counts as.
   function snapshotRecord(input) {
     if (typeof input?.accountId !== "string" || !input.accountId || !input.document || typeof input.document !== "object") throw new TypeError("A saved backup needs its account and its document.");
-    return { accountId: input.accountId, runId: input.runId ?? null, promotedAt: input.promotedAt, document: input.document };
+    return { accountId: input.accountId, runId: input.runId ?? null, promotedAt: input.promotedAt, source: input.source === "collected" ? "collected" : "handed-over", document: input.document };
   }
 
   // What one atomic change to a run may write. Each field is optional; a decision with none of them writes nothing.
@@ -428,10 +435,13 @@
         transaction.abort();
         throw new Error("Only an open staged run can be promoted.");
       }
-      transaction.objectStore("snapshots").put(clone({
+      const snapshots = transaction.objectStore("snapshots");
+      for (const key of await requestResult(snapshots.getAllKeys())) if (key !== input.accountId && sameAccountId(key, input.accountId)) snapshots.delete(key);
+      snapshots.put(clone({
         accountId: input.accountId,
         runId: input.runId,
         promotedAt: input.promotedAt,
+        source: "collected",
         document: input.document
       }));
       for (const checkpoint of input.checkpoints ?? []) transaction.objectStore("checkpoints").put(clone(checkpoint));
@@ -464,7 +474,9 @@
       const history = historyWrites(input.history);
       const db = await database();
       const transaction = db.transaction(["snapshots", ...HISTORY_STORES], "readwrite", DURABLE);
-      transaction.objectStore("snapshots").put(clone(snapshotRecord(input)));
+      const snapshots = transaction.objectStore("snapshots");
+      for (const key of await requestResult(snapshots.getAllKeys())) if (key !== input.accountId && sameAccountId(key, input.accountId)) snapshots.delete(key);
+      snapshots.put(clone(snapshotRecord(input)));
       if (history.add) {
         transaction.objectStore("history").put(clone(history.add.entry));
         transaction.objectStore("historyData").put(clone(history.add.data));
@@ -485,14 +497,23 @@
     }
 
     // Kept images: `items` are `{ entry, data }` pairs with one asset identifier each.
-    async function saveMedia(items) {
+    // Writes images in one transaction. `decide`, given every kept image's entry, returns { ok: true, writes } with
+    // the images to write, or a refusal that writes nothing; deciding inside the transaction keeps a limit from racing
+    // another write. Without `decide` every image is written. Returns the decision.
+    async function saveMedia(items, decide = null) {
       const db = await database();
       const transaction = db.transaction(MEDIA_STORES, "readwrite", DURABLE);
-      for (const item of mediaWrites(items)) {
+      const decision = decide ? decide(await requestResult(transaction.objectStore("media").getAll())) : { ok: true, writes: items };
+      if (!decision.ok) {
+        transaction.abort();
+        return decision;
+      }
+      for (const item of mediaWrites(decision.writes)) {
         transaction.objectStore("media").put(clone(item.entry));
         transaction.objectStore("mediaData").put(clone(item.data));
       }
       await transactionDone(transaction);
+      return decision;
     }
 
     async function getMediaData(assetIds) {
@@ -513,6 +534,19 @@
       const transaction = db.transaction(HISTORY_STORES, "readwrite", DURABLE);
       for (const id of ids) for (const name of HISTORY_STORES) transaction.objectStore(name).delete(id);
       await transactionDone(transaction);
+    }
+
+    // Deletes, in one transaction, the latest build and the kept copies (earlier builds and the Orgs JSON) of the
+    // account whose stored account identifier `matches`. Returns how many of each went.
+    async function forgetAccount(matches) {
+      const db = await database();
+      const transaction = db.transaction(["snapshots", ...HISTORY_STORES], "readwrite", DURABLE);
+      const snapshots = (await requestResult(transaction.objectStore("snapshots").getAll())).filter((record) => matches(record.accountId));
+      const copies = (await requestResult(transaction.objectStore("history").getAll())).filter((entry) => matches(entry.accountId));
+      for (const record of snapshots) transaction.objectStore("snapshots").delete(record.accountId);
+      for (const entry of copies) for (const name of HISTORY_STORES) transaction.objectStore(name).delete(entry.historyId);
+      await transactionDone(transaction);
+      return { builds: snapshots.length, copies: copies.length };
     }
 
     async function clearHistory() {
@@ -573,7 +607,7 @@
       listJobs: () => all("jobs"),
       getStagedRun: (key) => read("stagedRuns", key),
       saveStagedRun: (value) => write("stagedRuns", value, DURABLE),
-      getSnapshot: (key) => read("snapshots", key),
+      getSnapshot: async (key) => (await read("snapshots", key)) ?? (await all("snapshots")).find((record) => sameAccountId(record?.accountId, key)),
       saveCheckpoint: (value) => write("checkpoints", value),
       getCheckpoint: (key) => read("checkpoints", key),
       saveReceipt: (value) => write("receipts", value),
@@ -607,6 +641,7 @@
       clearMedia,
       listSnapshots: () => all("snapshots"),
       deleteHistory,
+      forgetAccount,
       clearHistory,
       exportBackup,
       restoreBackup,
@@ -685,7 +720,7 @@
       listJobs: () => all("jobs"),
       getStagedRun: (key) => read("stagedRuns", key),
       saveStagedRun: (value) => write("stagedRuns", value),
-      getSnapshot: (key) => read("snapshots", key),
+      getSnapshot: async (key) => (await read("snapshots", key)) ?? (await all("snapshots")).find((record) => sameAccountId(record?.accountId, key)),
       saveCheckpoint: (value) => write("checkpoints", value),
       getCheckpoint: (key) => read("checkpoints", key),
       saveReceipt: (value) => write("receipts", value),
@@ -737,7 +772,8 @@
         const staged = stores.stagedRuns.get(input.runId);
         if (!staged || !OPEN_STAGED_STATUSES.includes(staged.status)) throw new Error("Only an open staged run can be promoted.");
         const kept = historyWrites(input.history);
-        stores.snapshots.set(input.accountId, clone({ accountId: input.accountId, runId: input.runId, promotedAt: input.promotedAt, document: input.document }));
+        for (const key of [...stores.snapshots.keys()]) if (key !== input.accountId && sameAccountId(key, input.accountId)) stores.snapshots.delete(key);
+        stores.snapshots.set(input.accountId, clone({ accountId: input.accountId, runId: input.runId, promotedAt: input.promotedAt, source: "collected", document: input.document }));
         for (const checkpoint of input.checkpoints ?? []) stores.checkpoints.set(checkpoint.checkpointKey, clone(checkpoint));
         for (const receipt of input.receipts ?? []) stores.receipts.set(receipt.receiptId, clone(receipt));
         if (input.job) {
@@ -758,6 +794,7 @@
       saveSnapshot: async (input) => {
         const kept = historyWrites(input.history);
         const record = snapshotRecord(input);
+        for (const key of [...stores.snapshots.keys()]) if (key !== record.accountId && sameAccountId(key, record.accountId)) stores.snapshots.delete(key);
         stores.snapshots.set(record.accountId, clone(record));
         if (kept.add) {
           history.history.set(kept.add.entry.historyId, clone(kept.add.entry));
@@ -776,14 +813,24 @@
       listSnapshots: async () => all("snapshots"),
       listMedia: async () => [...media.media.values()].map(clone),
       getMediaData: async (assetIds) => assetIds.map((assetId) => clone(media.mediaData.get(assetId))).filter(Boolean),
-      saveMedia: async (items) => {
-        for (const item of mediaWrites(items)) {
+      saveMedia: async (items, decide = null) => {
+        const decision = decide ? decide([...media.media.values()].map(clone)) : { ok: true, writes: items };
+        if (!decision.ok) return decision;
+        for (const item of mediaWrites(decision.writes)) {
           media.media.set(item.entry.assetId, clone(item.entry));
           media.mediaData.set(item.data.assetId, clone(item.data));
         }
+        return decision;
       },
       clearMedia: async () => MEDIA_STORES.forEach((name) => { media[name].clear(); }),
       deleteHistory: async (ids) => deleteHistoryNow(ids),
+      forgetAccount: async (matches) => {
+        const snapshots = [...stores.snapshots.keys()].filter((key) => matches(key));
+        const copies = [...history.history.values()].filter((entry) => matches(entry.accountId)).map((entry) => entry.historyId);
+        for (const key of snapshots) stores.snapshots.delete(key);
+        deleteHistoryNow(copies);
+        return { builds: snapshots.length, copies: copies.length };
+      },
       clearHistory: async () => HISTORY_STORES.forEach((name) => { history[name].clear(); }),
       exportBackup: async () => ({ databaseVersion: DATABASE_VERSION, stores: Object.fromEntries(await Promise.all(Object.keys(stores).map(async (name) => [name, await all(name)]))) }),
       restoreBackup: async (backup) => {

@@ -33,6 +33,13 @@
     return identity.accountId;
   }
 
+  // The signed-in account's handle and display name, from RSI's identify route alone, for Add new account. It reads
+  // no section of the account.
+  async function identifySignedInAccount() {
+    const identity = await rsiApi.identifyAccount();
+    return Object.freeze({ accountId: identity.accountId, displayName: identity.displayName });
+  }
+
   function recordKey(section, record, index) {
     if (section === "pledges") return record.pledgeId ?? `${record.title}|${record.createdDateRaw}|${index}`;
     if (section === "buybacks") return record.recordKey ?? record.buybackId ?? `${record.title}|${record.reclaimDateRaw}|${index}`;
@@ -491,5 +498,5 @@
     });
   }
 
-  return Object.freeze({ createAdapter, closeCollectorTab, discoverSignedInAccount });
+  return Object.freeze({ createAdapter, closeCollectorTab, discoverSignedInAccount, identifySignedInAccount });
 });

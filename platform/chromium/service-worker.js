@@ -15,6 +15,7 @@ importScripts(
   "storage/database.js",
   "storage/build-history.js",
   "storage/media-store.js",
+  "storage/account-registry.js",
   "jobs/runner.js",
   "adapters/normalization.js",
   "adapters/dom-extractors.js",
@@ -46,6 +47,7 @@ const ContinuationRefresh = globalThis.CitizenDataContinuationRefresh;
 const Database = globalThis.CitizenDataDatabase;
 const BuildHistory = globalThis.CitizenDataBuildHistory;
 const MediaStore = globalThis.CitizenDataMediaStore;
+const AccountRegistry = globalThis.CitizenDataAccountRegistry;
 const Runner = globalThis.CitizenDataRunner;
 const Adapters = globalThis.CitizenDataAdapterRegistry;
 const DocumentAssembler = globalThis.CitizenDataDocumentAssembler;
@@ -55,6 +57,21 @@ const LiveRuntime = globalThis.CitizenDataLiveRuntime;
 const STORAGE_KEY = "citizendata.runtime.v2";
 const LOCAL_DASHBOARDS_KEY = "citizendata.localDashboards.v1";
 const LOCAL_PENDING_KEY = "citizendata.localPending.v1";
+// Add new account's identify request is a request family of its own. It never runs beside a build, since it is
+// refused while a job runs or waits; requests that arrive together share one check; one check runs at a time (a
+// lease); and at most one check is sent an interval, whatever the RSI session, so signing in as another account does
+// not shorten the wait. The interval is longer than any step interval of a build, and a refusal starts the global
+// cool-down that a refused build start keeps too. The lease and the next time a check may be sent are fields of the
+// runtime record (`accountDiscovery`), beside that cool-down, so a restarted worker and a restarted browser keep
+// them, and Clear All removes them with it. Within the interval, the RSI session the last check was made under
+// is given the account it found, and nothing is sent (DISCOVERY_KEY). That record knows the session by a SHA-256 of
+// its token, never the token, and is in session storage only, so it goes when the browser closes; it is in no
+// recovery backup.
+const DISCOVERY_KEY = "citizendata.accountDiscovery.v1";
+const DISCOVERY_INTERVAL_MS = 30000;
+// A check that a stopped worker left unfinished holds the next one off for this long.
+const DISCOVERY_LEASE_MS = 30000;
+let discoveryInFlight = null;
 // Whether earlier builds are kept and how many, and the last build that could not be kept.
 const BUILD_HISTORY_KEY = "citizendata.buildHistory.v1";
 const BUILD_HISTORY_PROBLEM_KEY = "citizendata.buildHistoryProblem.v1";
@@ -72,6 +89,7 @@ const COOL_DOWN_ALARM = "citizendata.coolDownEnds";
 const STATUS_REFRESH_ALARM = "citizendata.statusRefresh";
 // W-22.
 const START_REFUSED_MESSAGE = "RSI refused or didn't answer the account check.";
+const SELECTED_ACCOUNT_MISMATCH_MESSAGE = "The RSI account signed in now is not the account selected in the dashboard, so nothing was read. Sign in to RSI as the selected account, or choose Add new account under Switch Account to add the account signed in now, then build again.";
 const REFUSAL_KINDS = new Set(["limit", "transient", "ambiguous"]);
 // `partial`: a run that ended with a section set aside (§10.3).
 const TERMINAL_STATUSES = new Set(["cancelled", "failed", "complete", "partial"]);
@@ -680,6 +698,13 @@ async function sendDashboardEvent(tabId, payload) {
 
 async function updateRuntimeFromJob(event) {
   const job = event.job;
+  // The account just built is the one the page shows when it next connects, so it is selected before any page can
+  // learn that the build finished, by status or by event. The runner saved the build before it reported completion,
+  // so the account is listed while Build History is on or it was added; otherwise nothing of it is kept and the
+  // selection stays. It is never registered here, and nothing that goes wrong here changes the build or its hand-over.
+  if (event.event === "complete" && event.detail?.document && jobKindOf(job) === "accountData") {
+    try { await selectListedAccount(AccountRegistry.accountKey(job.accountId)); } catch { /* The selection is a convenience. */ }
+  }
   const terminal = TERMINAL_STATUSES.has(job.status);
   const authorization = await repository.getAuthorization(job.authorizationId);
   const next = await updateState((state) => ({
@@ -820,7 +845,9 @@ async function assemblePartialDocument(job) {
   const staged = await repository.getStagedRun(job.runId);
   const authorization = await repository.getAuthorization(job.authorizationId);
   if (!staged || !authorization) throw new Error("The partial run is unavailable.");
-  const previousSnapshot = await repository.getSnapshot(job.accountId);
+  const held = await repository.getSnapshot(job.accountId);
+  // Only a backup the extension collected is a basis; see the runner's savedBackupFor.
+  const previousSnapshot = held?.source === "collected" ? held : null;
   return assembleAccountDocument({
     job,
     authorization,
@@ -905,7 +932,9 @@ async function discoverWithRetry({ budgetMs }) {
   }
 }
 
-async function startAuthorizedRun(proposal, state, capability, continuation = null) {
+// `expectedAccountKey`: the account the dashboard has selected (storage/account-registry.js). The run starts only when
+// RSI's identify route names that account, so a build never reads one account's sections for another's page.
+async function startAuthorizedRun(proposal, state, capability, continuation = null, expectedAccountKey = null) {
   const decline = async (code, message, change = {}) => {
     await repository.saveProposal({ ...proposal, status: "failed", failedAt: new Date().toISOString(), failure: { code } });
     await writeState({ ...state, status: "idle", pendingProposalId: null, ...change });
@@ -933,13 +962,19 @@ async function startAuthorizedRun(proposal, state, capability, continuation = nu
   }
   if (!discovered.ok) return decline("ACCOUNT_DISCOVERY_FAILED", discovered.error.message);
   const accountId = discovered.accountId;
+  if (expectedAccountKey !== null && AccountRegistry.accountKey(accountId) !== expectedAccountKey) {
+    return decline("SELECTED_ACCOUNT_MISMATCH", SELECTED_ACCOUNT_MISMATCH_MESSAGE);
+  }
 
   const runId = crypto.randomUUID();
   if (continuation?.job?.accountId && continuation.job.accountId.toLowerCase() !== accountId.toLowerCase()) {
     return decline("ACCOUNT_CHANGED", "The signed-in RSI account does not match the partial backup.");
   }
-  const previousSnapshot = await repository.getSnapshot(accountId);
-  const localAccountId = continuation?.job?.localAccountId ?? previousSnapshot?.document?.account?.localAccountId ?? crypto.randomUUID();
+  const heldSnapshot = await repository.getSnapshot(accountId);
+  // The account keeps its local identifier whatever the backup's source; only a collected backup makes this build an
+  // update, so the first build after a file was handed over reads every section.
+  const previousSnapshot = heldSnapshot?.source === "collected" ? heldSnapshot : null;
+  const localAccountId = continuation?.job?.localAccountId ?? heldSnapshot?.document?.account?.localAccountId ?? crypto.randomUUID();
   const authorization = Authorization.createAuthorization(proposal, {
     authorizationId: crypto.randomUUID(),
     runId,
@@ -1089,7 +1124,6 @@ async function keepOrganizations(accountId, document, at) {
 // newer build is never replaced, and nothing is asked of RSI. The build that is replaced goes to the build history.
 async function keepHandedOverBuild(document) {
   const refuse = (code, message) => ({ ok: false, code, message });
-  if (!(await buildHistorySettings()).enabled) return refuse("BUILD_HISTORY_OFF", "Build history is off, so the extension keeps no build that a page hands over.");
   const state = await readState();
   if (state.activeJobId || state.pendingProposalId || state.pendingResult) return refuse("BUILD_IN_PROGRESS", "A build is in progress or waiting to be opened, so the extension took in no other build.");
   try {
@@ -1101,15 +1135,22 @@ async function keepHandedOverBuild(document) {
   const outcomes = document.sync?.sectionOutcomes ?? {};
   const complete = DocumentAssembler.REQUIRED_OUTCOMES.every((section) => outcomes[section]?.status === "complete") && document.sync?.runs?.at(-1)?.status === "complete";
   if (!handle || !complete) return refuse("INCOMPLETE_BUILD", "The file is not a complete build of one account, so the extension did not take it in.");
+  if (AccountDocument.exportedInTheFuture(document.exportedAt)) return refuse("FUTURE_BUILD", "The file is dated in the future, so the extension did not take it in.");
+  const registered = await registerAccountIdentity({ accountId: handle, displayName: document.profile?.displayName });
+  if (!registered.ok) return refuse("ACCOUNT_LIMIT", `The extension keeps at most ${AccountRegistry.MAXIMUM_ACCOUNTS} added accounts.`);
+  if (!(await buildHistorySettings()).enabled) {
+    return { ok: true, kept: false, reason: "ACCOUNT_SUMMARY_KEPT", accountKey: registered.summary.key };
+  }
   const held = (await repository.listSnapshots()).find((snapshot) => typeof snapshot?.accountId === "string" && snapshot.accountId.toLowerCase() === handle.toLowerCase() && snapshot.document);
   // The build held can be this build with rosters added since, so the time of the build decides, not the hash.
-  if (held?.document.exportedAt === document.exportedAt) return { ok: true, kept: false, reason: "SAME_BUILD" };
-  if (held && !(held.document.exportedAt < document.exportedAt)) return { ok: true, kept: false, reason: "NEWER_BUILD_HELD" };
+  const order = held ? AccountDocument.compareExportedAt(held.document.exportedAt, document.exportedAt) : -1;
+  if (order === 0) return { ok: true, kept: false, reason: "SAME_BUILD" };
+  if (order > 0) return { ok: true, kept: false, reason: "NEWER_BUILD_HELD" };
   const accountId = held?.accountId ?? handle;
   const keptAt = new Date().toISOString();
   const kept = held ? await withCarriedRosters(document, held.document) : document;
   const history = held ? await planBuildHistory({ accountId, previous: held.document, document: kept, completedAt: keptAt }) : null;
-  await repository.saveSnapshot({ accountId, runId: document.sync.runs.at(-1).runId ?? null, promotedAt: keptAt, document: kept, history });
+  await repository.saveSnapshot({ accountId, runId: document.sync.runs.at(-1).runId ?? null, promotedAt: keptAt, source: "handed-over", document: kept, history });
   await keepOrganizations(accountId, kept, keptAt);
   return { ok: true, kept: true, replaced: Boolean(held) };
 }
@@ -1174,7 +1215,7 @@ async function keepHandedOverOrganizations(organizations) {
     return refuse("INVALID_ORGANIZATIONS", "The rosters in the file do not fit the account build the extension holds.");
   }
   const keptAt = new Date().toISOString();
-  await repository.saveSnapshot({ accountId: held.accountId, runId: held.runId ?? null, promotedAt: held.promotedAt, document: stamped, history: null });
+  await repository.saveSnapshot({ accountId: held.accountId, runId: held.runId ?? null, promotedAt: held.promotedAt, source: held.source, document: stamped, history: null });
   await keepOrganizations(held.accountId, stamped, keptAt);
   return { ok: true, kept: true, rosters: taken.size };
 }
@@ -1204,6 +1245,146 @@ async function buildHistoryStatus() {
   };
 }
 
+// The accounts added with Add new account (storage/account-registry.js). Clear All removes the record.
+async function readAccountRegistry() {
+  return AccountRegistry.normalizeRegistry((await chrome.storage.local.get(AccountRegistry.STORAGE_KEY))[AccountRegistry.STORAGE_KEY]);
+}
+
+async function registerAccountIdentity(identity, discoveredAt = new Date().toISOString()) {
+  const summary = AccountRegistry.summaryFromIdentity(identity, discoveredAt);
+  if (!summary) return { ok: false, code: "INVALID_ACCOUNT_SUMMARY" };
+  const registered = AccountRegistry.register(await readAccountRegistry(), summary);
+  if (!registered.ok) return registered;
+  await chrome.storage.local.set({ [AccountRegistry.STORAGE_KEY]: registered.registry });
+  return { ...registered, summary };
+}
+
+async function accountListing() {
+  const [registry, settings, snapshots] = await Promise.all([readAccountRegistry(), buildHistorySettings(), repository.listSnapshots()]);
+  return { registry, settings, accounts: AccountRegistry.listed({ registry, snapshots, historyEnabled: settings.enabled }) };
+}
+
+// Selects an account the extension lists and keeps the choice; null, with nothing changed, for any other key.
+async function selectListedAccount(accountKey) {
+  const { registry, accounts } = await accountListing();
+  const selected = AccountRegistry.select(registry, accountKey, accounts);
+  if (selected) await chrome.storage.local.set({ [AccountRegistry.STORAGE_KEY]: selected });
+  return selected;
+}
+
+// Remove this account (REMOVE_ACCOUNT): the extension forgets one account, listed or of which it holds a build. Its
+// summary leaves the account list, and its latest build, the earlier builds and Orgs JSON kept of it, and its
+// cancelled or failed builds are deleted. The images the extension keeps are shared between accounts by their
+// content, so they stay until the popup deletes them or Clear All. The pace history stays, as the record of what RSI
+// answered. When the account was the one selected, the first account still listed is selected, or none. Refused while
+// a job runs or waits.
+async function removeAccount(state, accountKey) {
+  if (state.activeJobId || state.pendingProposalId || state.status === "connecting") {
+    return { ok: false, code: "JOB_ALREADY_ACTIVE", message: "A job is running or starting. Remove the account when it has finished." };
+  }
+  const ofAccount = (accountId) => AccountRegistry.accountKey(accountId) === accountKey;
+  const { registry, accounts } = await accountListing();
+  const jobs = await repository.listJobs();
+  const incomplete = jobs.filter((job) => ofAccount(job.accountId) && ["cancelled", "failed"].includes(job.status));
+  const held = incomplete.length > 0 || (await repository.listSnapshots()).some((snapshot) => ofAccount(snapshot?.accountId));
+  if (!held && !accounts.some((entry) => entry.key === accountKey)) return { ok: false, code: "UNKNOWN_ACCOUNT", message: "The extension lists no account with that key." };
+  const removed = await repository.forgetAccount(ofAccount);
+  let runs = 0;
+  for (const job of incomplete) {
+    const collectionId = job.collectionId ?? job.runId;
+    if (!jobs.some((other) => other.jobId !== job.jobId && (other.collectionId ?? other.runId) === collectionId && ["running", "paused"].includes(other.status))) await repository.deletePages(collectionId);
+    await repository.deleteIncompleteRun(job.runId);
+    runs += 1;
+  }
+  const remaining = { accounts: registry.accounts.filter((entry) => entry.key !== accountKey), selectedKey: registry.selectedKey === accountKey ? null : registry.selectedKey };
+  await chrome.storage.local.set({ [AccountRegistry.STORAGE_KEY]: remaining });
+  const listing = await accountListing();
+  const selectedKey = listing.accounts.some((entry) => entry.key === remaining.selectedKey) ? remaining.selectedKey : listing.accounts[0]?.key ?? null;
+  if (selectedKey !== remaining.selectedKey) await chrome.storage.local.set({ [AccountRegistry.STORAGE_KEY]: { ...remaining, selectedKey } });
+  // The identity Add new account found last may be this account's; the next Add asks RSI again, when its slot comes.
+  await chrome.storage.session.remove(DISCOVERY_KEY);
+  return { ok: true, removedKey: accountKey, selectedKey, accounts: listing.accounts, removed: { ...removed, runs } };
+}
+
+// Add new account: the account signed in to RSI now, found by RSI's identify route alone, is added to the accounts
+// the extension lists. No section is read and no build is proposed. It is refused while a job runs or waits, during a
+// cool-down, without RSI access, when signed out, when RSI refuses, and when RSI's answer names no handle.
+async function discoverCurrentAccount(state) {
+  const refuse = (code, message, extra = {}) => ({ ok: false, code, message, ...extra });
+  if (state.activeJobId || state.pendingProposalId || state.status === "connecting") return refuse("JOB_ALREADY_ACTIVE", "A job is running or starting. Add the account when it has finished.");
+  const coolingDown = await coolingDownUntil();
+  if (coolingDown) return refuse("RSI_COOLING_DOWN", "RSI refused a recent request, so nothing is sent to RSI until the wait ends.", { retryNotBefore: coolingDown });
+  if (capabilities().accountCollection !== true) return refuse("COLLECTION_GATED", Adapters.reason);
+  if (!await chrome.permissions.contains({ origins: [RSI_ORIGIN] })) {
+    return refuse("HOST_PERMISSION_REQUIRED", "Star Citizen Data Downloader is not allowed to read robertsspaceindustries.com. Click the Star Citizen Data Downloader icon in the Chrome toolbar, choose Allow RSI access, then add the account again.");
+  }
+  if (!discoveryInFlight) discoveryInFlight = identifyForDiscovery().finally(() => { discoveryInFlight = null; });
+  const found = await discoveryInFlight;
+  if (!found.ok) return found;
+  const registered = await registerAccountIdentity(found.identity);
+  const summary = registered.summary;
+  if (!summary) return refuse("RSI_RESPONSE_CHANGED", "RSI's answer to the account check named no account, so no account was added.");
+  if (!registered.ok) return refuse("ACCOUNT_LIMIT", `The extension keeps at most ${AccountRegistry.MAXIMUM_ACCOUNTS} added accounts.`);
+  const { accounts } = await accountListing();
+  return { ok: true, added: registered.added, account: accounts.find((entry) => entry.key === summary.key) };
+}
+
+// The signed-in RSI session, as a SHA-256 of its token; null when no one is signed in.
+async function rsiSessionFingerprint() {
+  const cookie = await chrome.cookies.get({ url: `${RSI_ORIGIN}/`, name: "Rsi-Token" }).catch(() => null);
+  return typeof cookie?.value === "string" && cookie.value ? sha256Canonical(cookie.value) : null;
+}
+
+// The signed-in account's identity for Add new account, paced as DISCOVERY_KEY describes.
+async function identifyForDiscovery() {
+  const refuse = (code, message, extra = {}) => ({ ok: false, code, message, ...extra });
+  const nowMs = Date.now();
+  const pace = (await readState()).accountDiscovery ?? {};
+  const cached = (await chrome.storage.session.get(DISCOVERY_KEY))[DISCOVERY_KEY] ?? {};
+  const session = await rsiSessionFingerprint();
+  if (Date.parse(pace.leaseUntil ?? "") > nowMs) return refuse("ACCOUNT_CHECK_RUNNING", "The extension is checking the signed-in account. Try again in a moment.", { retryNotBefore: pace.leaseUntil });
+  if (Date.parse(pace.nextAt ?? "") > nowMs) {
+    if (cached.identity && Object.hasOwn(cached, "session") && cached.session === session) return { ok: true, identity: cached.identity };
+    return refuse("ACCOUNT_CHECK_TOO_SOON", "The signed-in account was checked a moment ago. Try again shortly.", { retryNotBefore: pace.nextAt });
+  }
+  const writePace = (value) => updateState((current) => ({ ...current, accountDiscovery: value }));
+  const later = () => new Date(Date.now() + DISCOVERY_INTERVAL_MS).toISOString();
+  await writePace({ leaseUntil: new Date(nowMs + DISCOVERY_LEASE_MS).toISOString() });
+  await chrome.storage.session.remove(DISCOVERY_KEY);
+  let identity;
+  try {
+    identity = await LiveRuntime.identifySignedInAccount();
+  } catch (error) {
+    await writePace({ nextAt: later() });
+    const signal = error?.signal ?? null;
+    if (signal?.kind === "user" && signal.reason === "check-in-browser") return refuse("RSI_CHECK_IN_BROWSER", "RSI asks for a check in the browser. Open robertsspaceindustries.com, finish the check, then add the account again.");
+    if (signal?.kind === "user") return refuse("RSI_SIGNED_OUT", "No RSI account is signed in. Sign in to robertsspaceindustries.com, then add the account again.");
+    if (signal && REFUSAL_KINDS.has(signal.kind)) {
+      // A refusal starts the cool-down, as a refused start does: nothing is sent to RSI until it ends.
+      const retryNotBefore = coolDownEnd(signal, RequestPacing.settings.runStart.coolDownMs);
+      await updateState((current) => ({ ...current, retryNotBefore }));
+      await scheduleCoolDownEnd(retryNotBefore);
+      return refuse("RSI_RATE_LIMITED", "RSI refused or didn't answer the account check. Try again later.", { retryNotBefore });
+    }
+    return refuse("RSI_RESPONSE_CHANGED", "RSI's answer to the account check could not be read, so no account was added.");
+  }
+  const found = { accountId: identity.accountId, displayName: identity.displayName ?? null };
+  await writePace({ nextAt: later() });
+  await chrome.storage.session.set({ [DISCOVERY_KEY]: { session, identity: found } });
+  return { ok: true, identity: found };
+}
+
+// A build or roster proposal may name the account it expects signed in, as { [field]: proposal, expectedAccountKey }.
+// Without that key the payload is the proposal itself, as a dashboard of an earlier release sends it.
+function proposalForAccount(payload, field) {
+  if (!Protocol.isPlainObject(payload) || !Object.hasOwn(payload, "expectedAccountKey")) return { ok: true, input: payload, expectedAccountKey: null };
+  const keys = Object.keys(payload).sort();
+  if (keys.length !== 2 || !keys.includes(field) || !AccountRegistry.isAccountKey(payload.expectedAccountKey)) {
+    return { ok: false, code: "INVALID_ACCOUNT_PROPOSAL", message: "The proposal must name one account by its account key." };
+  }
+  return { ok: true, input: payload[field], expectedAccountKey: payload.expectedAccountKey };
+}
+
 const runner = Runner.createSerialRunner({
   repository,
   registry: Adapters,
@@ -1226,19 +1407,15 @@ async function handleDashboardRequest(message, sender) {
 
   const request = checked.value;
   const state = await expireCoolDown();
+  // A status request reads and changes nothing. A session that does not control the run is told so (requiresRebind)
+  // and the run keeps running for the session that does; taking it over is REQUEST_REBIND, the Reconnect action.
   if (request.type === Protocol.REQUEST_TYPES.GET_STATUS) {
-    let currentState = state;
     const activeJob = state.activeJobId ? await repository.getJob(state.activeJobId) : null;
     const authorization = activeJob ? await repository.getAuthorization(activeJob.authorizationId) : null;
     const bindingMatches = authorization?.dashboardOrigin === message.dashboardOrigin && authorization?.bridgeSessionId === request.bridgeSessionId;
-    if (activeJob?.status === "running" && !bindingMatches) {
-      await runner.pause(activeJob.jobId);
-      currentState = await readState();
-    } else if (activeJob?.status === "running") {
-      // The owning dashboard polls while a job runs, so a loop Chrome stopped restarts here without waiting for the watchdog.
-      await ensureLoop(activeJob.jobId);
-    }
-    return { ok: true, status: await publicStatus(currentState, { dashboardOrigin: message.dashboardOrigin, bridgeSessionId: request.bridgeSessionId }), capabilities: capabilities() };
+    // The owning dashboard polls while a job runs, so a loop Chrome stopped restarts here without waiting for the watchdog.
+    if (activeJob?.status === "running" && bindingMatches) await ensureLoop(activeJob.jobId);
+    return { ok: true, status: await publicStatus(state, { dashboardOrigin: message.dashboardOrigin, bridgeSessionId: request.bridgeSessionId }), capabilities: capabilities() };
   }
 
   // RSI's status feed for the image run (§12.7), through the checker's cache of statusPageCacheMs.
@@ -1299,12 +1476,12 @@ async function handleDashboardRequest(message, sender) {
       if (checked.ok) accepted.push({ entry: checked.entry, data: checked.data });
       else refused.push({ assetId: typeof file?.assetId === "string" ? file.assetId.slice(0, 64) : null, code: checked.code });
     }
-    const kept = await repository.listMedia();
-    const known = new Set(kept.map((entry) => entry.assetId));
-    const added = accepted.filter((item) => !known.has(item.entry.assetId)).length;
-    if (kept.length + added > MediaStore.LIMITS.images) return { ok: false, code: "IMAGE_LIMIT", message: `The extension keeps at most ${MediaStore.LIMITS.images} images.` };
-    if (accepted.length) await repository.saveMedia(accepted);
-    return { ok: true, stored: accepted.map((item) => item.entry.assetId), refused };
+    if (!accepted.length) return { ok: true, stored: [], refused };
+    // The count and the byte total are checked against what is kept in the transaction that writes (MediaStore.planKeep).
+    const decision = await repository.saveMedia(accepted, (kept) => MediaStore.planKeep(kept, accepted));
+    if (decision.code === "IMAGE_LIMIT") return { ok: false, code: "IMAGE_LIMIT", message: `The extension keeps at most ${MediaStore.LIMITS.images} images.` };
+    if (decision.code === "IMAGE_BYTES_LIMIT") return { ok: false, code: "IMAGE_BYTES_LIMIT", message: `The extension keeps at most ${MediaStore.LIMITS.storedBytes / (1024 * 1024 * 1024)} GiB of images.` };
+    return { ok: true, stored: decision.stored, refused: [...refused, ...decision.older.map((assetId) => ({ assetId, code: "OLDER_THAN_KEPT" }))] };
   }
 
   // While the build history is on, a dashboard that has just loaded is given the latest finished build, so a
@@ -1313,10 +1490,34 @@ async function handleDashboardRequest(message, sender) {
     if (!(await buildHistorySettings()).enabled) return { ok: false, code: "BUILD_HISTORY_OFF", message: "Build history is off, so the extension hands over no build by itself." };
     const newest = (await repository.listSnapshots())
       .filter((snapshot) => snapshot?.document && typeof snapshot.document.exportedAt === "string")
-      .sort((left, right) => left.document.exportedAt < right.document.exportedAt ? 1 : left.document.exportedAt > right.document.exportedAt ? -1 : 0)[0];
+      .sort((left, right) => AccountDocument.compareExportedAt(right.document.exportedAt, left.document.exportedAt))[0];
     if (!newest) return { ok: false, code: "NO_BUILD", message: "The extension holds no finished build." };
     return { ok: true, result: newest.document };
   }
+
+  // Accounts. Listing, choosing and reading a retained build ask nothing of RSI; a retained build is handed over only
+  // while Build History is on, as GET_LATEST_BUILD hands one over.
+  if (request.type === Protocol.REQUEST_TYPES.LIST_ACCOUNTS) {
+    const { registry, settings, accounts } = await accountListing();
+    const selectedKey = accounts.some((entry) => entry.key === registry.selectedKey) ? registry.selectedKey : null;
+    return { ok: true, accounts, selectedKey, buildHistory: settings.enabled };
+  }
+  if (request.type === Protocol.REQUEST_TYPES.GET_ACCOUNT_BUILD) {
+    if (!(await buildHistorySettings()).enabled) return { ok: false, code: "BUILD_HISTORY_OFF", message: "Build history is off, so the extension hands over no build by itself." };
+    const accountKey = request.payload.accountKey;
+    const held = (await repository.listSnapshots())
+      .filter((snapshot) => snapshot?.document && AccountRegistry.accountKey(snapshot.document.account?.handle) === accountKey)
+      .sort((left, right) => AccountDocument.compareExportedAt(right.document.exportedAt, left.document.exportedAt))[0];
+    if (!held) return { ok: false, code: "NO_BUILD_HELD", message: "The extension holds no finished build of this account." };
+    return { ok: true, accountKey, result: held.document };
+  }
+  if (request.type === Protocol.REQUEST_TYPES.SELECT_ACCOUNT) {
+    const selected = await selectListedAccount(request.payload.accountKey);
+    if (!selected) return { ok: false, code: "UNKNOWN_ACCOUNT", message: "The extension lists no account with that key." };
+    return { ok: true, selectedKey: selected.selectedKey };
+  }
+  if (request.type === Protocol.REQUEST_TYPES.DISCOVER_CURRENT_ACCOUNT) return discoverCurrentAccount(state);
+  if (request.type === Protocol.REQUEST_TYPES.REMOVE_ACCOUNT) return removeAccount(state, request.payload.accountKey);
 
   if (request.type === Protocol.REQUEST_TYPES.KEEP_BUILD) return keepHandedOverBuild(request.payload.document);
   if (request.type === Protocol.REQUEST_TYPES.KEEP_ORGANIZATIONS) return keepHandedOverOrganizations(request.payload.document);
@@ -1454,8 +1655,12 @@ async function handleDashboardRequest(message, sender) {
     };
   }
 
+  // Build in the approved dashboard is the user's action. The proposal and the authorization below are the
+  // extension's own validation of that request (shared/authorization.js), not another prompt to the user.
   if (request.type === Protocol.REQUEST_TYPES.PROPOSE_BUILD) {
-    const plan = Plans.validatePlan(request.payload);
+    const bound = proposalForAccount(request.payload, "plan");
+    if (!bound.ok) return bound;
+    const plan = Plans.validatePlan(bound.input);
     if (!plan.ok) return plan;
     if (state.activeJobId) return { ok: false, code: "JOB_ALREADY_ACTIVE", message: "Pause, cancel, or finish the current job first." };
     const coolingDown = await coolingDownUntil();
@@ -1477,11 +1682,13 @@ async function handleDashboardRequest(message, sender) {
       pendingProposalId: proposalId,
       lastProposalAt: proposal.createdAt
     });
-    return startAuthorizedRun(proposal, connectingState, capabilities().accountCollection);
+    return startAuthorizedRun(proposal, connectingState, capabilities().accountCollection, null, bound.expectedAccountKey);
   }
 
   if (request.type === Protocol.REQUEST_TYPES.PROPOSE_ORGANIZATION_ROSTER) {
-    const roster = RosterProposals.build(request.payload, Adapters);
+    const bound = proposalForAccount(request.payload, "roster");
+    if (!bound.ok) return bound;
+    const roster = RosterProposals.build(bound.input, Adapters);
     if (!roster.ok) return roster;
     if (state.activeJobId) return { ok: false, code: "JOB_ALREADY_ACTIVE", message: "Pause, cancel, or finish the current job first." };
     const coolingDown = await coolingDownUntil();
@@ -1503,7 +1710,7 @@ async function handleDashboardRequest(message, sender) {
       pendingProposalId: proposalId,
       lastProposalAt: proposal.createdAt
     });
-    const started = await startAuthorizedRun(proposal, connectingState, capabilities().organizationRosterCollection);
+    const started = await startAuthorizedRun(proposal, connectingState, capabilities().organizationRosterCollection, null, bound.expectedAccountKey);
     return { ...started, organizationSids: roster.value.organizationSids };
   }
 
@@ -1600,8 +1807,9 @@ async function handleUiRequest(message, sender) {
     await repository.clearAll();
     // The cool-down went with the runtime record, the status revision with the repository's runtime store; the
     // mirrors are local data too.
-    await chrome.storage.local.remove([STORAGE_KEY, LOCAL_DASHBOARDS_KEY, BUILD_HISTORY_KEY, BUILD_HISTORY_PROBLEM_KEY, ORGANIZATIONS_PROBLEM_KEY, RETRY_NOT_BEFORE_KEY, START_DIAGNOSIS_KEY]);
-    await chrome.storage.session.remove(LOCAL_PENDING_KEY);
+    await chrome.storage.local.remove([STORAGE_KEY, LOCAL_DASHBOARDS_KEY, BUILD_HISTORY_KEY, BUILD_HISTORY_PROBLEM_KEY, ORGANIZATIONS_PROBLEM_KEY, RETRY_NOT_BEFORE_KEY, START_DIAGNOSIS_KEY,
+      AccountRegistry.STORAGE_KEY]);
+    await chrome.storage.session.remove([LOCAL_PENDING_KEY, DISCOVERY_KEY]);
     await chrome.alarms.clear(WATCHDOG_ALARM);
     await chrome.alarms.clear(COOL_DOWN_ALARM);
     await chrome.alarms.clear(STATUS_REFRESH_ALARM);

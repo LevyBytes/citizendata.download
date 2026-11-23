@@ -26,7 +26,7 @@ const names = (list) => ({ globals: Object.fromEntries(list.split(/\s+/u).filter
 const NODE_EXPORT = "module require";
 const SYNCED_COPIES = ["account-document.js", "organization-document.js", "request-pacing-settings.js", "pace-controller.js", "pace-history.js"].flatMap((name) => [`docs/scripts/${name}`, `extension/shared/${name}`]);
 // What the dashboard's scripts use of a page.
-const PAGE = `AbortController Blob CustomEvent DOMException IntersectionObserver ResizeObserver TextDecoder TextEncoder URL crypto document fetch
+const PAGE = `AbortController Blob CustomEvent DOMException IntersectionObserver ResizeObserver TextDecoder TextEncoder URL clearTimeout crypto document fetch
   location matchMedia queueMicrotask sessionStorage setTimeout structuredClone window`;
 // What the tests use of Node.
 const NODE_TESTS = `AbortController AbortSignal Blob Buffer CompressionStream DOMException DecompressionStream TextDecoder TextEncoder URL URLSearchParams
@@ -41,16 +41,16 @@ export default [
   { files: ["**/*.js", "**/*.mjs"], linterOptions: { reportUnusedDisableDirectives: "error" }, languageOptions: { ecmaVersion: "latest", sourceType: "module" }, rules },
 
   // The extension, the dashboard and the sources they share are loaded as classic scripts, not as modules.
-  { files: ["extension/**/*.js", "docs/scripts/**/*.js", "shared/**/*.js"], languageOptions: { sourceType: "script" } },
+  { files: ["extension/**/*.js", "platform/**/*.js", "docs/scripts/**/*.js", "shared/**/*.js"], languageOptions: { sourceType: "script" } },
   { files: ["shared/**/*.js"], languageOptions: names(`TextEncoder URL ${NODE_EXPORT}`) },
   { files: ["docs/scripts/**/*.js"], languageOptions: names(`${PAGE} ${NODE_EXPORT}`) },
-  { files: ["extension/service-worker.js"], languageOptions: names("TextEncoder URL chrome crypto importScripts structuredClone") },
+  { files: ["platform/chromium/service-worker.js"], languageOptions: names("TextEncoder URL chrome crypto importScripts structuredClone") },
   { files: ["extension/adapters/**/*.js"], languageOptions: names(`AbortController TextEncoder URL chrome clearTimeout fetch setTimeout structuredClone ${NODE_EXPORT}`) },
   { files: ["extension/jobs/**/*.js"], languageOptions: names(`TextEncoder crypto setTimeout ${NODE_EXPORT}`) },
   { files: ["extension/storage/**/*.js"], languageOptions: names(`IDBKeyRange TextEncoder ${NODE_EXPORT}`) },
   { files: ["extension/shared/**/*.js"], languageOptions: names(`TextEncoder URL ${NODE_EXPORT}`) },
   { files: ["extension/content/**/*.js"], languageOptions: names("crypto location window") },
-  { files: ["extension/offscreen/**/*.js"], languageOptions: names("DOMParser chrome") },
+  { files: ["platform/chromium/offscreen/**/*.js"], languageOptions: names("DOMParser chrome") },
   { files: ["extension/popup/**/*.js"], languageOptions: names("Blob MutationObserver ResizeObserver URL chrome clearTimeout document matchMedia navigator setTimeout window") },
 
   // The tooling and the tests run under Node.

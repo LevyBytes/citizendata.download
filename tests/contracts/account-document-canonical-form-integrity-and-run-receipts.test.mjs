@@ -43,7 +43,7 @@ test("run receipts retain the exact local dashboard origin without accepting loc
       selectedSections: ["profile"],
       maximumRecordsBySection: { profile: 1 },
       minimumInterRequestDelayMs: 900,
-      extensionVersion: "0.42.1",
+      extensionVersion: "0.42.2",
       parserVersions: { profile: "1.0.0" },
       oneRunOnly: true
     },

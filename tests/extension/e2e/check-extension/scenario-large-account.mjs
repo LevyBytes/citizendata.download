@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, extensionPage, setDashboard, setRsi } from "./browser-pages-and-account-in-use.mjs";
 import { asksForApproval, offersAccount, waitForChooser } from "./build-chooser.mjs";
 import { assertCompleteDocument } from "./complete-document-expectations.mjs";
-import { freshDashboard, openDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, openDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { longestGap } from "./harness-parity-and-request-measures.mjs";
 import { pause } from "./polling-intervals.mjs";
 import { assertStep } from "./scenario-runner.mjs";
@@ -22,6 +22,7 @@ export async function largeAccount() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "LargeCitizen", counts: { pledges: 3000, buybacks: 6000, orders: 2500, storeCredit: 400, uec: 200, rec: 100, prospects: 9000, recruits: 300, legacyRecruits: 40 }, upgradeBuybacksFrom: 1600 });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "LargeCitizen");
   const savedBefore = (await downloadedDocuments()).length;
   const started = Date.now();
   await startBuild(dashboard);

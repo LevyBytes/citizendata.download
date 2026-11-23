@@ -1,21 +1,11 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromeErrors, command, evaluate, exceptions, pending, remoteRequests, setSocket, socket, waitFor, waitForFile, waitForJson } from "./chrome-process-and-devtools-commands.mjs";
-import { downloadDirectory, profileDirectory, repositoryRoot, statusOnly } from "./run-options-and-work-folders.mjs";
+import { chromeErrors, command, devtools, evaluate, exceptions, pending, remoteRequests, setSocket, socket, waitFor } from "./chrome-process-and-devtools-commands.mjs";
+import { downloadDirectory, repositoryRoot, statusOnly } from "./run-options-and-work-folders.mjs";
 
-// Connects to the page Chrome opened and loads the dashboard with its example account.
-const activePortFile = path.join(profileDirectory, "DevToolsActivePort");
-await waitForFile(activePortFile);
-const [port] = (await readFile(activePortFile, "utf8")).trim().split(/\r?\n/u);
-const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`);
-const page = targets.find((target) => target.type === "page");
-if (!page) throw new Error("Chrome exposed no page target.");
-setSocket(new WebSocket(page.webSocketDebuggerUrl));
-await new Promise((resolve, reject) => {
-  socket.addEventListener("open", resolve, { once: true });
-  socket.addEventListener("error", reject, { once: true });
-});
+// Takes the page socket Chrome's start opened and answered on (headlesschromestart.mjs), and loads the dashboard with
+// its example account.
+setSocket(devtools.socket);
 socket.addEventListener("message", (event) => {
   const message = JSON.parse(event.data);
   if (message.id && pending.has(message.id)) {

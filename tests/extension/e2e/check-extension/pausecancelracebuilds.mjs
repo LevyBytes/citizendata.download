@@ -2,7 +2,7 @@
 // race, the RSI requests it has had, and the check that a late event after Cancel leaves the cancelled job as it was.
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, extensionPage, setRsi } from "./browser-pages-and-account-in-use.mjs";
-import { freshDashboard } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount } from "./dashboard-pages-and-builds.mjs";
 import { RSI_ORIGIN } from "./origins-keys-and-stand-in-image.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
 import { pause, QUIET_MS } from "./polling-intervals.mjs";
@@ -22,6 +22,7 @@ export async function build(handle) {
   await freshDashboard();
   const account = createSyntheticRsi({ handle, counts: COUNTS });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, handle);
   return account;
 }
 

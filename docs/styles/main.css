@@ -140,7 +140,9 @@ body:has(.parser-overlay:not([hidden])) main { padding-bottom: 110px; }
 .identity-hero-art[data-hero-art="customize"] { --hero-art: url("../assets/decor/customize.svg"); }
 .identity-main, .identity-aside { position: relative; z-index: 1; }
 .identity-panel { isolation: isolate; }
-.identity-main { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: start; gap: 23px; min-width: 0; }
+.identity-main { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 23px; min-width: 0; }
+/* The avatar with Switch Account below it, centred on it; the pair keeps to the start of the card at every width. */
+.identity-account-controls { min-width: 0; display: grid; justify-items: center; align-content: start; justify-self: start; gap: 12px; }
 .identity-panel .identity-hero-art { transform-origin: 50% 50%; }
 .hero-embers { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 .avatar { width: 100px; height: 100px; flex: 0 0 100px; display: grid; place-items: center; position: relative; border: 1px solid var(--line-bright); background: radial-gradient(circle, rgba(101, 231, 244, .18), transparent 60%), #06171c; clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px); }
@@ -593,7 +595,7 @@ dialog { max-height: calc(100dvh - 24px); overflow: auto; }
   html { scroll-padding-top: 184px; }
   body { font-size: 15px; }.brand { width: 100%; min-width: 0; }.top-actions { justify-content: flex-start; padding: 10px 14px 14px; }
   .rail-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .identity-panel { padding: 21px; }.identity-main { grid-template-columns: 72px minmax(0, 1fr); gap: 16px; }.avatar { width: 72px; height: 72px; flex-basis: 72px; }.identity-meta { gap: 12px 20px; }
+  .identity-panel { padding: 21px; }.identity-main { grid-template-columns: auto minmax(0, 1fr); gap: 16px; }.avatar { width: 72px; height: 72px; flex-basis: 72px; }.identity-meta { gap: 12px 20px; }
   .summary-strip { grid-template-columns: 1fr; }.summary-strip a { min-height: 76px; }
   .data-health > summary { grid-template-columns: 1fr auto; }.health-summary-detail { grid-column: 1 / -1; text-align: left; }.health-details dl, .media-plan { grid-template-columns: 1fr; }.media-plan > div, .health-details dl > div { border-right: 0; border-bottom: 1px solid var(--line); }.media-plan > div:last-child, .health-details dl > div:last-child { border-bottom: 0; }.inventory { padding: 15px; }.filter-bar { padding: 8px; }.button-filter { flex: 1; }.filter-clear { margin-left: 0; }
   th:first-child { min-width: 220px; }.record-button b, .record-button small { overflow: visible; white-space: normal; }.record-button small { line-height: 1.25; }
@@ -812,3 +814,32 @@ tbody tr.record-ghost:hover td, tbody tr.record-ghost.selected td { background: 
   .ccu-cost { grid-column: 2; }
   .ccu-total { grid-column: 3; }
 }
+
+/* Switch Account: a menu button below the account avatar. Its menu opens in the top layer, so the account card does
+   not clip it; the dashboard places it below the button, centred on it, inside the viewport. */
+.switch-account-button { white-space: nowrap; }
+.switch-account-arrow { width: 7px; height: 7px; margin-left: 2px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); }
+.switch-account-button[aria-expanded="true"] .switch-account-arrow { transform: translateY(2px) rotate(225deg); }
+.account-popup { position: fixed; z-index: 60; inset: auto; margin: 0; width: min(320px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 120px)); overflow-y: auto; padding: 6px; color: var(--text); border: 1px solid var(--line-bright); background: #071a20; box-shadow: var(--shadow); }
+.account-menu, .account-menu-accounts { display: grid; gap: 2px; }
+.account-menu-item { position: relative; width: 100%; min-height: 44px; display: grid; gap: 2px; align-content: center; padding: 8px 10px 8px 30px; color: var(--text); border: 1px solid transparent; background: transparent; text-align: left; cursor: pointer; font: 600 14px/1.3 var(--body-font); overflow-wrap: anywhere; }
+.account-menu-item:hover, .account-menu-item:focus-visible { border-color: var(--cyan); background: var(--cyan-soft); }
+.account-menu-item[aria-checked="true"]::before { content: ""; position: absolute; left: 11px; top: 50%; width: 6px; height: 11px; border-right: 2px solid var(--cyan); border-bottom: 2px solid var(--cyan); transform: translateY(-65%) rotate(45deg); }
+.account-menu-item[aria-checked="true"] .account-menu-label { color: var(--cyan); }
+.account-menu-detail { color: var(--muted); font-size: 13px; font-weight: 500; }
+.account-menu-item[aria-disabled="true"] { color: var(--quiet); cursor: not-allowed; }
+.account-menu-separator { height: 1px; margin: 4px 0; border: 0; background: var(--line); }
+.account-menu-status { margin: 4px 4px 8px; color: var(--gold); font-size: 14px; line-height: 1.4; }
+.account-empty-state { margin: 14px 0; padding: 22px 24px; }
+.account-empty-state h2 { margin: 0 0 8px; font: 700 17px/1.35 var(--display-font); letter-spacing: .02em; }
+.account-empty-detail { margin: 0; color: var(--muted); }
+/* An added account without a backup shows its handle and the empty state, and no account section. */
+body[data-account-state="identity-only"] :is(.summary-strip, #subscriptions, #inventory, .secondary-grid, #exportData, .rail-nav, .identity-title, .identity-meta, .identity-aside) { display: none; }
+@media (forced-colors: active) { .account-menu-item[aria-checked="true"]::before { border-color: CanvasText; } }
+
+/* Beside an image run's Cancel: turns while the run is alive, in every phase; still under reduced motion. */
+.media-busy { width: 18px; height: 18px; flex: 0 0 18px; align-self: center; border: 2px solid var(--line-bright); border-top-color: var(--cyan); border-radius: 50%; animation: media-busy-turn .9s linear infinite; }
+@keyframes media-busy-turn { to { transform: rotate(360deg); } }
+.media-controls #mediaCancelOverlay[aria-disabled="true"] { color: var(--quiet); cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .media-busy { animation: none; border-color: var(--cyan); } }
+@media (forced-colors: active) { .media-busy { border-color: CanvasText; border-top-color: Highlight; } }

@@ -52,7 +52,7 @@ export async function checkBuildChooserWording() {
       if(event.source!==window||request?.channel!=='citizendata.dashboard.v1'||request.bridgeSessionId!==session||['BRIDGE_READY','RESPONSE','STATUS','RESULT'].includes(request.type))return;
       send('RESPONSE',request.requestId,request.type==='GET_STATUS'?{ok:true,status}:{ok:false,code:'TEST_DECLINED',message:'The stand-in declined.'});
     });
-    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.1',capabilities:{buildJson:true}});
+    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.2',capabilities:{buildJson:true}});
     return true;
   })()`);
   const wording = async () => {

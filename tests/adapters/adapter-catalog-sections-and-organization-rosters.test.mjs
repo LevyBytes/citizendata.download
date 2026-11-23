@@ -7,7 +7,7 @@ test("the adapter catalog exposes every baseline section to the live runtime, ea
   const catalog = globalThis.CitizenDataAdapterCatalog;
   assert.ok(catalog.adapters.length >= 12);
   const { readFile } = await import("node:fs/promises");
-  const extensionVersion = JSON.parse(await readFile(new URL("../../extension/manifest.json", import.meta.url), "utf8")).version;
+  const extensionVersion = JSON.parse(await readFile(new URL("../../manifests/chrome.json", import.meta.url), "utf8")).version;
   assert.deepEqual([...new Set(catalog.adapters.map((adapter) => adapter.version))], [extensionVersion]);
   assert.ok(catalog.adapters.every(adapter => !("enabled" in adapter) && !("fixtureStatus" in adapter)));
   assert.equal(catalog.get("hangarLog").route, "/api/account/pledgeLog");

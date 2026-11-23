@@ -6,7 +6,7 @@ test("organization document groups one flat member list with deterministic roste
   const source = account();
   const result = structuredClone(source);
   result.organizations.members = [member("TEST", "a"), member("TEST", "b"), member("MMHC", "c")];
-  const document = await Organizations.merge({ accountDocument: source, resultDocument: result, selectedSids: ["TEST", "MMHC"], exportedAt: "2026-11-18T01:02:03.004Z", generatorVersion: "0.42.1" });
+  const document = await Organizations.merge({ accountDocument: source, resultDocument: result, selectedSids: ["TEST", "MMHC"], exportedAt: "2026-11-18T01:02:03.004Z", generatorVersion: "0.42.2" });
   assert.deepEqual(JSON.parse(JSON.stringify(document.rosterIndex.map(({ organizationSid, memberStart, memberCount }) => ({ organizationSid, memberStart, memberCount })))), [
     { organizationSid: "TEST", memberStart: 0, memberCount: 2 },
     { organizationSid: "MMHC", memberStart: 2, memberCount: 1 }

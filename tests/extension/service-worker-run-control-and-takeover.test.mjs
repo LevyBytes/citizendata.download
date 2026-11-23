@@ -42,14 +42,21 @@ test("pause, resume, and cancel from the owning dashboard take effect at once an
 test("another dashboard session cannot control a run; taking it over is explicit and stays within one origin", async () => {
   const { harness, tab } = await runningBuild({ account: { counts: { pledges: 120 } } }, 7);
   const second = harness.openTab();
-  // A second tab, or the same tab reloaded, is a new session. Its first status request pauses the run.
+  // A second tab, or the same tab reloaded, is a new session. Its status requests, and a third tab's, change nothing:
+  // the run keeps running for the session that controls it, which is still the first.
+  const requestsBefore = harness.rsi.requests.length;
   const seen = await second.status();
-  assert.equal(seen.status, "paused");
-  assert.equal(seen.controlSessionBound, false);
-  assert.equal(seen.requiresRebind, true);
+  assert.deepEqual([seen.status, seen.controlSessionBound, seen.requiresRebind], ["running", false, true]);
   for (const type of ["RESUME", "CANCEL", "PAUSE"]) assert.equal((await second.request(type)).code, "JOB_BINDING_MISMATCH", type);
-  await harness.advanceBy(60000);
-  assert.equal(harness.state().status, "paused");
+  for (const other of [second, harness.openTab(), second]) assert.equal((await other.status()).status, "running");
+  // While the owner has it paused, other sessions' status requests ask nothing of RSI and leave it paused.
+  assert.equal((await tab.request("PAUSE")).ok, true);
+  const atPause = harness.rsi.requests.length;
+  for (const other of [second, harness.openTab(), second]) assert.equal((await other.status()).status, "paused");
+  assert.deepEqual([harness.rsi.requests.length, (await tab.request("RESUME")).ok], [atPause, true]);
+  assert.equal((await tab.status()).controlSessionBound, true);
+  await harness.advance(() => harness.rsi.requests.length > requestsBefore + 2);
+  assert.equal(harness.state().status, "running");
 
   // A local copy is another origin and cannot take the run at all.
   const local = harness.openTab(LOCAL_DASHBOARD_URL);
@@ -63,11 +70,26 @@ test("another dashboard session cannot control a run; taking it over is explicit
   assert.equal((await second.request("REQUEST_REBIND")).code, "ALREADY_BOUND");
   // The first session lost control when the second took it.
   assert.equal((await tab.request("CANCEL")).code, "JOB_BINDING_MISMATCH");
-  // Its status request pauses the run again, exactly as any other unbound session would.
-  assert.equal((await tab.status()).requiresRebind, true);
-  assert.equal((await second.request("RESUME")).ok, true);
+  // Its status request is told so, and changes nothing, as any other session's.
+  assert.deepEqual([(await tab.status()).requiresRebind, harness.state().status], [true, "running"]);
 
   assert.equal((await harness.finishJob()).status, "complete");
   await assertCompleteDocument(resultOf(second), harness.rsi);
   assert.equal(resultOf(tab), null, "the result goes to the session that owns the run");
+});
+
+test("two sessions that reconnect at once leave one in control, and a restarted worker keeps that binding", async () => {
+  const { harness } = await runningBuild({ account: { counts: { pledges: 120 } } }, 7);
+  const [left, right] = [harness.openTab(), harness.openTab()];
+  const answers = await Promise.all([left.request("REQUEST_REBIND"), right.request("REQUEST_REBIND")]);
+  assert.deepEqual(answers.map((answer) => answer.ok), [true, true]);
+  const bound = async () => [(await left.status()).controlSessionBound, (await right.status()).controlSessionBound];
+  const owners = await bound();
+  assert.equal(owners.filter(Boolean).length, 1, JSON.stringify(owners));
+  assert.equal(harness.state().status, "running");
+  harness.stopWorker();
+  assert.deepEqual(await bound(), owners);
+  const owner = owners[0] ? left : right;
+  assert.equal((await harness.finishJob()).status, "complete");
+  await assertCompleteDocument(resultOf(owner), harness.rsi);
 });

@@ -24,6 +24,15 @@
     GET_PARTIAL_RESULT: "GET_PARTIAL_RESULT",
     GET_COMPLETED_RESULT: "GET_COMPLETED_RESULT",
     GET_LATEST_BUILD: "GET_LATEST_BUILD",
+    // Accounts (`capabilities.accounts`): the added accounts and the retained builds Build History allows, one
+    // retained build by its account key, the account of the RSI session found by RSI's identify route alone, the
+    // account the dashboard has chosen, and one account the user removes. None of them starts a build or names an
+    // address.
+    LIST_ACCOUNTS: "LIST_ACCOUNTS",
+    GET_ACCOUNT_BUILD: "GET_ACCOUNT_BUILD",
+    DISCOVER_CURRENT_ACCOUNT: "DISCOVER_CURRENT_ACCOUNT",
+    SELECT_ACCOUNT: "SELECT_ACCOUNT",
+    REMOVE_ACCOUNT: "REMOVE_ACCOUNT",
     KEEP_BUILD: "KEEP_BUILD",
     KEEP_ORGANIZATIONS: "KEEP_ORGANIZATIONS",
     ACKNOWLEDGE_RESULT: "ACKNOWLEDGE_RESULT",
@@ -71,6 +80,25 @@
     RESULT: "RESULT"
   });
   const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  // An account is named by its key alone: `rsi:` and its handle in lower case (storage/account-registry.js).
+  const ACCOUNT_KEY_PATTERN = /^rsi:[a-z0-9_-]{1,64}$/u;
+  const ACCOUNT_PAYLOADS = Object.freeze({
+    LIST_ACCOUNTS: "none",
+    DISCOVER_CURRENT_ACCOUNT: "none",
+    GET_ACCOUNT_BUILD: "accountKey",
+    SELECT_ACCOUNT: "accountKey",
+    REMOVE_ACCOUNT: "accountKey"
+  });
+
+  function isAccountKey(value) {
+    return typeof value === "string" && ACCOUNT_KEY_PATTERN.test(value);
+  }
+
+  // The payload of an account request is nothing at all, or exactly { accountKey }.
+  function validAccountPayload(type, payload) {
+    if (ACCOUNT_PAYLOADS[type] === "none") return payload === null || payload === undefined;
+    return isPlainObject(payload) && Object.keys(payload).length === 1 && isAccountKey(payload.accountKey);
+  }
 
   function isPlainObject(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value) && Object.prototype.toString.call(value) === "[object Object]";
@@ -164,6 +192,8 @@
     if (value.type === REQUEST_TYPES.KEEP_BUILD || value.type === REQUEST_TYPES.KEEP_ORGANIZATIONS) {
       const payload = value.payload;
       if (!isPlainObject(payload) || Object.keys(payload).length !== 1 || !isPlainObject(payload.document) || containsSecretField(payload)) return { ok: false, code: "FORBIDDEN_PAYLOAD_FIELD" };
+    } else if (Object.hasOwn(ACCOUNT_PAYLOADS, value.type)) {
+      if (!validAccountPayload(value.type, value.payload)) return { ok: false, code: "INVALID_ACCOUNT_PAYLOAD" };
     } else if (containsForbiddenRequestField(value.payload)) return { ok: false, code: "FORBIDDEN_PAYLOAD_FIELD" };
     return { ok: true, value };
   }
@@ -183,6 +213,9 @@
       accountCollection: collectionEnabled,
       organizationRosterCollection: collectionEnabled && registry.organizationRosterCollection === true,
       offlineMediaPackage: registry.offlineMediaPackage === true,
+      // LIST_ACCOUNTS, GET_ACCOUNT_BUILD, DISCOVER_CURRENT_ACCOUNT, SELECT_ACCOUNT and REMOVE_ACCOUNT are answered, and a build or
+      // roster proposal may name the account it expects to find signed in (`expectedAccountKey`).
+      accounts: true,
       reason: collectionEnabled
         ? "Account collection is ready from the Star Citizen Data Downloader dashboard."
         : (registry.reason ?? "No account collection adapters are available in this build.")
@@ -199,6 +232,7 @@
     UI_REQUEST_TYPES,
     EVENT_TYPES,
     isPlainObject,
+    isAccountKey,
     isLocalDashboardPath,
     isLocalDashboardOrigin,
     isDashboardLocation,

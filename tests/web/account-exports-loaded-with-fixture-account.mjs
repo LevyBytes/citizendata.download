@@ -37,7 +37,7 @@ export function fixture() {
       orders: [{
         orderId: "order-1", total: money("19.9900"), tax: null,
         items: [{ name: "Physical item", quantity: 2, unitPrice: money("9.9950"), total: money("19.9900"), images: [] }], payments: [], shippingAddress: null,
-        billingAddress: { country: "US" }
+        billingAddress: null
       }]
     },
     sync: { sectionOutcomes: {}, runs: [{ authorization: "unrelated" }] },

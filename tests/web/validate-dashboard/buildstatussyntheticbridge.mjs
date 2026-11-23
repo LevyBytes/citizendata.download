@@ -21,7 +21,7 @@ export const INSTALL_BRIDGE = `(() => {
     else if (['PROPOSE_BUILD', 'CONTINUE_PARTIAL', 'PROPOSE_ORGANIZATION_ROSTER'].includes(request.type)) send('RESPONSE', wp6.start, request.requestId);
   });
   window.__wp6 = wp6;
-  send('BRIDGE_READY', { extensionVersion: '0.42.1', capabilities: { buildJson: true } });
+  send('BRIDGE_READY', { extensionVersion: '0.42.2', capabilities: { buildJson: true } });
   return true;
 })()`;
 

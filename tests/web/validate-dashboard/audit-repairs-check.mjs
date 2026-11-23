@@ -57,9 +57,13 @@ async function checkResultFinishedWithoutADashboard() {
     send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.99.7',capabilities:{buildJson:true}});
     return true;
   })()`);
-  await waitFor("document.querySelector('#accountHandle').textContent==='RecoveredCitizen' && document.querySelector('#messageDialog').open && window.__recovery.acknowledged==='run-recovered'");
+  // The page shows another account's file, so the result is put under its own account, without switching to it.
+  const shownBefore = await evaluate("document.querySelector('#accountHandle').textContent");
+  await waitFor("document.querySelector('#messageDialog').open && window.__recovery.acknowledged==='run-recovered'");
   const recovery = await evaluate("({title:document.querySelector('#dialogTitle').textContent,message:document.querySelector('#dialogMessage').textContent,requests:window.__recovery.requests,summary:document.querySelector('#overlaySummary')"
-    + ".textContent})");
+    + ".textContent,handle:document.querySelector('#accountHandle').textContent,menu:[...document.querySelectorAll('#accountMenuAccounts [role=\"menuitemradio\"]')].map(item=>item.textContent)})");
+  assert(recovery.handle === shownBefore && shownBefore !== "RecoveredCitizen" && recovery.menu.some((label) => label.includes("RecoveredCitizen")) && recovery.message.includes("is open under Switch Account"),
+    `A result of another account than the one shown switched the page, or was not put under Switch Account: ${JSON.stringify(recovery)}`);
   assert(recovery.title === "Account backup saved" && recovery.message.includes("finished while the dashboard was not connected") && recovery.summary !== "UPDATE REQUIRED"
     && recovery.requests.filter(type => type === "GET_COMPLETED_RESULT").length === 1 && recovery.requests.filter(type => type === "ACKNOWLEDGE_RESULT").length === 1
     && recovery.requests.indexOf("GET_COMPLETED_RESULT") < recovery.requests.indexOf("ACKNOWLEDGE_RESULT"),

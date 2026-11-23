@@ -23,7 +23,7 @@ test("a section that reads a fixed number of records a step is bounded by its re
 test("a section is handed the finished sections it reads: this run's result, or else the saved backup's", async () => {
   const clock = 60_000;
   const run = async ({ staged, saved, mode = "baseline" }) => {
-    const repository = databaseApi.createMemoryRepository(saved ? { snapshots: [{ snapshotKey: "account-1", accountId: "account-1", runId: "earlier", document: saved }] } : {});
+    const repository = databaseApi.createMemoryRepository(saved ? { snapshots: [{ snapshotKey: "account-1", accountId: "account-1", runId: "earlier", source: "collected", document: saved }] } : {});
     const plan = { selectedSections: ["profile"], maximumRecordsBySection: { profile: 1 }, minimumInterRequestDelayMs: 2500 };
     const auth = authorizationRecord(clock);
     const job = runnerApi.createJob({ jobId: "job-inputs", runId: auth.runId, accountId: auth.accountId, authorizationId: auth.authorizationId, localAccountId, plan, mode, now: new Date(clock).toISOString() });

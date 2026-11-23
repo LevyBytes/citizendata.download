@@ -27,7 +27,7 @@ async function checkImageQuestionAndWaitingFileOffer() {
       if(['CONTINUE_PARTIAL','PROPOSE_ORGANIZATION_ROSTER','PROPOSE_BUILD'].includes(request.type))payload={ok:false,code:'TEST_DECLINED',message:'The stand-in declined.',status:window.__controls.status};
       send('RESPONSE',request.requestId,payload);
     });
-    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.1',capabilities:{buildJson:true}});
+    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.2',capabilities:{buildJson:true}});
     window.__controls.emit(window.__controls.status);
     return true;
   })()`);

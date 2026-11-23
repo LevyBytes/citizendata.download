@@ -3,7 +3,7 @@ import { POLL_MS, quiet } from "./polling-intervals.mjs";
 import { chromeErrors } from "./headlesschromestart.mjs";
 
 // Chrome is started by headlesschromestart.mjs when this module loads; its process and its error output are read here.
-export { chrome, chromeErrors } from "./headlesschromestart.mjs";
+export { chrome, chromeErrors, devtools } from "./headlesschromestart.mjs";
 
 export async function waitForFile(filePath, timeoutMs = 12000) {
   const deadline = Date.now() + timeoutMs;

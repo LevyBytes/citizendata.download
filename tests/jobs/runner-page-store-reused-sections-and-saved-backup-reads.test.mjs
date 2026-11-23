@@ -21,7 +21,7 @@ test("a step that reuses the saved section after earlier steps replaces what tho
 
 test("an update reads the saved backup once for a section, however many steps the section takes", async () => {
   const saved = { sync: { sectionOutcomes: { pledges: { status: "complete", parserVersion: "1", records: 2 } } }, pledges: [{ recordKey: "saved-1" }, { recordKey: "saved-2" }], hangarLog: Array.from({ length: 500 }, (_, index) => ({ row: index })) };
-  const { state, startWorker, step } = await pagedJob([10, 10, 10, 2], { mode: "update", seed: { snapshots: [{ accountId: "account-1", runId: "earlier", document: saved }] } });
+  const { state, startWorker, step } = await pagedJob([10, 10, 10, 2], { mode: "update", seed: { snapshots: [{ accountId: "account-1", runId: "earlier", source: "collected", document: saved }] } });
   const runner = startWorker();
   for (let index = 0; index < 3; index += 1) await step(runner);
   assert.equal(state.snapshotReads, 1, "one read when the section starts");
@@ -31,7 +31,7 @@ test("an update reads the saved backup once for a section, however many steps th
   assert.equal(state.snapshotReads, 2, "and one more to assemble the finished document");
 
   // A worker that starts over reads it once more.
-  const restarted = await pagedJob([10, 10, 2], { mode: "update", seed: { snapshots: [{ accountId: "account-1", runId: "earlier", document: saved }] } });
+  const restarted = await pagedJob([10, 10, 2], { mode: "update", seed: { snapshots: [{ accountId: "account-1", runId: "earlier", source: "collected", document: saved }] } });
   await restarted.step(restarted.startWorker());
   await restarted.step(restarted.startWorker());
   assert.equal(restarted.state.snapshotReads, 2);
@@ -45,7 +45,7 @@ test("sections that each end in one step share a single read of the saved backup
     sync: { sectionOutcomes: Object.fromEntries(sections.map((section) => [section, { status: "complete", parserVersion: "1", records: 1 }])) },
     profile: { handle: "saved" }, pledges: [{ recordKey: "saved" }], buybacks: [{ recordKey: "saved" }]
   };
-  const memory = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "earlier", document: saved }] });
+  const memory = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "earlier", source: "collected", document: saved }] });
   const repository = { ...memory, getSnapshot: async (key) => { snapshotReads += 1; return memory.getSnapshot(key); } };
   const plan = { selectedSections: sections, maximumRecordsBySection: Object.fromEntries(sections.map((section) => [section, 5])), minimumInterRequestDelayMs: 900 };
   const job = atBaseline(runnerApi.createJob({ jobId: "job-shared", runId: RUN_ID, accountId: "account-1", authorizationId: AUTHORIZATION_ID, plan, mode: "update", now: new Date(clock).toISOString() }));

@@ -1,10 +1,14 @@
-import { assert } from "./assert-build-chooser-reload-and-inventory-state.mjs";
+import { assert, reloadDashboard } from "./assert-build-chooser-reload-and-inventory-state.mjs";
 import { setViewport } from "./captures-viewport-and-fixture-loading.mjs";
 import { evaluate, waitFor } from "./chrome-process-and-devtools-commands.mjs";
 import { checkDashboardGeometry } from "./dashboard-geometry-check.mjs";
 import { publicHeadSnapshot } from "./full-run-example-page-wording-and-overview-steps.mjs";
 import { checkPersonLinks } from "./owner-avatar-and-person-links-checks.mjs";
 import { checkResponsiveGeometry } from "./responsive-geometry-check.mjs";
+
+// The steps before leave a synthetic Account Data job running, and a file of another account is not opened while a
+// job runs. These steps start from a page with no extension and no job.
+await reloadDashboard();
 
 await evaluate(`(async () => {
   const stampedDocument = await window.CitizenDataAccountDocument.stampIntegrity(structuredClone(window.CITIZENDATA_DEMO_DATA));

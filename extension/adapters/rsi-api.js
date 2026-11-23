@@ -1585,6 +1585,11 @@
     HANGAR_LOG_PATH,
     IDENTIFY_PATH,
     ORGANIZATION_MEMBERS_PATH,
+    // The fixed request list, read by its closed-list test: the POST addresses that carry the session token, and the
+    // checks every POST and every page address pass before a request is sent.
+    TOKEN_POST_PATHS: Object.freeze([...TOKEN_POST_PATHS].sort()),
+    approvedHtmlPath,
+    approvedPostUrl,
     clearTransientCaches,
     retainedPages,
     restorePages,

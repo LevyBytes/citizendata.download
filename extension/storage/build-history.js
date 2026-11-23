@@ -7,6 +7,10 @@
 })(globalThis, function createCitizenDataBuildHistory(root) {
   "use strict";
 
+  // Builds are ordered by the instant they were exported, never by the text of the time: the comparison of
+  // shared/account-document.js, which the service worker, the popup and the tests load before this file.
+  const compareExportedAt = (left, right) => globalThis.CitizenDataAccountDocument.compareExportedAt(left, right);
+
   // Earlier finished builds of the account data, kept when the user turns the build history on in the popup.
   //
   // The latest build is always kept, uncompressed, because updates read it. When a new build replaces it and the
@@ -151,7 +155,7 @@
     return (await through(new root.DecompressionStream("gzip"), [fromBase64(gzipBase64)])).bytes;
   }
 
-  const newestFirst = (left, right) => String(right.exportedAt).localeCompare(String(left.exportedAt));
+  const newestFirst = (left, right) => compareExportedAt(right.exportedAt, left.exportedAt);
 
   function historyId(accountId, exportedAt) {
     return `${accountId}:${exportedAt}`;

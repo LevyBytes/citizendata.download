@@ -27,7 +27,7 @@ export async function checkResponsiveGeometry(label) {
       const number = record.children[1].getBoundingClientRect();
       if (Math.abs(number.top - label.top) > 2 || number.left < label.right - 1) failures.push('wide UEE Citizen label and number are not inline');
     }
-    const blocks = ['#avatar', '.identity-copy', '.identity-aside'].map(selector => panel.querySelector(selector));
+    const blocks = ['.identity-account-controls', '.identity-copy', '.identity-aside'].map(selector => panel.querySelector(selector));
     for (let i = 0; i < blocks.length; i++) {
       const rect = blocks[i].getBoundingClientRect();
       if (!within(rect, panelRect)) failures.push('hero block escapes panel: ' + blocks[i].className);

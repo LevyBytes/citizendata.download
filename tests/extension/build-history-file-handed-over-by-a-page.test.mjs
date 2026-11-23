@@ -3,7 +3,7 @@ import test from "node:test";
 import { createExtensionHarness } from "../support/extension-harness.mjs";
 import { AccountDocument, SMALL, account, plain } from "./build-history-loaded-with-fixture-builds-and-rosters.mjs";
 
-test("a file a page hands over is not kept unless it is a complete, verified build, the history is on, and no build is running", async () => {
+test("a file a page hands over keeps only its safe account summary when history is off", async () => {
   const { first } = await account();
   const harness = await createExtensionHarness({ account: SMALL });
   const tab = harness.openTab();
@@ -33,9 +33,14 @@ test("a file a page hands over is not kept unless it is a complete, verified bui
   await refused({ document: { ...first, cookie: "x" } }, "FORBIDDEN_PAYLOAD_FIELD");
   await refused(null, "FORBIDDEN_PAYLOAD_FIELD");
 
-  // With the history off the extension keeps nothing a page hands over.
+  // With history off, a complete verified file adds only its safe identity summary; no full build is retained.
   await harness.popup.request("SET_BUILD_HISTORY", { enabled: false });
-  await refused({ document: first }, "BUILD_HISTORY_OFF");
+  const summaryOnly = plain(await tab.request("KEEP_BUILD", { document: first }));
+  assert.deepEqual(summaryOnly, { ok: true, kept: false, reason: "ACCOUNT_SUMMARY_KEPT", accountKey: "rsi:syntheticcitizen" });
+  assert.equal(harness.repository.inspect().snapshots.size, 0);
+  assert.deepEqual(plain(await tab.request("LIST_ACCOUNTS")).accounts, [{
+    key: "rsi:syntheticcitizen", handle: "SyntheticCitizen", displayName: "Synthetic Citizen", registered: true, hasRetainedBuild: false, retainedExportedAt: null
+  }]);
   await harness.popup.request("SET_BUILD_HISTORY", { enabled: true });
 
   // While a build runs, the file is not taken in; the build finishes as usual.

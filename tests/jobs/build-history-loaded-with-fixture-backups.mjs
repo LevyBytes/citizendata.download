@@ -1,3 +1,4 @@
+await import("../../docs/scripts/account-document.js");
 await import("../../extension/storage/build-history.js");
 await import("../../docs/scripts/file-timestamp.js");
 await import("../../docs/scripts/canonical-download.js");
@@ -37,7 +38,7 @@ export const extraPledge = { pledgeId: 2, recordKey: "pledge:2", title: "Add-Ons
 // An Organization JSON as the dashboard saves it, reduced to what the history reads.
 export function organizations(exportedAt, members = ["a", "b"], updatedAt = exportedAt) {
   return {
-    schemaVersion: 1, documentType: "CitizenDataOrganizations", generator: { name: "CitizenData", version: "0.42.1" }, exportedAt,
+    schemaVersion: 1, documentType: "CitizenDataOrganizations", generator: { name: "CitizenData", version: "0.42.2" }, exportedAt,
     account: { localAccountId: "11111111-1111-4111-8111-111111111111", handle: "Example Citizen" },
     memberships: [{ sid: "TEST" }, { sid: "MMHC" }],
     rosterIndex: [{ organizationSid: "TEST", memberStart: 0, memberCount: members.length, status: "complete", updatedAt }, { organizationSid: "MMHC", memberStart: members.length, memberCount: 0, status: "notDownloaded", updatedAt: null }],

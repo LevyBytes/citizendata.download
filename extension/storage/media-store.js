@@ -27,7 +27,9 @@
     requestText: 24 * MEBIBYTE,
     responseText: 8 * MEBIBYTE,
     identifiersPerRequest: 512,
-    images: 20000
+    images: 20000,
+    // All kept images together, of every account: room for several accounts' Images ZIPs.
+    storedBytes: 2048 * MEBIBYTE
   });
 
   function typeFromMagic(bytes) {
@@ -90,5 +92,35 @@
     return { count: entries.length, bytes: entries.reduce((total, entry) => total + (Number.isSafeInteger(entry.byteLength) ? entry.byteLength : 0), 0) };
   }
 
-  return Object.freeze({ EXTENSIONS, LIMITS, checkFile, fromBase64, isIdentifierList, publicEntry, sha256, summary, typeFromMagic });
+  // Which checked images to write over what is kept (`kept`, the stored entries). An image kept already with the same
+  // content hash is not written again. One with other bytes at the same identifier, which a picture changed at one
+  // address gives, replaces the kept one only when it was fetched strictly later; an older one is left out. The request
+  // is refused whole when the images kept after it would pass the count or the byte total.
+  function planKeep(kept, accepted) {
+    const byId = new Map(kept.map((entry) => [entry.assetId, entry]));
+    let { count, bytes } = summary(kept);
+    const writes = [];
+    const unchanged = [];
+    const older = [];
+    for (const item of accepted) {
+      const held = byId.get(item.entry.assetId);
+      if (held?.contentHash === item.entry.contentHash) {
+        unchanged.push(item.entry.assetId);
+        continue;
+      }
+      if (held && !(Date.parse(item.entry.fetchedAt) > Date.parse(held.fetchedAt))) {
+        older.push(item.entry.assetId);
+        continue;
+      }
+      count += held ? 0 : 1;
+      bytes += item.entry.byteLength - (Number.isSafeInteger(held?.byteLength) ? held.byteLength : 0);
+      byId.set(item.entry.assetId, item.entry);
+      writes.push(item);
+    }
+    if (count > LIMITS.images) return { ok: false, code: "IMAGE_LIMIT" };
+    if (bytes > LIMITS.storedBytes) return { ok: false, code: "IMAGE_BYTES_LIMIT" };
+    return { ok: true, writes, stored: [...unchanged, ...writes.map((item) => item.entry.assetId)], older };
+  }
+
+  return Object.freeze({ EXTENSIONS, LIMITS, checkFile, fromBase64, isIdentifierList, planKeep, publicEntry, sha256, summary, typeFromMagic });
 });

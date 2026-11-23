@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, extensionPage, setRsi } from "./browser-pages-and-account-in-use.mjs";
-import { freshDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { afterRequests, holdRsiWhen, reach, settled } from "./held-rsi-requests.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
 import { POLL_MS, pause } from "./polling-intervals.mjs";
@@ -13,6 +13,7 @@ export async function skipCcuPrices() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "SkipCitizen", counts: { pledges: 12, buybacks: 24, orders: 5, storeCredit: 5, uec: 3, rec: 2, olderHangarLogRows: 5, prospects: 5, recruits: 2, legacyRecruits: 1, organizationMembers: 5 } });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "SkipCitizen");
   const priceCalls = () => account.requests.filter((request) => request.operations?.includes("getPrice")).length;
   const skipShown = "document.getElementById('skipCollection').getClientRects().length > 0";
   // The build is held early on, where Skip must not be offered, and again at the first request of the CCU price

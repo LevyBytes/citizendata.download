@@ -24,7 +24,7 @@ await evaluate(`(()=>{
     window.dispatchEvent(new MessageEvent('message',{source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'RESPONSE',requestId:request.requestId,bridgeSessionId:session,nonce,payload}}));
   });
   window.dispatchEvent(new MessageEvent('message',
-    {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{extensionVersion:'0.42.1',capabilities:{buildJson:true}}}}));
+    {source:window,origin,data:{channel:'citizendata.dashboard.v1',protocolVersion:2,type:'BRIDGE_READY',requestId:crypto.randomUUID(),bridgeSessionId:session,nonce,payload:{extensionVersion:'0.42.2',capabilities:{buildJson:true}}}}));
   window.__emitCitizenDataStatus(window.__citizendataTestStatus);return true;
 })()`);
 await waitFor("!document.querySelector('#collectionActivity').hidden");

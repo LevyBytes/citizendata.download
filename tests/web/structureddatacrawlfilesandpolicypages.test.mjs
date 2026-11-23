@@ -10,6 +10,7 @@ import { docs, html, head, attributes, meta, base } from "./sitemetadatasources.
 const structuredData = text => JSON.parse(text.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/u)[1]);
 
 const structured = structuredData(head);
+const chromeWebStoreUrl = "https://chromewebstore.google.com/detail/citizen-data-downloader/ehklbfcpnadaeodflibpihhgimmmhjpd";
 
 const sitemap = await readFile(path.join(docs, "sitemap.xml"), "utf8");
 
@@ -22,12 +23,14 @@ test("structured data stays factual and crawl files identify only public website
     // The publisher is a person, whose url is their own profile.
     if (item["@type"] !== "Person") assert.equal(item.url, base);
     assert.ok(item["@id"].startsWith(base));
-    for (const unsupported of ["aggregateRating", "review", "downloadUrl", "installUrl"]) assert.equal(item[unsupported], undefined);
+    for (const unsupported of ["aggregateRating", "review", "downloadUrl"]) assert.equal(item[unsupported], undefined);
   }
   const [website, application, publisher] = structured["@graph"];
   assert.equal(website.name, meta("application-name"));
   assert.ok(website.alternateName.includes(meta("og:site_name")));
   assert.equal(application.description, meta("description"));
+  assert.equal(application.installUrl, chromeWebStoreUrl);
+  assert.ok(application.sameAs.includes(chromeWebStoreUrl));
   // The only offer is the free one, which the X label states too.
   assert.deepEqual(application.offers, { "@type": "Offer", price: "0", priceCurrency: "USD" });
   assert.equal(application.isAccessibleForFree, true);

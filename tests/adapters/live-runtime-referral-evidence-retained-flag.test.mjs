@@ -28,7 +28,7 @@ async function prospectsStep(raw, rawAnomalies) {
   ], { crypto: globalThis.crypto, TextEncoder, Uint8Array, CitizenDataRsiApi: rsiApi });
   const build = (value) => vm.runInContext(`(${JSON.stringify(value)})`, context);
   vm.runInContext(liveRuntimeSource, context, { filename: "live-runtime.js" });
-  const adapter = context.CitizenDataLiveRuntime.createAdapter({ id: "referrals.current.prospects", parser: "parseReferrals", version: "0.42.1", parserOptions: { ladder: "current", kind: "prospects" } });
+  const adapter = context.CitizenDataLiveRuntime.createAdapter({ id: "referrals.current.prospects", parser: "parseReferrals", version: "0.42.2", parserOptions: { ladder: "current", kind: "prospects" } });
   return adapter.collectStep({ accountId: "Citizen", runId: "run", cursor: null, maximumRecords: 100 });
 }
 

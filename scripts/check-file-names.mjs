@@ -5,7 +5,7 @@
 //   a line of its code: document-add-event-listener-click.mjs;
 //   fewer than three characters.
 // A README under tests/ fails as well: a check says what it is for at the top of its own file.
-// A number that is the thing's own name passes: a version (0.42.1), a standard's or a platform's (sha256, x86_64), an
+// A number that is the thing's own name passes: a version (0.42.2), a standard's or a platform's (sha256, x86_64), an
 // amount with its unit (380px, 30-seconds), a limit a test is about (over-100), a date. Whether a name says exactly
 // what its file holds is for the reader to judge; this check refuses the names that cannot.
 //

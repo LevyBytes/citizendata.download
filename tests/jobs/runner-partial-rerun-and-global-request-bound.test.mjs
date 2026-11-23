@@ -10,7 +10,7 @@ test("canonical runner completion preserves a previous complete section when a r
     exportedAt: "2026-11-17T12:00:00.000Z",
     results: [profile("Original complete profile")]
   });
-  const repository = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "baseline-run", promotedAt: "2026-11-17T12:00:00.000Z", document: baseline.document }] });
+  const repository = databaseApi.createMemoryRepository({ snapshots: [{ accountId: "account-1", runId: "baseline-run", promotedAt: "2026-11-17T12:00:00.000Z", source: "collected", document: baseline.document }] });
   const plan = { selectedSections: ["profile"], maximumRecordsBySection: { profile: 1 }, minimumInterRequestDelayMs: 2500 };
   const auth = authorizationRecord(clock, {
     authorizationId: "44444444-4444-4444-8444-444444444444",

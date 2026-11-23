@@ -20,7 +20,9 @@ await cp(path.join(repositoryRoot, "docs"), docsRoot, { recursive: true });
   await writeFile(policyPath, source);
 }
 export const dashboardUrl = pathToFileURL(path.join(docsRoot, "index.html")).href;
-export const dashboardPath = new URL(dashboardUrl).pathname;
+// Chrome writes a Windows drive letter of a file address in capitals, whatever the letter case of the folder this run
+// was started from.
+export const dashboardPath = new URL(dashboardUrl).pathname.replace(/^\/([a-z]):\//u, (_, drive) => `/${drive.toUpperCase()}:/`);
 // The popup shows a Windows drive path the way a file manager does, and any other path as it is.
 const decodedDashboardPath = decodeURIComponent(dashboardPath);
 export const displayedPath = /^\/[A-Za-z]:\//u.test(decodedDashboardPath) ? decodedDashboardPath.slice(1).replaceAll("/", "\\") : decodedDashboardPath;

@@ -9,29 +9,12 @@
   // The extension's Protocol.VERSION; 2 since terminal `partial` and the bounded status fields.
   const PROTOCOL_VERSION = 2;
   // Stamped into the documents this page itself assembles. Extension compatibility is decided by PROTOCOL_VERSION.
-  const DASHBOARD_VERSION = "0.42.1";
-  // Temporary developer-mode source while Chrome Web Store approval is pending; replace with the listing URL.
-  const EXTENSION_INSTALL_URL = "https://github.com/LevyBytes/citizendata.download/tree/main/extension";
+  const DASHBOARD_VERSION = "0.42.2";
+  // Canonical consumer install and update page in the Chrome Web Store.
+  // The extension's source is composed before it can be loaded unpacked, so the link is to the README's steps.
+  const EXTENSION_INSTALL_URL = "https://chromewebstore.google.com/detail/citizen-data-downloader/ehklbfcpnadaeodflibpihhgimmmhjpd";
   const HERO_NAMES = Object.freeze(["radar", "holo-render", "staff-pick", "customize"]);
   const state = {
-    document: globalThis.CITIZENDATA_DEMO_DATA,
-    source: "demo",
-    fileName: "example.json",
-    activeInventory: "hangar",
-    activeGroup: "all",
-    activeRecordKey: null,
-    inventoryPage: 1,
-    inventorySortKey: null,
-    inventorySortDirection: "ascending",
-    referralPath: "current.prospects",
-    referralOrder: "newest",
-    referralPage: 1,
-    referralSearch: "",
-    organizationSid: "TEST",
-    organizationPage: 1,
-    organizationSearch: "",
-    organizationDocument: null,
-    organizationFileName: null,
     savedOrganizationHashes: new Set(),
     bridge: null,
     bridgeReachable: false,
@@ -53,16 +36,15 @@
     buildStatusOpener: null,
     skipRequestedRunId: null,
     pendingOrganizationSids: [],
-    mediaPlan: [],
-    mediaPlanGeneration: 0,
-    mediaPlanAccount: null,
     latestBuildRequested: false,
-    buildOffer: null,
-    organizationOffer: null,
+    // The bridge session whose accounts were listed, and whether Add new account waits for the extension.
+    accountsListedFor: null,
+    accountRequestPending: false,
     handOverQueue: Promise.resolve(),
-    mediaPlanDocument: null,
     mediaController: null,
-    pendingMediaPackage: null,
+    // The controller of the image run whose Cancel was chosen, and the wait the run is in, as the log shows it.
+    mediaCancelRequested: null,
+    mediaWait: null,
     mediaOverlayActive: false,
     mediaCompleted: 0,
     mediaActiveRequests: 0,
@@ -71,22 +53,67 @@
     mediaTapeState: null,
     mediaStatusPage: null,
     mediaStatusCheckedAt: null,
-    loadedMediaPackage: null,
-    loadedMediaFileName: null,
-    mediaObjectUrls: new Map(),
-    mediaLoadPromises: new Map(),
-    mediaLoadStates: new Map(),
     continuePartial: false,
     statusPollTimer: null,
     // The ordered renderer's view (§11.2).
     view: { revision: -1, pollSequence: 0, appliedPoll: 0, announcementKey: null, presentation: null, mediaLogSequence: 0, noticeRunId: null, noticeKeys: new Set() }
   };
 
+  // Switch Account: each account open in this page is a session that holds its own document, Orgs JSON, images and
+  // view. These fields of `state` read and write the session shown. The example is a session of its own: it is never
+  // listed under Switch Account or offered to the extension.
+  const AccountSessions = globalThis.CitizenDataAccountSessions;
+  const sameAccount = (left, right) => globalThis.CitizenDataOrganizationDocument.sameAccount(left, right);
+  const SESSION_FIELDS = Object.freeze([
+    "document", "source", "fileName",
+    "activeInventory", "activeGroup", "activeRecordKey", "inventoryPage", "inventorySortKey", "inventorySortDirection", "inventorySearch",
+    "referralPath", "referralOrder", "referralPage", "referralSearch",
+    "organizationSid", "organizationPage", "organizationSearch", "organizationDocument", "organizationFileName",
+    "mediaPlan", "mediaPlanGeneration", "mediaPlanAccount", "mediaPlanDocument", "pendingMediaPackage", "loadedMediaPackage", "loadedMediaFileName",
+    "mediaObjectUrls", "mediaLoadPromises", "mediaLoadStates", "mediaTexts", "buildOffer", "organizationOffer"
+  ]);
+
+  // `identityOnly`: an account the extension added, of which no document is open; it shows the example's document
+  // nowhere, only its handle and the empty state.
+  function newSession(key, identity) {
+    return {
+      key, identity, displayName: null, identityOnly: false,
+      document: globalThis.CITIZENDATA_DEMO_DATA, source: "demo", fileName: "example.json",
+      activeInventory: "hangar", activeGroup: "all", activeRecordKey: null, inventoryPage: 1, inventorySortKey: null, inventorySortDirection: "ascending", inventorySearch: "",
+      referralPath: "current.prospects", referralOrder: "newest", referralPage: 1, referralSearch: "",
+      organizationSid: "TEST", organizationPage: 1, organizationSearch: "", organizationDocument: null, organizationFileName: null,
+      mediaPlan: [], mediaPlanGeneration: 0, mediaPlanAccount: null, mediaPlanDocument: null, pendingMediaPackage: null, loadedMediaPackage: null, loadedMediaFileName: null,
+      mediaObjectUrls: new Map(), mediaLoadPromises: new Map(), mediaLoadStates: new Map(), mediaTexts: null, buildOffer: null, organizationOffer: null
+    };
+  }
+
+  const exampleSession = newSession("example", { handle: null, localAccountId: null });
+  const accounts = AccountSessions.createRegistry({ sameAccount });
+  let activeAccountKey = null;
+  const activeSession = () => accounts.get(activeAccountKey) ?? exampleSession;
+  for (const field of SESSION_FIELDS) {
+    Object.defineProperty(state, field, { enumerable: true, get: () => activeSession()[field], set: (value) => { activeSession()[field] = value; } });
+  }
+
   const byId = (id) => document.getElementById(id);
   const refs = {
     fileInput: byId("jsonFileInput"),
     loadButton: byId("loadButton"),
     buildButton: byId("buildButton"),
+    switchAccountButton: byId("switchAccountButton"),
+    accountPopup: byId("accountPopup"),
+    accountMenu: byId("accountMenu"),
+    accountMenuAccounts: byId("accountMenuAccounts"),
+    accountMenuSeparator: byId("accountMenuSeparator"),
+    accountMenuStatus: byId("accountMenuStatus"),
+    addAccountCommand: byId("addAccountCommand"),
+    addAccountDialog: byId("addAccountDialog"),
+    addAccountLoadJson: byId("addAccountLoadJson"),
+    removeAccountCommand: byId("removeAccountCommand"),
+    removeAccountDialog: byId("removeAccountDialog"),
+    removeAccountDialogTitle: byId("removeAccountDialogTitle"),
+    removeAccountDialogMessage: byId("removeAccountDialogMessage"),
+    accountEmptyState: byId("accountEmptyState"),
     cautionTape: byId("cautionTape"),
     cautionTapeText: byId("cautionTapeText"),
     buildStatusAnnouncement: byId("buildStatusAnnouncement"),
@@ -158,6 +185,8 @@
     buildImagesAction: byId("buildImagesAction"),
     mediaControls: byId("mediaControls"),
     mediaCancelOverlay: byId("mediaCancelOverlay"),
+    mediaBusy: byId("mediaBusy"),
+    mediaBusyStatus: byId("mediaBusyStatus"),
     mediaSaveOverlay: byId("mediaSaveOverlay"),
     mediaStatus: byId("mediaStatus"),
     mediaZipInput: byId("mediaZipInput"),
@@ -511,7 +540,7 @@
       }).then(task.resolve).finally(() => {
         mediaLoadActive -= 1;
         if (mediaLoadTasks.get(task.imageKey) === task) mediaLoadTasks.delete(task.imageKey);
-        if (state.mediaLoadPromises.get(task.imageKey) === task.promise) state.mediaLoadPromises.delete(task.imageKey);
+        if (task.session.mediaLoadPromises.get(task.imageKey) === task.promise) task.session.mediaLoadPromises.delete(task.imageKey);
         if (!task.quiet) scheduleMediaViewRefresh();
         pumpMediaLoadQueue();
       });
@@ -544,7 +573,7 @@
     let resolve;
     const promise = new Promise((complete) => { resolve = complete; });
     mediaLoadSequence += 1;
-    const task = { imageKey, asset, package: state.loadedMediaPackage, priority, quiet, sequence: mediaLoadSequence, generation: mediaLoadGeneration, promise, resolve, started: false };
+    const task = { imageKey, asset, package: state.loadedMediaPackage, session: activeSession(), priority, quiet, sequence: mediaLoadSequence, generation: mediaLoadGeneration, promise, resolve, started: false };
     mediaLoadTasks.set(imageKey, task);
     state.mediaLoadPromises.set(imageKey, promise);
     state.mediaLoadStates.set(imageKey, { status: "queued", message: `Queued from ${imageSourcePhrase()}.` });
@@ -586,16 +615,29 @@
     return true;
   }
 
-  function clearLoadedMediaPackage() {
+  // The image loads of the session shown stop; any other session's were stopped when it was left.
+  function stopMediaLoads() {
     mediaLoadGeneration += 1;
     for (const task of mediaLoadQueue.splice(0)) task.resolve(false);
     mediaLoadTasks.clear();
-    for (const objectUrl of new Set(state.mediaObjectUrls.values())) URL.revokeObjectURL(objectUrl);
-    state.mediaObjectUrls.clear();
-    state.mediaLoadPromises.clear();
-    state.mediaLoadStates.clear();
-    state.loadedMediaPackage = null;
-    state.loadedMediaFileName = null;
+  }
+
+  function clearLoadedMediaPackage(session = activeSession()) {
+    if (session === activeSession()) stopMediaLoads();
+    for (const objectUrl of new Set(session.mediaObjectUrls.values())) URL.revokeObjectURL(objectUrl);
+    session.mediaObjectUrls.clear();
+    session.mediaLoadPromises.clear();
+    session.mediaLoadStates.clear();
+    session.loadedMediaPackage = null;
+    session.loadedMediaFileName = null;
+  }
+
+  // A session that is left keeps the images it has shown; the loads still waiting or running are dropped and are
+  // asked for again when it is shown again.
+  function suspendMediaLoads(session) {
+    stopMediaLoads();
+    for (const [imageKey, value] of session.mediaLoadStates) if (value?.status === "queued" || value?.status === "loading") session.mediaLoadStates.delete(imageKey);
+    session.mediaLoadPromises.clear();
   }
 
   function rotateHero() {
@@ -615,7 +657,28 @@
     return Model.getMainMembership(state.document);
   }
 
+  // An account the extension added, of which no backup is open: its handle, its initials, and the empty state.
+  function renderAddedAccountIdentity() {
+    const session = activeSession();
+    const handle = session.identity.handle ?? "Unknown account";
+    text("accountHandle", handle);
+    text("avatarInitials", Model.initials(session.displayName ?? handle));
+    refs.avatarImage.hidden = true;
+    refs.avatarImage.removeAttribute("src");
+    refs.avatarInitials.hidden = false;
+    byId("avatar").setAttribute("aria-label", `${handle} initials`);
+    text("snapshotEyebrow", "ADDED ACCOUNT");
+    text("railAccount", handle);
+    text("railExported", null);
+    text("documentStatusTitle", "NO BACKUP LOADED");
+    text("documentStatusDetail", "No private account data · no upload");
+  }
+
   function renderIdentity() {
+    if (activeSession().identityOnly) {
+      renderAddedAccountIdentity();
+      return;
+    }
     const data = state.document;
     const handle = data.account?.handle ?? data.profile?.handle ?? "Unknown account";
     const anomalyCount = Array.isArray(data.dataQuality?.anomalies) ? data.dataQuality.anomalies.length : 0;
@@ -1398,6 +1461,19 @@
     renderInventory();
   }
 
+  // The session's own inventory tab, filter, search, sort, page and selected record, as they were left.
+  function showInventoryView() {
+    for (const button of document.querySelectorAll("[data-view]")) {
+      const selected = button.dataset.view === state.activeInventory;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    }
+    refs.search.value = state.inventorySearch;
+    syncFilterChips();
+    renderInventory();
+  }
+
   function referralRecords() {
     const [source, kind] = state.referralPath.split(".");
     return Model.asArray(state.document.referrals?.[source]?.[kind]);
@@ -1518,7 +1594,6 @@
     const sortButton = byId("referralSortButton");
     sortButton.dataset.order = state.referralOrder;
     sortButton.lastChild.textContent = state.referralOrder === "newest" ? "Newest first" : "Oldest first";
-    sortButton.setAttribute("aria-label", `Sort referral records ${state.referralOrder === "newest" ? "oldest" : "newest"} first`);
     sortButton.classList.toggle("ascending", state.referralOrder === "oldest");
     rows.closest(".collection-table-shell").scrollTop = 0;
   }
@@ -1603,11 +1678,23 @@
     byId("organizationNext").disabled = page.page >= page.totalPages;
   }
 
-  function renderAll() {
+  // The page shows the empty state, and none of the account sections, while the account shown has no document.
+  function renderAccountState() {
+    const identityOnly = activeSession().identityOnly;
+    if (identityOnly) document.body.dataset.accountState = "identity-only";
+    else delete document.body.dataset.accountState;
+    patchHidden(refs.accountEmptyState, !identityOnly);
+    renderAccountMenu();
+  }
+
+  // `keepView`: a session shown again keeps its inventory view; a document just opened starts it again.
+  function renderAll({ keepView = false } = {}) {
+    renderAccountState();
     renderIdentity();
     renderSummary();
     renderBadges();
-    setInventoryView(state.activeInventory);
+    if (keepView) showInventoryView();
+    else setInventoryView(state.activeInventory);
     renderReferrals();
     renderOrganizations();
   }
@@ -1622,6 +1709,7 @@
   function updateBuildAction() {
     text("buildButtonLabel", "Build");
     refs.buildButton.disabled = false;
+    refreshAccountMenuAvailability();
   }
 
   function accountOperationActive() {
@@ -1665,7 +1753,7 @@
       text("extensionNoticeTitle", "Star Citizen Data Downloader extension needs an update");
       text("extensionNoticeDetail", "The installed extension and this page use different connection versions. Update the extension, then reload this page.");
       text("installExtensionTitle", "Update the Star Citizen Data Downloader extension.");
-      text("installExtensionDetail", "Google Chrome Extension Marketplace approval pending, submitted 11/22/2026. Use the GitHub-hosted extension in developer mode for now.");
+      text("installExtensionDetail", "Update from the Chrome Web Store.");
       return;
     }
     if (state.localApprovalRequired) {
@@ -1678,7 +1766,7 @@
       ? "This page cannot read an RSI account on its own. For a downloaded copy: install the extension and turn on \u201cAllow access to file URLs\u201d in its Chrome details page. Once the extension is on, reload this page, then approve this copy from the Star Citizen Data Downloader toolbar icon."
       : "This page cannot read an RSI account on its own. The extension does that in your browser. Install the extension. Once the extension is on, reload this page.");
     text("installExtensionTitle", "Get the Star Citizen Data Downloader extension.");
-    text("installExtensionDetail", "Google Chrome Extension Marketplace approval pending, submitted 11/22/2026. Use the GitHub-hosted extension in developer mode for now.");
+    text("installExtensionDetail", "Install from the Chrome Web Store.");
   }
 
   function refreshBuildChoices() {
@@ -1738,8 +1826,10 @@
 
   function reopenMediaOverlay() {
     showOverlayExpanded();
-    if (state.mediaController) {
-      renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(state.mediaPlan.length), active: true });
+    if (state.mediaController && state.mediaCancelRequested === state.mediaController) {
+      renderMediaOverlay({ badge: "CANCELLING", operation: "Cancelling image download", detail: "Stopping active requests and waits.", tone: "warning", active: true });
+    } else if (state.mediaController) {
+      renderMediaOverlay(downloadingPresentation(state.mediaPlan.length));
     } else if (state.pendingMediaPackage) {
       renderMediaOverlay({ badge: "COMPLETED", operation: "Offline image ZIP ready", detail: refs.mediaStatus.textContent, tone: "success", active: false, completed: state.mediaPlan.length, total: state.mediaPlan.length });
     } else {
@@ -1750,6 +1840,57 @@
   // The sentence under "Downloading offline images". Its structure never changes; only its numbers do.
   function mediaDownloadDetail(total) {
     return `${formatInteger(state.mediaCompleted)} of ${formatInteger(total)} images finished. ${formatInteger(state.mediaActiveRequests)} of ${formatInteger(globalThis.CITIZENDATA_MEDIA_POLICY.maximumConcurrency)} requests active.`;
+  }
+
+  // The running download as the panel shows it. While it waits, the line counts down to the wait's end, and only the
+  // time in it changes each second.
+  function downloadingPresentation(total) {
+    const detail = mediaDownloadDetail(total);
+    const wait = state.mediaWait;
+    const lead = wait?.reason === "rate-limit" ? "Image requests were refused. Trying again in " : "Next image request in ";
+    const countdown = wait ? Object.freeze({ until: wait.waitingUntil, lead: `${detail} ${lead}`, tail: ".", after: `${detail} The wait ended. Resuming image requests.` }) : null;
+    return { badge: "DOWNLOADING", operation: "Downloading offline images", detail, countdown, active: true, completed: state.mediaCompleted, total };
+  }
+
+  function waitSeconds(milliseconds) {
+    const seconds = milliseconds / 1000;
+    const shown = seconds >= 10 ? Math.round(seconds) : Math.round(seconds * 10) / 10;
+    return `${shown.toLocaleString("en-US")} ${shown === 1 ? "second" : "seconds"}`;
+  }
+
+  // The image run's waits in the log: one line when a wait after refused requests, a retry's wait, or a gap long enough
+  // to look like a stop begins or is set again, and one when such a wait ends. No line is added while a wait lasts.
+  const LOGGED_GAP_MS = 2000;
+  function noteMediaWait(wait, total) {
+    if (wait.reason === "retry") {
+      if (wait.phase === "waiting") addMediaActivity(`Retrying image ${formatInteger(wait.imageIndex + 1)} in ${waitSeconds(wait.waitMs)}.`, "warning");
+      return;
+    }
+    if (wait.reason === "request-spacing" && wait.waitMs < LOGGED_GAP_MS) return;
+    if (wait.phase === "waiting") {
+      const previous = state.mediaWait;
+      state.mediaWait = wait;
+      const refusedWait = wait.reason === "rate-limit";
+      if (!previous || previous.reason !== wait.reason || previous.waitingUntil !== wait.waitingUntil) {
+        addMediaActivity(refusedWait ? `Image requests were refused. Waiting ${waitSeconds(wait.waitMs)} before trying again.` : `Waiting ${waitSeconds(wait.waitMs)} before the next image request.`, refusedWait ? "warning" : "normal");
+      }
+    } else {
+      if (!state.mediaWait) return;
+      state.mediaWait = null;
+      addMediaActivity("The wait ended. Resuming image requests.");
+    }
+    renderMediaOverlay(downloadingPresentation(total));
+  }
+
+  // Cancel of an image run: the panel says so at once, and the run stops in whatever wait or request it is in. A second
+  // click changes nothing; the run's own end shows CANCELLED.
+  function requestMediaCancel() {
+    const controller = state.mediaController;
+    if (!controller || state.mediaCancelRequested === controller) return;
+    state.mediaCancelRequested = controller;
+    addMediaActivity("Cancellation requested. Stopping active requests and waits.", "warning");
+    renderMediaOverlay({ badge: "CANCELLING", operation: "Cancelling image download", detail: "Stopping active requests and waits.", tone: "warning", active: true });
+    controller.abort();
   }
 
   function chooseAccountBuild() {
@@ -1790,36 +1931,383 @@
     }
   }
 
-  function useAccountDocument(accepted, { source, fileName }) {
-    Model.validateAccountDocument(accepted);
-    // A file that waited to be offered to the extension belongs to the document this one replaces.
-    state.buildOffer = null;
-    if (!state.organizationDocument || !globalThis.CitizenDataOrganizationDocument.sameAccount(state.organizationDocument.account, accepted.account)) state.organizationOffer = null;
-    const sameMediaAccount = Boolean(state.mediaPlanAccount && globalThis.CitizenDataOrganizationDocument.sameAccount(state.mediaPlanAccount, accepted.account));
-    if (state.mediaController && !sameMediaAccount) throw new Error("Cancel the active image download before opening a different account document.");
-    if (state.loadedMediaPackage?.fromExtension && !state.mediaController && !state.pendingMediaPackage) clearLoadedMediaPackage();
-    const preserveMedia = sameMediaAccount && Boolean(state.mediaController || state.pendingMediaPackage || state.loadedMediaPackage);
-    if (!sameMediaAccount && state.loadedMediaPackage) clearLoadedMediaPackage();
-    if (state.organizationDocument && !globalThis.CitizenDataOrganizationDocument.sameAccount(state.organizationDocument.account, accepted.account)) {
-      state.organizationDocument = null;
-      state.organizationFileName = null;
+  // Switching or adding an account waits while a job runs, so no result or image run is put under the wrong account.
+  function accountSwitchBlocker() {
+    const finish = "Finish or cancel it before switching or adding an account.";
+    if (state.mediaController) return `An Images job is running in Build Status. ${finish}`;
+    if (accountOperationActive()) {
+      return state.publicStatus?.activeJob?.jobKind === "organizationData"
+        ? `An Organization Data job is running in Build Status. ${finish}`
+        : `An Account Data job is running in Build Status. ${finish}`;
     }
-    if (ccuDialog.open) ccuDialog.close();
+    if (state.accountRequestPending) return "The extension is finding the account signed in to RSI.";
+    return "";
+  }
+
+  function accountMenuItems() {
+    return [...refs.accountMenu.querySelectorAll('[role="menuitemradio"], [role="menuitem"]')].filter((item) => !item.closest("[hidden]"));
+  }
+
+  // Every item, shown or not, so the menu is right the moment it opens.
+  function refreshAccountMenuAvailability() {
+    const blocker = accountSwitchBlocker();
+    for (const item of [...refs.accountMenuAccounts.children, refs.addAccountCommand, refs.removeAccountCommand]) patchAttr(item, "aria-disabled", blocker ? "true" : null);
+    patchText(refs.accountMenuStatus, blocker);
+    patchHidden(refs.accountMenuStatus, !blocker);
+  }
+
+  // One menu item for each account open in this page, in the order they were opened; the account shown is checked.
+  function renderAccountMenu() {
+    const entries = accounts.entries(activeAccountKey);
+    const focusedKey = refs.accountMenuAccounts.contains(document.activeElement) ? document.activeElement.dataset.accountKey : null;
+    refs.accountMenuAccounts.replaceChildren(...entries.map((entry) => {
+      const item = element("button", "account-menu-item");
+      item.type = "button";
+      item.tabIndex = -1;
+      item.setAttribute("role", "menuitemradio");
+      item.setAttribute("aria-checked", String(entry.current));
+      item.dataset.accountKey = entry.key;
+      item.append(element("span", "account-menu-label", entry.label));
+      // The space keeps the name and the handle apart in the item's accessible name; the grid does not show it.
+      if (entry.detail) item.append(" ", element("small", "account-menu-detail", entry.detail));
+      return item;
+    }));
+    refs.accountMenuAccounts.hidden = entries.length === 0;
+    refs.accountMenuSeparator.hidden = entries.length === 0;
+    // Remove this account is offered for an account shown with an extension that keeps accounts.
+    patchHidden(refs.removeAccountCommand, !(activeSession() !== exampleSession && state.bridge?.capabilities?.accounts === true && !state.extensionUpdateRequired));
+    refreshAccountMenuAvailability();
+    if (focusedKey) [...refs.accountMenuAccounts.children].find((item) => item.dataset.accountKey === focusedKey)?.focus();
+  }
+
+  // The menu is a popover in the top layer where the browser has popovers, and otherwise sits at the end of the page;
+  // either way the account card cannot clip it.
+  const ACCOUNT_POPOVER = typeof window.HTMLElement.prototype.showPopover === "function";
+  const ACCOUNT_POPUP_MARGIN = 12;
+  const ACCOUNT_POPUP_GAP = 6;
+
+  function inAccountSwitcher(node) {
+    return node instanceof window.Node && (refs.switchAccountButton.contains(node) || refs.accountPopup.contains(node));
+  }
+
+  // Below the button and centred on it, held inside the viewport; above it when the room below is too short.
+  function placeAccountPopup() {
+    if (refs.accountPopup.hidden) return;
+    const button = refs.switchAccountButton.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const width = Math.min(320, viewportWidth - 2 * ACCOUNT_POPUP_MARGIN);
+    const left = Math.min(Math.max(button.left + button.width / 2 - width / 2, ACCOUNT_POPUP_MARGIN), viewportWidth - ACCOUNT_POPUP_MARGIN - width);
+    const below = window.innerHeight - button.bottom - ACCOUNT_POPUP_GAP - ACCOUNT_POPUP_MARGIN;
+    const above = button.top - ACCOUNT_POPUP_GAP - ACCOUNT_POPUP_MARGIN;
+    const upward = below < 160 && above > below;
+    Object.assign(refs.accountPopup.style, {
+      left: `${Math.round(left)}px`,
+      width: `${Math.round(width)}px`,
+      maxHeight: `${Math.round(Math.max(Math.min(420, upward ? above : below), 120))}px`,
+      top: upward ? "auto" : `${Math.round(button.bottom + ACCOUNT_POPUP_GAP)}px`,
+      bottom: upward ? `${Math.round(window.innerHeight - button.top + ACCOUNT_POPUP_GAP)}px` : "auto"
+    });
+  }
+
+  function openAccountMenu(focusLast = false) {
+    renderAccountMenu();
+    refs.accountPopup.hidden = false;
+    if (ACCOUNT_POPOVER && !refs.accountPopup.matches(":popover-open")) refs.accountPopup.showPopover();
+    placeAccountPopup();
+    refs.switchAccountButton.setAttribute("aria-expanded", "true");
+    const items = accountMenuItems();
+    (focusLast ? items.at(-1) : items.find((item) => item.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
+  }
+
+  function closeAccountMenu(returnFocus) {
+    if (refs.accountPopup.hidden) return;
+    if (ACCOUNT_POPOVER && refs.accountPopup.matches(":popover-open")) refs.accountPopup.hidePopover();
+    refs.accountPopup.hidden = true;
+    refs.switchAccountButton.setAttribute("aria-expanded", "false");
+    if (returnFocus) refs.switchAccountButton.focus();
+  }
+
+  function accountMenuKeydown(event) {
+    const items = accountMenuItems();
+    const index = items.indexOf(document.activeElement);
+    const focusAt = (position) => items[(position + items.length) % items.length]?.focus();
+    if (event.key === "ArrowDown") focusAt(index + 1);
+    else if (event.key === "ArrowUp") focusAt(index < 0 ? items.length - 1 : index - 1);
+    else if (event.key === "Home") focusAt(0);
+    else if (event.key === "End") focusAt(items.length - 1);
+    else if (event.key === "Escape") closeAccountMenu(true);
+    else {
+      if (event.key === "Tab") closeAccountMenu(false);
+      return;
+    }
+    event.preventDefault();
+  }
+
+  function syncFilterChips() {
+    for (const chip of document.querySelectorAll(".filter-chip")) {
+      const selected = chip.dataset.group === state.activeGroup;
+      chip.classList.toggle("active", selected);
+      chip.setAttribute("aria-pressed", String(selected));
+    }
+    refs.filterCount.textContent = state.activeGroup === "all" ? "0" : "1";
+  }
+
+  // The extension keeps which account was chosen last, for the next time this page connects. Every account shown
+  // here is named, the ones whose file was opened or build finished during this visit too; the extension refuses one
+  // it does not list, and that answer changes nothing here. The example has no key and is never named.
+  function selectInExtension(session) {
+    const accountKey = AccountSessions.extensionKey(session.identity);
+    if (!accountKey || state.bridge?.capabilities?.accounts !== true || state.extensionUpdateRequired) return;
+    void requestBridge("SELECT_ACCOUNT", { accountKey }).catch(() => {});
+  }
+
+  // Shows another session from what this page already holds. Nothing is asked of RSI. The session left keeps its
+  // document, files, images, search, filter, sort, page and selected record for when it is shown again.
+  function activateSession(session) {
+    const outgoing = activeSession();
+    if (session === outgoing) return;
+    outgoing.inventorySearch = refs.search.value;
+    outgoing.mediaTexts = { status: refs.mediaStatus.textContent, assetCount: byId("mediaAssetCount").textContent, summary: byId("mediaSummary").textContent };
+    suspendMediaLoads(outgoing);
+    for (const dialog of [ccuDialog, refs.mediaGalleryDialog, refs.orgBuildDialog]) if (dialog.open) dialog.close();
+    // A finished image run is shown for the account it ran for only.
+    if (state.mediaOverlayActive && !state.mediaController) {
+      state.mediaOverlayActive = false;
+      renderCollectionStatus(state.publicStatus);
+    }
+    activeAccountKey = session === exampleSession ? null : session.key;
+    refs.referralSearch.value = state.referralSearch;
+    refs.organizationSearch.value = state.organizationSearch;
+    updateBuildAction();
+    renderAll({ keepView: true });
+    if (state.mediaPlanDocument !== state.document || !state.mediaTexts) void prepareMediaPlan();
+    else {
+      refs.mediaStatus.textContent = state.mediaTexts.status;
+      text("mediaAssetCount", state.mediaTexts.assetCount);
+      text("mediaSummary", state.mediaTexts.summary);
+    }
+    if (!refs.buildChoices.hidden) refreshBuildChoices();
+  }
+
+  // The user's choice under Switch Account; the extension is told of it, so it is the account shown next time.
+  function chooseAccount(key) {
+    const session = accounts.get(key);
+    if (!session || accountSwitchBlocker()) return;
+    closeAccountMenu(true);
+    activateSession(session);
+    selectInExtension(session);
+  }
+
+  // The session of an account the extension lists: the one open for it, or a new session that holds the account's
+  // summary alone until a build of it is open. Null when the account matches more than one session or none fits.
+  function listedSession(entry) {
+    const account = { handle: entry.handle, localAccountId: null };
+    const found = accounts.match(account);
+    if (found.conflict) return null;
+    let session = found.session;
+    if (!session) {
+      if (accounts.size >= AccountSessions.MAXIMUM_SESSIONS) return null;
+      const identity = AccountSessions.identityOf(account);
+      session = newSession(accounts.availableKey(identity), identity);
+      session.identityOnly = true;
+      session.fileName = null;
+      accounts.add(session);
+    }
+    session.displayName = AccountSessions.boundedLabel(entry.displayName ?? "") ?? session.displayName;
+    return session;
+  }
+
+  function validListedEntry(entry) {
+    return Boolean(entry) && typeof entry === "object" && typeof entry.handle === "string" && AccountSessions.HANDLE_PATTERN.test(entry.handle)
+      && entry.key === `rsi:${entry.handle.toLowerCase()}` && typeof entry.hasRetainedBuild === "boolean";
+  }
+
+  // With an extension that keeps accounts, every account it lists is put under Switch Account, and each build it
+  // keeps is opened into its account's session. A document already open in this page is never replaced. While the
+  // example is shown, the account the extension had selected is shown, or else the newest kept build.
+  async function loadExtensionAccounts() {
+    const bridge = state.bridge;
+    if (!bridge || state.extensionUpdateRequired || bridge.capabilities?.accounts !== true || state.accountsListedFor === bridge.bridgeSessionId) return;
+    state.accountsListedFor = bridge.bridgeSessionId;
+    let listed;
+    try {
+      listed = await requestBridge("LIST_ACCOUNTS", null);
+    } catch {
+      return;
+    }
+    if (state.bridge !== bridge || !listed?.ok || !Array.isArray(listed.accounts)) return;
+    const entries = listed.accounts.filter(validListedEntry).slice(0, AccountSessions.MAXIMUM_SESSIONS);
+    // An account the extension no longer lists, of which this page holds its summary alone, is removed.
+    for (const session of accounts.values()) {
+      if (!session.identityOnly || entries.some((entry) => sameAccount(session.identity, { handle: entry.handle }))) continue;
+      if (session === activeSession()) activateSession(accounts.values().find((other) => other !== session) ?? exampleSession);
+      accounts.remove(session.key);
+    }
+    const sessions = new Map(entries.map((entry) => [entry, listedSession(entry)]));
+    const newest = entries.filter((entry) => entry.hasRetainedBuild).sort((left, right) => globalThis.CitizenDataAccountDocument.compareExportedAt(right.retainedExportedAt, left.retainedExportedAt))[0];
+    const preferred = activeSession() === exampleSession ? entries.find((entry) => entry.key === listed.selectedKey) ?? newest ?? null : null;
+    renderAccountMenu();
+    for (const entry of [preferred, ...entries.filter((candidate) => candidate !== preferred)]) {
+      const session = sessions.get(entry);
+      if (!entry?.hasRetainedBuild || !session?.identityOnly) continue;
+      let response;
+      try {
+        response = await requestBridge("GET_ACCOUNT_BUILD", { accountKey: entry.key });
+      } catch {
+        continue;
+      }
+      if (state.bridge !== bridge || !response?.ok || !response.result || !session.identityOnly) continue;
+      const opening = entry === preferred && activeSession() === exampleSession;
+      try {
+        await acceptAccountDocument(response.result, { source: "extension", fileName: globalThis.CitizenDataCanonicalDownload.canonicalFileName(response.result) }, { activate: opening });
+        if (opening) showToast("Your latest build, kept in the extension, is open.");
+      } catch (error) {
+        showToast(`A build kept in the extension could not be opened: ${error?.message ?? "unknown error"}`);
+      }
+    }
+    const preferredSession = preferred ? sessions.get(preferred) : null;
+    if (preferredSession && accounts.get(preferredSession.key) && activeSession() === exampleSession) activateSession(preferredSession);
+  }
+
+  // Remove this account, under Switch Account: the user confirms first, then the extension forgets the account shown
+  // (REMOVE_ACCOUNT) and this page closes it. The page shows the account the extension selected in its place, if this
+  // page holds it, or else the example.
+  function confirmRemoveAccount() {
+    const session = activeSession();
+    if (session === exampleSession || accountSwitchBlocker()) return;
+    closeAccountMenu(true);
+    const { label } = AccountSessions.menuLabel(session);
+    refs.removeAccountDialogTitle.textContent = `Remove ${label}?`;
+    refs.removeAccountDialogMessage.textContent = `The extension forgets ${label} and deletes the builds and Orgs JSON it keeps of it. Images it keeps stay until you delete them in the extension popup. Files you saved are not touched.`;
+    refs.removeAccountDialog.dataset.sessionKey = session.key;
+    refs.removeAccountDialog.returnValue = "";
+    if (typeof refs.removeAccountDialog.showModal === "function") refs.removeAccountDialog.showModal();
+  }
+
+  async function removeAccount(sessionKey) {
+    const session = accounts.get(sessionKey);
+    if (!session || session === exampleSession || accountSwitchBlocker()) return;
+    const accountKey = AccountSessions.extensionKey(session.identity);
+    let response = null;
+    if (accountKey && state.bridge?.capabilities?.accounts === true && !state.extensionUpdateRequired) {
+      try {
+        response = await requestBridge("REMOVE_ACCOUNT", { accountKey });
+      } catch (error) {
+        showDialog("REMOVE ACCOUNT", "Extension request failed", error.message);
+        return;
+      }
+      // An account the extension holds nothing of is closed in this page all the same.
+      if (!response?.ok && response?.code !== "UNKNOWN_ACCOUNT") {
+        showDialog("REMOVE ACCOUNT", "Account not removed", response?.message ?? "The account was not removed.");
+        return;
+      }
+    }
+    if (!accounts.get(sessionKey)) return;
+    const { label } = AccountSessions.menuLabel(session);
+    if (session === activeSession()) {
+      const selected = response?.ok ? accounts.values().find((other) => other !== session && AccountSessions.extensionKey(other.identity) === response.selectedKey) : null;
+      activateSession(selected ?? exampleSession);
+    }
+    accounts.remove(session.key);
+    renderAccountMenu();
+    showToast(`${label} is removed.`);
+  }
+
+  // Add new account. Without the extension, this page cannot find an account and opens an Account JSON instead.
+  // With it, the extension finds the account signed in to RSI by its identity alone; nothing else is read and no
+  // build starts.
+  async function addNewAccount() {
+    if (accountSwitchBlocker()) return;
+    closeAccountMenu(true);
+    if (!state.bridge || state.extensionUpdateRequired || state.bridge.capabilities?.accounts !== true) {
+      if (typeof refs.addAccountDialog.showModal === "function") refs.addAccountDialog.showModal();
+      else refs.fileInput.click();
+      return;
+    }
+    if (showCoolingDown()) return;
+    state.accountRequestPending = true;
+    refreshAccountMenuAvailability();
+    let response;
+    try {
+      response = await requestBridge("DISCOVER_CURRENT_ACCOUNT", null);
+    } catch (error) {
+      showDialog("ADD NEW ACCOUNT", "Extension request failed", error.message);
+      return;
+    } finally {
+      state.accountRequestPending = false;
+      refreshAccountMenuAvailability();
+    }
+    if (!response?.ok || !response.account || !validListedEntry(response.account)) {
+      if (!showStartDeclined(response)) showDialog("ADD NEW ACCOUNT", "Account not added", response?.message ?? "No account was added.");
+      return;
+    }
+    const session = listedSession(response.account);
+    if (!session) {
+      showDialog("ADD NEW ACCOUNT", "Account not added", `This page holds ${formatInteger(AccountSessions.MAXIMUM_SESSIONS)} accounts, the most it can, or this account matches more than one account open in it.`);
+      return;
+    }
+    activateSession(session);
+    renderAccountMenu();
+    const { label } = AccountSessions.menuLabel(session);
+    showToast(response.added ? `${label} is added.` : `${label} is already added.`);
+  }
+
+  // The session a document of this account belongs to: the one open for it, or a new one, added once the document
+  // is accepted.
+  function sessionForAccount(account) {
+    const found = accounts.match(account);
+    if (found.conflict) throw new Error("This account matches more than one account open in this page, so it was not opened.");
+    if (found.session) return { session: found.session, created: false };
+    const identity = AccountSessions.identityOf(account);
+    return { session: newSession(accounts.availableKey(identity), identity), created: true };
+  }
+
+  // Puts an accepted document into its session and starts that session's view again. Its Orgs JSON and images stay
+  // while they are of the same account. Returns whether open images stay.
+  function assignAccountDocument(target, accepted, { source, fileName }) {
+    Model.validateAccountDocument(accepted);
+    const shown = target === activeSession();
+    const imagesRunning = shown && Boolean(state.mediaController);
+    // A file that waited to be offered to the extension belongs to the document this one replaces.
+    target.buildOffer = null;
+    if (!target.organizationDocument || !sameAccount(target.organizationDocument.account, accepted.account)) target.organizationOffer = null;
+    const sameMediaAccount = Boolean(target.mediaPlanAccount && sameAccount(target.mediaPlanAccount, accepted.account));
+    if (imagesRunning && !sameMediaAccount) throw new Error("Cancel the active image download before opening a different account document.");
+    if (target.loadedMediaPackage?.fromExtension && !imagesRunning && !target.pendingMediaPackage) clearLoadedMediaPackage(target);
+    const preserveMedia = sameMediaAccount && Boolean(imagesRunning || target.pendingMediaPackage || target.loadedMediaPackage);
+    if (!sameMediaAccount && target.loadedMediaPackage) clearLoadedMediaPackage(target);
+    if (target.organizationDocument && !sameAccount(target.organizationDocument.account, accepted.account)) {
+      target.organizationDocument = null;
+      target.organizationFileName = null;
+    }
+    if (shown && ccuDialog.open) ccuDialog.close();
     // A waiting Organization Data result is retried once the Account JSON it belongs to has been loaded.
     if (source === "file") state.requestedCompletedRunIds.clear();
-    state.document = accepted;
-    state.source = source;
-    state.fileName = fileName;
-    state.activeInventory = "hangar";
-    state.activeRecordKey = null;
-    state.inventoryPage = 1;
-    state.referralPath = "current.prospects";
-    state.referralOrder = "newest";
-    state.referralPage = 1;
-    state.referralSearch = "";
-    state.organizationSid = accepted.profile?.mainOrganizationSid ?? accepted.organizations.memberships[0]?.sid ?? "";
-    state.organizationPage = 1;
-    state.organizationSearch = "";
+    target.document = accepted;
+    target.source = source;
+    target.fileName = fileName;
+    target.identityOnly = false;
+    if (target !== exampleSession) {
+      target.identity = AccountSessions.mergedIdentity(target.identity, accepted.account);
+      target.displayName = AccountSessions.boundedLabel(accepted.profile?.displayName ?? "") ?? target.displayName;
+    }
+    target.activeInventory = "hangar";
+    target.activeRecordKey = null;
+    target.inventoryPage = 1;
+    target.inventorySearch = "";
+    target.activeGroup = "all";
+    target.referralPath = "current.prospects";
+    target.referralOrder = "newest";
+    target.referralPage = 1;
+    target.referralSearch = "";
+    target.organizationSid = accepted.profile?.mainOrganizationSid ?? accepted.organizations.memberships[0]?.sid ?? "";
+    target.organizationPage = 1;
+    target.organizationSearch = "";
+    return preserveMedia;
+  }
+
+  // Shows the document just put into the session shown.
+  function showAccountDocument(preserveMedia) {
     refs.organizationSearch.value = "";
     refs.referralSearch.value = "";
     updateBuildAction();
@@ -1839,33 +2327,56 @@
     }
   }
 
-  async function acceptAccountDocument(parsed, metadata) {
+  // Every document passes the schema and integrity checks first, and then goes into the session of its account. A
+  // file the user opens is shown (`activate`); a result of the extension is shown when it is of the account shown,
+  // or in place of the example, and is otherwise put under its account without switching to it.
+  async function acceptAccountDocument(parsed, metadata, { activate = true } = {}) {
     const accepted = await globalThis.CitizenDataAccountDocument.acceptAccountDocument(parsed, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
-    const rosterSids = [...new Set(Model.asArray(accepted.organizations?.members).map((member) => member?.organizationSid).filter(Boolean))];
-    if (rosterSids.length && metadata.source !== "demo") {
-      const previousOrganizations = state.organizationDocument && globalThis.CitizenDataOrganizationDocument.sameAccount(state.organizationDocument.account, accepted.account)
-        ? state.organizationDocument
-        : null;
-      state.organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
-        accountDocument: accepted,
-        previous: previousOrganizations,
-        resultDocument: accepted,
-        selectedSids: rosterSids,
-        exportedAt: accepted.exportedAt,
-        generatorVersion: DASHBOARD_VERSION
-      });
-      state.organizationFileName ??= "Extracted from Account JSON";
+    const { session: target, created } = metadata.source === "demo" ? { session: exampleSession, created: false } : sessionForAccount(accepted.account);
+    if (metadata.source === "file" && target !== activeSession() && accountSwitchBlocker()) throw new Error(accountSwitchBlocker());
+    if (created) accounts.add(target);
+    try {
+      const rosterSids = [...new Set(Model.asArray(accepted.organizations?.members).map((member) => member?.organizationSid).filter(Boolean))];
+      if (rosterSids.length && metadata.source !== "demo") {
+        const previousOrganizations = target.organizationDocument && sameAccount(target.organizationDocument.account, accepted.account) ? target.organizationDocument : null;
+        target.organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
+          accountDocument: accepted,
+          previous: previousOrganizations,
+          resultDocument: accepted,
+          selectedSids: rosterSids,
+          exportedAt: accepted.exportedAt,
+          generatorVersion: DASHBOARD_VERSION
+        });
+        target.organizationFileName ??= "Extracted from Account JSON";
+      }
+      let accountOnly = accepted;
+      if (metadata.source !== "demo" && Model.asArray(accepted.organizations?.members).length) {
+        const copy = structuredClone(accepted);
+        delete copy.organizations.members;
+        copy.sync.organizationMemberOutcomes = {};
+        accountOnly = await globalThis.CitizenDataAccountDocument.stampIntegrity(copy);
+        await globalThis.CitizenDataAccountDocument.acceptAccountDocument(accountOnly, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
+      }
+      const preserveMedia = assignAccountDocument(target, accountOnly, metadata);
+      if (target === activeSession()) showAccountDocument(preserveMedia);
+      else if (activate) activateSession(target);
+      else renderAccountMenu();
+      return accountOnly;
+    } catch (error) {
+      if (created) accounts.remove(target.key);
+      throw error;
     }
-    let accountOnly = accepted;
-    if (metadata.source !== "demo" && Model.asArray(accepted.organizations?.members).length) {
-      const copy = structuredClone(accepted);
-      delete copy.organizations.members;
-      copy.sync.organizationMemberOutcomes = {};
-      accountOnly = await globalThis.CitizenDataAccountDocument.stampIntegrity(copy);
-      await globalThis.CitizenDataAccountDocument.acceptAccountDocument(accountOnly, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
-    }
-    useAccountDocument(accountOnly, metadata);
-    return accountOnly;
+  }
+
+  // A result of the extension is shown when nothing but the example is shown.
+  function resultOpensShown() {
+    return activeSession() === exampleSession;
+  }
+
+  // The session that holds a document of this account, or null.
+  function documentSession(account) {
+    const found = accounts.match(account);
+    return found.session && !found.session.identityOnly ? found.session : null;
   }
 
   async function loadJsonFile(file) {
@@ -1902,10 +2413,12 @@
     if (response?.ok && response.kept) return response.replaced ? `The extension now keeps ${what} as your latest build, in place of the older build it held.` : `The extension now keeps ${what} as your latest build.`;
     if (response?.ok && response.reason === "SAME_BUILD") return "The extension already keeps this build.";
     if (response?.ok && response.reason === "NEWER_BUILD_HELD") return `The extension keeps a newer build of this account, so it did not take ${what} in.`;
+    if (response?.ok && response.reason === "ACCOUNT_SUMMARY_KEPT") return "Account added to Switch Account. Build history is off, so the file was not kept.";
     if (response?.ok && response.reason === "NOTHING_NEWER") return "The extension already keeps these rosters.";
     const because = {
       BUILD_HISTORY_OFF: "Build history is off in the extension popup",
       BUILD_IN_PROGRESS: "a build is in progress. Open the file again when that build has finished",
+      FUTURE_BUILD: "it is dated in the future",
       INCOMPLETE_BUILD: "it is not a complete build",
       INVALID_BUILD: "it did not pass the extension's own checks",
       INVALID_ORGANIZATIONS: "they did not pass the extension's own checks",
@@ -1916,10 +2429,10 @@
 
   // Offers a waiting file to the extension, once. The answer is a sentence for the user, or nothing when the
   // extension is not connected, in which case the offer waits for it. Offers go one after the other, so the rosters
-  // of an Orgs JSON reach the extension after the account build they belong to.
-  function offerToExtension(slot, type) {
+  // of an Orgs JSON reach the extension after the account build they belong to. Each account's offers are its own.
+  function offerToExtension(slot, type, session) {
     const result = state.handOverQueue.then(async () => {
-      const offer = state[slot];
+      const offer = session[slot];
       if (!offer || offer.sent || !state.bridge || state.extensionUpdateRequired) return null;
       offer.sent = true;
       let sentence;
@@ -1928,21 +2441,21 @@
       } catch (error) {
         sentence = `The extension did not take ${offer.what} in: ${error?.message ?? "unknown error"}`;
       }
-      if (state[slot] === offer) state[slot] = null;
+      if (session[slot] === offer) session[slot] = null;
       return sentence;
     });
     state.handOverQueue = result.catch(() => {});
     return result;
   }
 
-  function offerBuildToExtension() {
-    return offerToExtension("buildOffer", "KEEP_BUILD");
+  function offerBuildToExtension(session = activeSession()) {
+    return offerToExtension("buildOffer", "KEEP_BUILD", session);
   }
 
   // An Orgs JSON the user opened, and this page verified, is handed to the extension in the same way: its rosters
   // go into the account build the extension keeps.
-  function offerOrganizationsToExtension() {
-    return offerToExtension("organizationOffer", "KEEP_ORGANIZATIONS");
+  function offerOrganizationsToExtension(session = activeSession()) {
+    return offerToExtension("organizationOffer", "KEEP_ORGANIZATIONS", session);
   }
 
   // A complete account file the user opened, and this page verified, is handed to the extension by itself, so an
@@ -1970,7 +2483,7 @@
     const builds = parsed.stores.snapshots
       .map((snapshot) => snapshot?.document)
       .filter((candidate) => candidate && typeof candidate === "object" && typeof candidate.exportedAt === "string")
-      .sort((left, right) => left.exportedAt < right.exportedAt ? 1 : left.exportedAt > right.exportedAt ? -1 : 0);
+      .sort((left, right) => globalThis.CitizenDataAccountDocument.compareExportedAt(right.exportedAt, left.exportedAt));
     if (!builds.length) throw new Error(`This is an extension recovery backup, and it holds no finished build to open. ${restore}`);
     await acceptAccountDocument(builds[0], { source: "file", fileName });
     const opened = `${fileName} is an extension recovery backup. ${builds.length === 1 ? "The finished build" : `The newest of the ${formatInteger(builds.length)} finished builds`} inside it passed the canonical schema and SHA-256 integrity checks and is open on this device; nothing was uploaded or saved by the website.`;
@@ -1998,29 +2511,37 @@
     if (!file) return;
     const maximumBytes = 512 * 1024 * 1024;
     if (file.size > maximumBytes) throw new Error("Choose an Orgs JSON file no larger than 512 MiB.");
-    if (state.source === "demo") throw new Error("Load the matching Account JSON before loading an Orgs JSON.");
+    // The file belongs to the account shown when it was chosen, even if another account is shown by the time it is read.
+    const session = activeSession();
+    if (session.source === "demo") throw new Error("Load the matching Account JSON before loading an Orgs JSON.");
     const parsed = parseBoundedJson(await file.text(), { maxBytes: maximumBytes, maxNodes: 8000000, maxArrayItems: 4000000 });
     const accepted = await globalThis.CitizenDataOrganizationDocument.accept(parsed);
-    if (!globalThis.CitizenDataOrganizationDocument.sameAccount(accepted.account, state.document.account)) throw new Error("This Orgs JSON belongs to a different Account JSON.");
-    state.organizationDocument = accepted;
-    state.organizationFileName = file.name;
-    state.organizationPage = 1;
-    renderOrganizations();
+    if (!sameAccount(accepted.account, session.document.account)) throw new Error("This Orgs JSON belongs to a different Account JSON.");
+    session.organizationDocument = accepted;
+    session.organizationFileName = file.name;
+    session.organizationPage = 1;
+    if (session === activeSession()) renderOrganizations();
     const verified = `${file.name} passed integrity and account identity checks. It is open on this device; nothing was uploaded.`;
     showDialog("LOCAL ORGS JSON", "Organization data verified", verified);
-    state.organizationOffer = { document: accepted, what: "these rosters", sent: false };
-    tellHandOver(offerOrganizationsToExtension(), verified, (sentence) => `${verified} ${sentence}`);
+    session.organizationOffer = { document: accepted, what: "these rosters", sent: false };
+    tellHandOver(offerOrganizationsToExtension(session), verified, (sentence) => `${verified} ${sentence}`);
   }
 
   async function loadMediaPackageFile(file) {
     if (!file) return;
-    if (state.source === "demo") throw new Error("Load the matching Account JSON before loading an Images ZIP.");
+    const session = activeSession();
+    if (session.source === "demo") throw new Error("Load the matching Account JSON before loading an Images ZIP.");
     const loaded = await globalThis.CitizenDataMediaPackageReader.open(file, { maximumBytes: globalThis.CITIZENDATA_MEDIA_POLICY.maximumBytes });
-    if (!globalThis.CitizenDataOrganizationDocument.sameAccount(loaded.manifest.account, state.document.account)) throw new Error("This Images ZIP belongs to a different Account JSON.");
-    clearLoadedMediaPackage();
-    state.loadedMediaPackage = loaded;
-    state.loadedMediaFileName = file.name;
-    state.pendingMediaPackage = null;
+    if (!sameAccount(loaded.manifest.account, session.document.account)) throw new Error("This Images ZIP belongs to a different Account JSON.");
+    clearLoadedMediaPackage(session);
+    session.loadedMediaPackage = loaded;
+    session.loadedMediaFileName = file.name;
+    session.pendingMediaPackage = null;
+    // Another account is shown now: the images are shown, and the plan made again, when this one is shown again.
+    if (session !== activeSession()) {
+      session.mediaTexts = null;
+      return;
+    }
     const reusable = loaded.manifest.assets.filter((asset) => ["downloaded", "reused"].includes(asset.status)).length;
     refs.mediaStatus.textContent = `${file.name} is open with ${formatInteger(reusable)} reusable images. Images validate lazily when displayed.`;
     text("healthMedia", `${formatInteger(reusable)} packaged images loaded`);
@@ -2034,27 +2555,32 @@
 
   // With the extension's build history on, the extension keeps the images of an opened Images ZIP that it does not
   // keep yet. Returns a sentence for the image status, or nothing when the extension is absent or keeps no images.
-  async function keepPackageImages(opened) {
+  // `onKeeping` is called once the extension is known to keep images; a cancel through `signal` is thrown on.
+  async function keepPackageImages(opened, { signal = null, onKeeping = () => {} } = {}) {
     if (!state.bridge || state.extensionUpdateRequired) return "";
     try {
       const kept = await globalThis.CitizenDataExtensionMedia.index(requestBridge);
       if (!kept?.keeping) return "";
+      onKeeping();
       const outcome = await globalThis.CitizenDataExtensionMedia.keep({
         assets: opened.manifest.assets,
         readFile: async (asset) => new Uint8Array(await (await opened.fileBlob(asset.relativePath, asset.mediaType)).arrayBuffer()),
         kept,
-        request: requestBridge
+        request: requestBridge,
+        signal
       });
       if (!outcome.stored && !outcome.refused) return outcome.already ? " The extension already keeps these images." : "";
       return ` ${formatInteger(outcome.stored)} ${outcome.stored === 1 ? "image is" : "images are"} now kept in the extension${outcome.refused ? `; it refused ${formatInteger(outcome.refused)}` : ""}.`;
     } catch (error) {
+      if (error?.name === "AbortError") throw error;
       return ` The extension could not keep the images: ${error?.message ?? "unknown error"}`;
     }
   }
 
   // The images the extension keeps are opened like an Images ZIP, unless the user has one open.
   async function attachKeptImages() {
-    const usable = () => state.bridge && !state.extensionUpdateRequired && state.source !== "demo" && !state.mediaController && !state.pendingMediaPackage && state.mediaPlan.length > 0 && (!state.loadedMediaPackage || state.loadedMediaPackage.fromExtension);
+    const session = activeSession();
+    const usable = () => session === activeSession() && state.bridge && !state.extensionUpdateRequired && state.source !== "demo" && !state.mediaController && !state.pendingMediaPackage && state.mediaPlan.length > 0 && (!state.loadedMediaPackage || state.loadedMediaPackage.fromExtension);
     if (!usable()) return;
     const generation = state.mediaPlanGeneration;
     const plan = state.mediaPlan;
@@ -2380,15 +2906,25 @@
     patchLog(rows.length ? rows : [{ key: "media:empty", at: null, tone: "normal", message: "No image download has started." }]);
   }
 
-  function renderMediaOverlay({ badge, operation, detail, tone = "active", active = false, completed = state.mediaCompleted, total = state.mediaPlan.length, refreshLog = true }) {
+  // What the busy indicator beside Cancel tells assistive technology, once for each phase.
+  function mediaBusyText() {
+    if (state.mediaCancelRequested && state.mediaCancelRequested === state.mediaController) return "Cancelling image download";
+    return state.mediaWait?.reason === "rate-limit" ? "Image download waiting before retry" : "Image download running";
+  }
+
+  function renderMediaOverlay({ badge, operation, detail, tone = "active", active = false, completed = state.mediaCompleted, total = state.mediaPlan.length, refreshLog = true, countdown = null }) {
     state.mediaOverlayActive = true;
-    setBridgeStatus(badge, operation, detail, tone, active);
+    setBridgeStatus(badge, operation, detail, tone, active, countdown);
     refs.overlayOperation.textContent = "OFFLINE IMAGES";
     refs.buildChoices.hidden = true;
     refs.eventLog.hidden = false;
     refs.collectionControls.hidden = true;
     refs.mediaControls.hidden = false;
     refs.mediaCancelOverlay.hidden = !state.mediaController;
+    const running = active && Boolean(state.mediaController);
+    patchAttr(refs.mediaCancelOverlay, "aria-disabled", running && state.mediaCancelRequested === state.mediaController ? "true" : null);
+    patchHidden(refs.mediaBusy, !running);
+    patchText(refs.mediaBusyStatus, running ? mediaBusyText() : "");
     refs.mediaSaveOverlay.hidden = !state.pendingMediaPackage;
     refs.collectionActivity.hidden = false;
     refs.requestProgress.hidden = true;
@@ -2546,7 +3082,7 @@
     if (!runId || state.openedPartialRunIds.has(runId)) return;
     const handle = typeof documentValue?.account?.handle === "string" ? documentValue.account.handle.replace(/[^A-Za-z0-9_-]+/gu, "-").slice(0, 64) : "account";
     const timestamp = globalThis.CitizenDataFileTimestamp.format(new Date().toISOString());
-    await acceptAccountDocument(documentValue, { source: "extension-partial", fileName: `citizendata-${handle || "account"}-partial-${timestamp}.json` });
+    await acceptAccountDocument(documentValue, { source: "extension-partial", fileName: `citizendata-${handle || "account"}-partial-${timestamp}.json` }, { activate: resultOpensShown() });
     state.openedPartialRunIds.add(runId);
     showToast("Partial backup open. Completed sections are available locally; this partial document was not downloaded as a completed backup.");
   }
@@ -2560,18 +3096,20 @@
         return ["complete", "partial"].includes(acceptedResult.sync?.organizationMemberOutcomes?.[sid]?.status);
       })
       .map((section) => section.slice("organizations.members.".length));
-    if (!selectedSids.length) return;
-    state.organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
+    // The rosters go into the session of their account; with no document of it open, there is nothing to add them to.
+    const session = documentSession(acceptedResult.account);
+    if (!selectedSids.length || !session) return;
+    session.organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
       accountDocument: acceptedResult,
-      previous: state.organizationDocument,
+      previous: session.organizationDocument,
       resultDocument: acceptedResult,
       selectedSids,
       exportedAt: acceptedResult.exportedAt ?? new Date().toISOString(),
       generatorVersion: DASHBOARD_VERSION,
       terminalStatus: "partial"
     });
-    state.organizationFileName = "Unsaved partial Organization Data";
-    renderOrganizations();
+    session.organizationFileName = "Unsaved partial Organization Data";
+    if (session === activeSession()) renderOrganizations();
     showToast("Completed organization rosters from the partial job are open locally. Continue the job before saving the final Orgs JSON.");
   }
 
@@ -2599,31 +3137,36 @@
   // Returns true once the backup file has been handed to the browser, which is what lets the extension stop offering it.
   async function openCompletedDocument(documentValue, { recovered = false, partial = false } = {}) {
     const timestamp = globalThis.CitizenDataFileTimestamp.format(new Date().toISOString());
-    const accepted = await acceptAccountDocument(documentValue, { source: "extension", fileName: `citizendata-${timestamp}.json` });
+    const accepted = await acceptAccountDocument(documentValue, { source: "extension", fileName: `citizendata-${timestamp}.json` }, { activate: resultOpensShown() });
+    // A result of another account than the one shown is put under that account, and the user is told where it is.
+    const shown = state.document === accepted;
+    const session = shown ? activeSession() : accounts.values().find((candidate) => candidate.document === accepted) ?? null;
+    const where = shown ? "is now open in this dashboard" : "is open under Switch Account";
     const contentHash = accepted.integrity.contentHash;
     if (state.savedBuildContentHashes.has(contentHash)) return true;
     try {
       const saved = globalThis.CitizenDataCanonicalDownload.download(accepted);
       state.savedBuildContentHashes.add(contentHash);
-      state.fileName = saved.fileName;
-      text("railExported", saved.fileName);
+      if (session) session.fileName = saved.fileName;
+      if (shown) text("railExported", saved.fileName);
       if (partial) {
         // W-29: {fileName} bounded to 200 printable characters, or "The saved file".
         const shown = typeof saved.fileName === "string" && saved.fileName.length > 0 && saved.fileName.length <= 200 && [...saved.fileName].every((character) => character.codePointAt(0) >= 32 && character.codePointAt(0) !== 127) ? saved.fileName : "The saved file";
         showDialog("BUILD JSON", "Partial backup saved", `${shown} leaves out the skipped sections. Any earlier complete backup is unchanged.`);
         return true;
       }
-      showDialog("BUILD JSON", "Account backup saved", `${recovered ? "This backup finished while the dashboard was not connected. " : ""}${saved.fileName} passed the canonical schema and SHA-256 integrity checks, was saved to your device, and is now open in this dashboard.${removalSummary(accepted)} Keep your earlier backup files as well: a record RSI stops listing can only be shown by comparing two backups.`);
+      showDialog("BUILD JSON", "Account backup saved", `${recovered ? "This backup finished while the dashboard was not connected. " : ""}${saved.fileName} passed the canonical schema and SHA-256 integrity checks, was saved to your device, and ${where}.${removalSummary(accepted)} Keep your earlier backup files as well: a record RSI stops listing can only be shown by comparing two backups.`);
       return true;
     } catch (error) {
-      showDialog("BUILD JSON", "Account backup open; download failed", `The canonical account backup is open in this dashboard, but the browser did not save it: ${error.message}`);
+      showDialog("BUILD JSON", "Account backup open; download failed", `The canonical account backup ${shown ? "is open in this dashboard" : "is open under Switch Account"}, but the browser did not save it: ${error.message}`);
       return false;
     }
   }
 
   async function openCompletedOrganizationDocument(documentValue, publicStatus) {
     const acceptedResult = await globalThis.CitizenDataAccountDocument.acceptAccountDocument(documentValue, globalThis.CITIZENDATA_ACCOUNT_SCHEMA);
-    if (!globalThis.CitizenDataOrganizationDocument.sameAccount(acceptedResult.account, state.document.account)) throw new Error("The Organization Data result belongs to a different Account JSON.");
+    const session = documentSession(acceptedResult.account);
+    if (!session) throw new Error("The Organization Data result belongs to a different Account JSON.");
     const selectedSids = Model.asArray(publicStatus?.activeJob?.selectedSections)
       .filter((section) => typeof section === "string" && section.startsWith("organizations.members."))
       .map((section) => section.slice("organizations.members.".length));
@@ -2631,21 +3174,21 @@
     const exportedAt = acceptedResult.exportedAt ?? new Date().toISOString();
     const organizationDocument = await globalThis.CitizenDataOrganizationDocument.merge({
       accountDocument: acceptedResult,
-      previous: state.organizationDocument,
+      previous: session.organizationDocument,
       resultDocument: acceptedResult,
       selectedSids,
       exportedAt,
       generatorVersion: DASHBOARD_VERSION,
       terminalStatus: "complete"
     });
-    state.organizationDocument = organizationDocument;
+    session.organizationDocument = organizationDocument;
     const contentHash = organizationDocument.integrity.contentHash;
-    renderOrganizations();
+    if (session === activeSession()) renderOrganizations();
     if (state.savedOrganizationHashes.has(contentHash)) return true;
     const saved = globalThis.CitizenDataCanonicalDownload.downloadOrganizations(organizationDocument);
     state.savedOrganizationHashes.add(contentHash);
-    state.organizationFileName = saved.fileName;
-    refs.orgFileStatus.textContent = saved.fileName;
+    session.organizationFileName = saved.fileName;
+    if (session === activeSession()) refs.orgFileStatus.textContent = saved.fileName;
     showDialog("ORGANIZATION DATA", "Organization data saved", `${saved.fileName} contains the selected member rosters in one account-bound Organization JSON.`);
     return true;
   }
@@ -2666,7 +3209,7 @@
   // loads, in place of the example. It asks once for a page load. A file the user opened, or a result that arrived
   // first, is never replaced, and nothing is saved again: the build was saved as a file when it finished.
   async function openLatestBuild() {
-    if (state.latestBuildRequested || !state.bridge || state.extensionUpdateRequired || state.source !== "demo") return;
+    if (state.latestBuildRequested || !state.bridge || state.extensionUpdateRequired || !resultOpensShown()) return;
     state.latestBuildRequested = true;
     let response;
     try {
@@ -2674,7 +3217,7 @@
     } catch {
       return;
     }
-    if (!response?.ok || !response.result || state.source !== "demo") return;
+    if (!response?.ok || !response.result || !resultOpensShown()) return;
     try {
       const fileName = globalThis.CitizenDataCanonicalDownload.canonicalFileName(response.result);
       await acceptAccountDocument(response.result, { source: "extension", fileName });
@@ -2693,7 +3236,7 @@
     if (!state.bridge || typeof runId !== "string" || state.requestedCompletedRunIds.has(runId) || state.acknowledgedRunIds.has(runId)) return;
     const organizationData = pending.jobKind === "organizationData";
     // An Organization Data result can only be merged into the Account JSON it belongs to.
-    if (organizationData && state.source === "demo") return;
+    if (organizationData && !accounts.values().some((session) => !session.identityOnly)) return;
     state.requestedCompletedRunIds.add(runId);
     try {
       const response = await requestBridge("GET_COMPLETED_RESULT", null);
@@ -2766,7 +3309,7 @@
     const requestId = crypto.randomUUID();
     const envelope = { channel: BRIDGE_CHANNEL, protocolVersion: PROTOCOL_VERSION, type, requestId, bridgeSessionId: state.bridge.bridgeSessionId, nonce: state.bridge.nonce, payload };
     return new Promise((resolve, reject) => {
-      const timeoutMs = ["PROPOSE_BUILD", "PROPOSE_ORGANIZATION_ROSTER", "CONTINUE_PARTIAL", "GET_KEPT_IMAGES", "GET_KEPT_IMAGE_FILES", "KEEP_IMAGES", "GET_LATEST_BUILD", "KEEP_BUILD", "KEEP_ORGANIZATIONS"].includes(type) ? 60000 : 8000;
+      const timeoutMs = ["PROPOSE_BUILD", "PROPOSE_ORGANIZATION_ROSTER", "CONTINUE_PARTIAL", "GET_KEPT_IMAGES", "GET_KEPT_IMAGE_FILES", "KEEP_IMAGES", "GET_LATEST_BUILD", "KEEP_BUILD", "KEEP_ORGANIZATIONS", "LIST_ACCOUNTS", "GET_ACCOUNT_BUILD", "DISCOVER_CURRENT_ACCOUNT"].includes(type) ? 60000 : 8000;
       const timer = window.setTimeout(() => {
         state.bridgePending.delete(requestId);
         reject(new Error("The extension did not respond before the request timed out."));
@@ -2836,10 +3379,14 @@
       if (!enabled) setBridgeStatus("CONNECTED", "Account adapters are gated", state.bridge.capabilities.reason ?? "This source checkpoint performs no authenticated RSI requests.", "warning", false);
       void pollStatus();
       void attachKeptImages();
-      void openLatestBuild();
-      // A file the user opened before the extension connected is offered to it now.
-      void offerBuildToExtension().then((sentence) => { if (sentence) showToast(sentence); });
-      void offerOrganizationsToExtension().then((sentence) => { if (sentence) showToast(sentence); });
+      // An extension that keeps accounts lists them; an earlier one hands over its latest build alone.
+      if (state.bridge.capabilities.accounts === true) void loadExtensionAccounts();
+      else void openLatestBuild();
+      // A file the user opened before the extension connected is offered to it now, for every account open here.
+      for (const session of accounts.values()) {
+        void offerBuildToExtension(session).then((sentence) => { if (sentence) showToast(sentence); });
+        void offerOrganizationsToExtension(session).then((sentence) => { if (sentence) showToast(sentence); });
+      }
       return;
     }
     if (message.bridgeSessionId !== state.bridge?.bridgeSessionId || message.nonce !== state.bridge?.nonce) return;
@@ -2854,6 +3401,13 @@
     state.bridgePending.delete(message.requestId);
     state.bridgeReachable = true;
     pending.resolve(message.payload ?? {});
+  }
+
+  // A build or roster run for an account shown here names it, so the extension starts it only while RSI is signed in
+  // as that account. The example names none. An extension that keeps no accounts is sent the plan alone.
+  function boundAccountKey() {
+    if (state.bridge?.capabilities?.accounts !== true || activeSession() === exampleSession) return null;
+    return AccountSessions.extensionKey(activeSession().identity);
   }
 
   async function proposeBuild() {
@@ -2882,7 +3436,9 @@
     state.connecting = true;
     renderCollectionStatus(state.publicStatus, { connecting: true });
     try {
-      const response = await requestBridge("PROPOSE_BUILD", Model.buildDefaultPlan(state.bridge.capabilities));
+      const plan = Model.buildDefaultPlan(state.bridge.capabilities);
+      const expectedAccountKey = boundAccountKey();
+      const response = await requestBridge("PROPOSE_BUILD", expectedAccountKey ? { plan, expectedAccountKey } : plan);
       state.connecting = false;
       if (response.status) await applyDashboardPayload({ status: response.status });
       else renderCollectionStatus(state.publicStatus);
@@ -2948,7 +3504,8 @@
     state.connecting = true;
     renderCollectionStatus(state.publicStatus, { connecting: true, jobKind: "organizationData" });
     try {
-      const response = await requestBridge("PROPOSE_ORGANIZATION_ROSTER", { organizationSids: sids });
+      const expectedAccountKey = boundAccountKey();
+      const response = await requestBridge("PROPOSE_ORGANIZATION_ROSTER", expectedAccountKey ? { roster: { organizationSids: sids }, expectedAccountKey } : { organizationSids: sids });
       state.connecting = false;
       if (response.status) await applyDashboardPayload({ status: response.status });
       if (response.ok) {
@@ -2989,15 +3546,19 @@
 
   async function prepareMediaPlan() {
     if (state.mediaController) return;
-    const generation = state.mediaPlanGeneration + 1;
-    state.mediaPlanGeneration = generation;
-    state.mediaPlan = [];
-    state.mediaPlanAccount = null;
-    state.mediaPlanDocument = null;
-    state.pendingMediaPackage = null;
+    // The plan is made for the session shown now; one finished after another session is shown is left out.
+    const session = activeSession();
+    const generation = session.mediaPlanGeneration + 1;
+    session.mediaPlanGeneration = generation;
+    session.mediaPlan = [];
+    session.mediaPlanAccount = null;
+    session.mediaPlanDocument = null;
+    session.pendingMediaPackage = null;
     text("mediaAssetCount", "Preparing");
     text("mediaSummary", "Preparing plan");
     refs.mediaStatus.textContent = "Preparing image plan.";
+    // An added account without a document has no images.
+    if (session.identityOnly) return;
     if (state.source === "demo") {
       const images = exampleImageCount();
       text("mediaAssetCount", formatInteger(images));
@@ -3006,8 +3567,8 @@
       return;
     }
     try {
-      const plan = await globalThis.CitizenDataMediaMaterializer.plan(state.document, globalThis.CITIZENDATA_MEDIA_POLICY);
-      if (generation !== state.mediaPlanGeneration) return;
+      const plan = await globalThis.CitizenDataMediaMaterializer.plan(session.document, globalThis.CITIZENDATA_MEDIA_POLICY);
+      if (session !== activeSession() || generation !== session.mediaPlanGeneration) return;
       state.mediaPlan = plan;
       state.mediaPlanAccount = state.document.account ? { localAccountId: state.document.account.localAccountId ?? null, handle: state.document.account.handle ?? null } : null;
       state.mediaPlanDocument = state.document;
@@ -3017,7 +3578,7 @@
       if (!refs.buildChoices.hidden) refreshBuildChoices();
       void attachKeptImages();
     } catch (error) {
-      if (generation !== state.mediaPlanGeneration) return;
+      if (session !== activeSession() || generation !== session.mediaPlanGeneration) return;
       text("mediaAssetCount", "Plan unavailable");
       text("mediaSummary", "Plan unavailable");
       refs.mediaStatus.textContent = `Image plan could not be prepared: ${error.message}`;
@@ -3031,10 +3592,17 @@
     const accountDocument = state.mediaPlanDocument;
     if (!accountDocument) throw new Error("The image plan is not bound to an account document.");
     state.mediaController = controller;
+    state.mediaCancelRequested = null;
+    state.mediaWait = null;
     state.pendingMediaPackage = null;
     state.mediaCompleted = 0;
     state.mediaActiveRequests = 0;
     state.mediaActivity = [];
+    // A callback of this run after it was cancelled, or after it ended, changes nothing on the page.
+    const live = () => state.mediaController === controller && state.mediaCancelRequested !== controller;
+    const stopIfCancelled = () => {
+      if (controller.signal.aborted) throw new DOMException("Image download cancelled.", "AbortError");
+    };
     // A new image run starts without the last run's warning (§14).
     state.mediaTapeState = { active: true, warning: null, statusPage: null };
     state.mediaStatusPage = null;
@@ -3062,19 +3630,26 @@
         signal: controller.signal,
         statusPage: () => state.mediaStatusPage,
         onRequestStart: ({ index, total, attempt, activeRequests, maximumConcurrency }) => {
+          if (!live()) return;
           state.mediaActiveRequests = activeRequests;
           addMediaActivity(`Started image ${formatInteger(index + 1)} of ${formatInteger(total)}. ${formatInteger(activeRequests)} of ${formatInteger(maximumConcurrency)} requests active${attempt > 1 ? `. Attempt ${formatInteger(attempt)}.` : "."}`);
-          renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(plan.length), active: true, completed: state.mediaCompleted, total: plan.length });
+          renderMediaOverlay(downloadingPresentation(plan.length));
         },
         onProgress: ({ completed, total, receipt, activeRequests, pace }) => {
+          if (!live()) return;
           noteMediaPace(pace);
           state.mediaCompleted = delta.reused.assets.length + completed;
           if (Number.isSafeInteger(activeRequests)) state.mediaActiveRequests = activeRequests;
           // A refusal reports the pace alone, with no finished image.
           if (receipt) addMediaActivity(`Finished delta image ${formatInteger(completed)} of ${formatInteger(total)}. Result: ${receipt.status}.`, receipt.status === "failed" ? "warning" : "normal");
-          renderMediaOverlay({ badge: "DOWNLOADING", operation: "Downloading offline images", detail: mediaDownloadDetail(plan.length), active: true, completed: state.mediaCompleted, total: plan.length });
+          renderMediaOverlay(downloadingPresentation(plan.length));
+        },
+        onWait: (wait) => {
+          if (live()) noteMediaWait(wait, plan.length);
         }
       });
+      // Cancelled as the last image finished: no record of a finished run, no ZIP and no download.
+      stopIfCancelled();
       // Images left after RSI kept refusing (W-21): the status once more, and row 7 until the next image run or a reload.
       const stoppedWithRemaining = downloaded.stoppedWithRemaining === true;
       await keepImagePaceRun(downloaded.imageRun);
@@ -3091,6 +3666,7 @@
         pacing: downloaded.pacing,
         paceHistory: downloaded.paceHistory
       };
+      stopIfCancelled();
       const result = await globalThis.CitizenDataMediaPackage.buildArchive({
         accountDocument,
         materialized,
@@ -3101,8 +3677,21 @@
         requestCount: delta.pending.length,
         priorPackage: state.loadedMediaPackage && !fromExtension ? { packageId: state.loadedMediaPackage.manifest.packageId, manifestHash: state.loadedMediaPackage.manifest.integrity.contentHash } : null
       });
-      state.pendingMediaPackage = result;
+      stopIfCancelled();
       const openedResult = await globalThis.CitizenDataMediaPackageReader.open(new Blob([result.archive], { type: "application/zip" }), { maximumBytes: globalThis.CITIZENDATA_MEDIA_POLICY.maximumBytes });
+      stopIfCancelled();
+      // The automatic download is the run's completion point. The images go to the extension before it, and a cancel
+      // until then ends the run with no ZIP. Nothing below the download awaits, so the run is complete with it.
+      const keptNote = await keepPackageImages(openedResult, {
+        signal: controller.signal,
+        onKeeping: () => {
+          if (!live()) return;
+          addMediaActivity("Handing the images to the extension.");
+          renderMediaOverlay({ badge: "FINALIZING", operation: "Keeping images in the extension", detail: "Handing the images to the extension.", active: true, completed: plan.length, total: plan.length });
+        }
+      });
+      stopIfCancelled();
+      state.pendingMediaPackage = result;
       clearLoadedMediaPackage();
       state.loadedMediaPackage = openedResult;
       state.loadedMediaFileName = result.fileName;
@@ -3116,7 +3705,6 @@
       const failed = result.manifest.summary.failed;
       const size = (result.archive.byteLength / (1024 * 1024)).toLocaleString("en-US", { maximumFractionDigits: 1 });
       const packageDetail = failed ? `${formatInteger(failed)} ${failed === 1 ? "image failed and is" : "images failed and are"} recorded in the manifest.` : "All images completed.";
-      const keptNote = await keepPackageImages(openedResult);
       if (keptNote) addMediaActivity(keptNote.trim(), keptNote.includes("could not") || keptNote.includes("refused") ? "warning" : "normal");
       refs.mediaStatus.textContent = (automaticDownloadError
         ? `${result.fileName} is open for this dashboard, but automatic download failed: ${automaticDownloadError.message}`
@@ -3127,13 +3715,21 @@
       finalPresentation = { badge: automaticDownloadError ? "READY TO SAVE" : "COMPLETED", operation: automaticDownloadError ? "Offline image ZIP ready" : "Offline image ZIP downloaded", detail: stoppedWithRemaining ? `${refs.mediaStatus.textContent} ${Model.TEXTS.imagesLeft}` : refs.mediaStatus.textContent, tone: automaticDownloadError ? "warning" : "success", active: false, completed: plan.length, total: plan.length };
     } catch (error) {
       state.mediaTapeState = { active: false, warning: null, stoppedWithRemaining: false, statusPage: null };
-      refs.mediaStatus.textContent = error?.name === "AbortError" ? "Image download cancelled. No partial ZIP was created." : `Image download failed: ${error?.message ?? "Unknown error"}`;
+      state.mediaActiveRequests = 0;
+      state.mediaWait = null;
+      const keptBeforeCancel = error?.name === "AbortError" && error.kept > 0 ? ` The extension keeps the ${formatInteger(error.kept)} ${error.kept === 1 ? "image" : "images"} it took before the cancel.` : "";
+      refs.mediaStatus.textContent = error?.name === "AbortError" ? `Image download cancelled. No partial ZIP was created.${keptBeforeCancel}` : `Image download failed: ${error?.message ?? "Unknown error"}`;
       addMediaActivity(refs.mediaStatus.textContent, error?.name === "AbortError" ? "warning" : "failure");
       finalPresentation = { badge: error?.name === "AbortError" ? "CANCELLED" : "FAILED", operation: error?.name === "AbortError" ? "Image download cancelled" : "Image download failed", detail: refs.mediaStatus.textContent, tone: error?.name === "AbortError" ? "warning" : "failure", active: false, completed: state.mediaCompleted, total: plan.length };
     } finally {
       scheduleMediaStatusRefresh(false);
-      if (state.mediaController === controller) state.mediaController = null;
-      if (finalPresentation) renderMediaOverlay(finalPresentation);
+      // This run's controller and cancellation only; a later run's are its own.
+      if (state.mediaController === controller) {
+        state.mediaController = null;
+        state.mediaWait = null;
+      }
+      if (state.mediaCancelRequested === controller) state.mediaCancelRequested = null;
+      if (finalPresentation && !state.mediaController) renderMediaOverlay(finalPresentation);
     }
   }
 
@@ -3191,7 +3787,41 @@
       // A request the extension declines leaves the button to be used again.
       if (!await controlCollection("SKIP_CCU_PRICES") && state.skipRequestedRunId === runId) state.skipRequestedRunId = null;
     });
-    refs.mediaCancelOverlay.addEventListener("click", () => state.mediaController?.abort());
+    refs.mediaCancelOverlay.addEventListener("click", requestMediaCancel);
+    refs.switchAccountButton.addEventListener("click", () => {
+      if (refs.accountPopup.hidden) openAccountMenu();
+      else closeAccountMenu(false);
+    });
+    refs.switchAccountButton.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      openAccountMenu(event.key === "ArrowUp");
+    });
+    refs.accountMenu.addEventListener("keydown", accountMenuKeydown);
+    refs.accountMenu.addEventListener("click", (event) => {
+      const item = event.target.closest('[role="menuitemradio"], [role="menuitem"]');
+      if (!item || item.getAttribute("aria-disabled") === "true") return;
+      if (item === refs.addAccountCommand) void addNewAccount();
+      else if (item === refs.removeAccountCommand) confirmRemoveAccount();
+      else chooseAccount(item.dataset.accountKey);
+    });
+    // The menu closes when focus or a pointer leaves it, and follows its button while the page scrolls or resizes.
+    if (!ACCOUNT_POPOVER) document.body.append(refs.accountPopup);
+    document.addEventListener("pointerdown", (event) => {
+      if (!refs.accountPopup.hidden && !inAccountSwitcher(event.target)) closeAccountMenu(false);
+    });
+    refs.accountPopup.addEventListener("focusout", (event) => {
+      if (!refs.accountPopup.hidden && event.relatedTarget && !inAccountSwitcher(event.relatedTarget)) closeAccountMenu(false);
+    });
+    window.addEventListener("resize", placeAccountPopup);
+    document.addEventListener("scroll", placeAccountPopup, { capture: true, passive: true });
+    refs.removeAccountDialog.addEventListener("close", () => {
+      if (refs.removeAccountDialog.returnValue === "remove") void removeAccount(refs.removeAccountDialog.dataset.sessionKey);
+    });
+    refs.addAccountLoadJson.addEventListener("click", () => {
+      refs.addAccountDialog.close();
+      refs.fileInput.click();
+    });
     refs.mediaSaveOverlay.addEventListener("click", () => { void saveMediaPackage(); });
     byId("loadReceiptButton").addEventListener("click", () => {
       const anomalyCount = Model.asArray(state.document.dataQuality?.anomalies).length;
@@ -3327,6 +3957,7 @@
   }
 
   initializeDashboard().catch((error) => {
+    activeAccountKey = null;
     state.document = globalThis.CITIZENDATA_DEMO_DATA;
     state.source = "demo";
     state.fileName = "example.json";

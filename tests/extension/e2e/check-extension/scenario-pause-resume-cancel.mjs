@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, setRsi } from "./browser-pages-and-account-in-use.mjs";
-import { freshDashboard, startBuild } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild } from "./dashboard-pages-and-builds.mjs";
 import { afterRequests, holdRsiWhen, reach, settled } from "./held-rsi-requests.mjs";
 import { WATCHDOG } from "./origins-keys-and-stand-in-image.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
@@ -10,6 +10,7 @@ export async function pauseResumeCancel() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "ControlCitizen", counts: { pledges: 120, buybacks: 600 }, upgradeBuybacksFrom: 40 });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "ControlCitizen");
   const savedBefore = (await downloadedDocuments()).length;
   // The build is held at its seventh request and paused there.
   let held = holdRsiWhen(afterRequests(account, 6));

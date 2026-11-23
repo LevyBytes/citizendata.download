@@ -32,7 +32,7 @@ const paceController = { ...Pace, onSuccess: (pace, input) => { given.push(input
 const materializeIn = (indexes, history, runId) => context.CitizenDataMediaMaterializer.materialize(vm.runInContext(`(${JSON.stringify(indexes.map(entry))})`, context), packagePolicy, {
   fetcher: host.fetcher, sleep: time.sleep, nowMs: time.nowMs, now: time.now, random: () => 0.5, paceController, runId, history: history === undefined ? undefined : vm.runInContext(`(${JSON.stringify(history)})`, context)
 });
-const build = (materialized) => context.CitizenDataMediaPackage.buildArchive({ accountDocument: account, materialized, policy: packagePolicy, generatedAt: time.now(), startedAt: time.now(), endedAt: time.now(), version: "0.42.1" });
+const build = (materialized) => context.CitizenDataMediaPackage.buildArchive({ accountDocument: account, materialized, policy: packagePolicy, generatedAt: time.now(), startedAt: time.now(), endedAt: time.now(), version: "0.42.2" });
 const openReceipt = async (built) => (await context.CitizenDataMediaPackageReader.open(new Blob([built.archive]))).manifest.materializationReceipt;
 
 const first = await materializeIn([0, 1, 2, 3, 4], undefined, "first-run");

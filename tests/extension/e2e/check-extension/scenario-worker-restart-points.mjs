@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, setRsi } from "./browser-pages-and-account-in-use.mjs";
 import { assertCompleteDocument } from "./complete-document-expectations.mjs";
-import { freshDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { afterRequests, holdRsiWhen, reach, refuseRsiWhen, settled } from "./held-rsi-requests.mjs";
 import { STATUS_ORIGIN } from "./origins-keys-and-stand-in-image.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
@@ -32,6 +32,7 @@ export async function workerRestartPoints() {
   await freshDashboard();
   const baseline = createSyntheticRsi({ handle: "RestartBaseline", counts: COUNTS });
   setRsi(baseline);
+  await selectCurrentRsiAccount(dashboard, "RestartBaseline");
   await startBuild(dashboard);
   await waitForSavedDialog(dashboard, 120000);
   const expected = tally(baseline, "RestartBaseline");
@@ -39,6 +40,7 @@ export async function workerRestartPoints() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "RestartCitizen", counts: COUNTS });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "RestartCitizen");
   // Another scenario's status read must not answer this one's warning from the cache.
   await clearStore("statusFeedCache");
   await dashboard.evaluate(WATCH_ANNOUNCEMENTS);

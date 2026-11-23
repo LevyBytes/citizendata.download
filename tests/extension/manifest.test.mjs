@@ -4,12 +4,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { root, extensionRoot } from "./extensionpackagefiles.mjs";
+import { packageFiles, root } from "./extensionpackagefiles.mjs";
 
 await import("../../extension/shared/protocol.js");
 const Protocol = globalThis.CitizenDataProtocol;
 
-const manifest = JSON.parse(await readFile(path.join(extensionRoot, "manifest.json"), "utf8"));
+// The source is manifests/chrome.json; the package carries it unchanged as manifest.json.
+const sourceManifestBytes = await readFile(path.join(root, "manifests", "chrome.json"));
+const manifest = JSON.parse(sourceManifestBytes.toString("utf8"));
 
 const packageDocument = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
@@ -47,7 +49,8 @@ test("the dashboard bridge is injected into the hosted dashboard and into local 
   assert.doesNotMatch(JSON.stringify(manifest), /(?<![A-Za-z])[A-Za-z]:[\\/]|\/Users\/|\/home\//u);
 });
 
-test("every file the manifest names is in the package", async () => {
+test("every file the manifest names is in the package", () => {
+  assert.deepEqual(packageFiles.get("manifest.json").bytes, sourceManifestBytes, "the package's manifest.json is manifests/chrome.json, byte for byte");
   const referenced = [
     manifest.background.service_worker,
     manifest.action.default_popup,
@@ -56,6 +59,6 @@ test("every file the manifest names is in the package", async () => {
     ...Object.values(manifest.action.default_icon)
   ];
   for (const relativePath of new Set(referenced)) {
-    await assert.doesNotReject(readFile(path.join(extensionRoot, relativePath)), `Missing manifest file: ${relativePath}`);
+    assert.ok(packageFiles.has(relativePath), `Missing manifest file: ${relativePath}`);
   }
 });

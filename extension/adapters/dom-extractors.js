@@ -7,7 +7,7 @@
 })(globalThis, function createCitizenDataDomExtractors() {
   "use strict";
 
-  const EXTRACTOR_VERSION = "0.42.1";
+  const EXTRACTOR_VERSION = "0.42.2";
 
   function requireDocument(value) {
     if (!value || typeof value.querySelectorAll !== "function" || typeof value.querySelector !== "function") throw new TypeError("A parsed HTML Document is required.");

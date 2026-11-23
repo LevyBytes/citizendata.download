@@ -151,7 +151,12 @@
     return entries.sort((left, right) => left.imageKey < right.imageKey ? -1 : left.imageKey > right.imageKey ? 1 : 0);
   }
 
-  async function responseBytes(response, limit) {
+  function cancelled() {
+    return new DOMException("Image materialization cancelled.", "AbortError");
+  }
+
+  // `signal`: a cancelled run stops reading between two chunks.
+  async function responseBytes(response, limit, signal = null) {
     const declaredLength = Number.parseInt(response.headers?.get?.("content-length") ?? "", 10);
     if (Number.isFinite(declaredLength) && declaredLength > limit) throw new Error("BYTE_LIMIT");
     const reader = response.body?.getReader?.();
@@ -164,6 +169,10 @@
     let length = 0;
     try {
       while (true) {
+        if (signal?.aborted) {
+          await reader.cancel("CANCELLED").catch(() => {});
+          throw cancelled();
+        }
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
@@ -209,7 +218,7 @@
     const Pace = options.paceController ?? root.CitizenDataPaceController;
     const History = options.paceHistory ?? root.CitizenDataPaceHistory;
     if (!settings?.images || !settings.brakes || !Pace || !History) throw new TypeError("The request pacing settings, the pace controller and the pace history must load before the image run.");
-    const sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+    const injectedSleep = typeof options.sleep === "function" ? options.sleep : null;
     const now = options.now ?? (() => new Date().toISOString());
     const nowMs = options.nowMs ?? (() => Date.now());
     const random = options.random ?? Math.random;
@@ -283,23 +292,59 @@
     }
 
     function aborted() {
-      if (options.signal?.aborted) throw new DOMException("Image materialization cancelled.", "AbortError");
+      if (options.signal?.aborted) throw cancelled();
     }
 
-    // One start at a time: the gap at the current factor, then the latest wait, read again after every sleep.
-    async function waitForStartSlot() {
+    // Every wait of the run: the gap between two starts, a refusal's wait, and the wait before a retry. A cancelled run
+    // ends it at once, and its timer is cleared. An injected sleep, which cannot be cleared, is raced against the
+    // cancellation, and its later end changes nothing.
+    function pause(milliseconds) {
+      aborted();
+      const signal = options.signal;
+      return new Promise((resolve, reject) => {
+        let timer = null;
+        let settled = false;
+        const settle = (finish) => {
+          if (settled) return;
+          settled = true;
+          if (timer !== null) clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+          finish();
+        };
+        const onAbort = () => settle(() => reject(cancelled()));
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (injectedSleep) Promise.resolve(injectedSleep(milliseconds)).then(() => settle(resolve), (error) => settle(() => reject(error)));
+        else timer = setTimeout(() => settle(resolve), Math.max(0, milliseconds));
+      });
+    }
+
+    // A wait the dashboard is told of when it starts and when it ends, with bounded values only: why, how long, until
+    // when, at which factor, and for which image and attempt (null for the control image or a gap).
+    async function waitAs(reason, milliseconds, imageIndex = null, attempt = null) {
+      aborted();
+      const waitMs = Math.max(0, Math.round(milliseconds));
+      const state = Object.freeze({ reason, waitMs, waitingUntil: new Date(nowMs() + waitMs).toISOString(), factor: Math.round(pace.factor * 1000) / 1000, imageIndex, attempt });
+      options.onWait?.({ phase: "waiting", ...state });
+      await pause(waitMs);
+      options.onWait?.({ phase: "resumed", ...state });
+    }
+
+    // One start at a time: the gap at the current factor, then the latest wait, read again after every wait.
+    async function waitForStartSlot(imageIndex, attempt) {
       const previous = startGate;
       let release;
       startGate = new Promise((resolve) => { release = resolve; });
       await previous;
       try {
-        if (starts > 0) await sleep(Pace.startGapMs({ baseline: gapBaseline, pace, settings, random }));
+        aborted();
+        if (starts > 0) await waitAs("request-spacing", Pace.startGapMs({ baseline: gapBaseline, pace, settings, random }), imageIndex, attempt);
         for (;;) {
           await paceMutationQueue;
+          aborted();
           const until = Date.parse(pace.retryNotBefore);
           const wait = Number.isFinite(until) ? until - nowMs() : 0;
-          if (wait <= 0 || stopping || options.signal?.aborted) break;
-          await sleep(wait);
+          if (wait <= 0 || stopping) break;
+          await waitAs("rate-limit", wait, imageIndex, attempt);
         }
         starts += 1;
       } finally {
@@ -365,7 +410,7 @@
       const startedAtMs = nowMs();
       const batchId = `control:${++controlSequence}`;
       const answered = (async () => {
-        await waitForStartSlot();
+        await waitForStartSlot(null, null);
         aborted();
         if (stopping || !reserve()) return { ok: false, batchId };
         const { response, elapsedMs } = await send(lastDownloadedUrl, -1, 1, { cache: "no-store" });
@@ -411,7 +456,7 @@
       for (;;) {
         aborted();
         if (stopping) return { stop: "RATE_LIMITED" };
-        await waitForStartSlot();
+        await waitForStartSlot(index, own.attempts + 1);
         aborted();
         if (stopping) return { stop: "RATE_LIMITED" };
         if (!reserve()) {
@@ -422,6 +467,8 @@
         own.attempts += 1;
         const { response, error, elapsedMs, requestId } = await send(entry.normalizedUrl, index, own.attempts);
         try {
+          // An answer that arrives after the run was cancelled is not read: no receipt, refusal or retry comes of it.
+          aborted();
           const status = response?.status;
           if (response && status >= 200 && status < 300) {
             await mutate(() => {
@@ -455,6 +502,7 @@
             own.attempts -= 1;
             own.refused += 1;
             const action = await refused(refusal, Number.isInteger(status) ? status : null, elapsedMs, batchId, responseRetryAfterMs(response));
+            aborted();
             if (action === "give-up") {
               stopping = true;
               stoppedWithRemaining = true;
@@ -469,7 +517,7 @@
           const redirect = redirected && own.redirects < 2;
           const retryable = redirect || (Number.isInteger(status) && status >= 500 && status <= 599) || error?.name === "TypeError";
           if (!retryable || own.attempts >= maximumAttempts) return { failed: error ? error.message : `HTTP_${status ?? "UNKNOWN"}`, attempts: own.attempts };
-          await sleep(jitter(minimumRetryDelay, maximumRetryDelay));
+          await waitAs("retry", jitter(minimumRetryDelay, maximumRetryDelay), index, own.attempts + 1);
         } finally {
           finishImageRequest(requestId);
         }
@@ -483,6 +531,8 @@
       let receipt;
       try {
         const fetched = await fetchImage(entry, index);
+        // A cancelled run puts no image back in the queue and writes no receipt.
+        aborted();
         if (fetched.requeue) {
           queue.push(index);
           wake();
@@ -495,7 +545,8 @@
           const finalUrl = normalizeImageUrl(response.url || entry.normalizedUrl, policy.allowedImageHosts);
           const remainingBytes = policy.maximumBytes - downloadedBytes;
           if (remainingBytes < 1) throw new Error("TOTAL_BYTE_LIMIT");
-          const bytes = await responseBytes(response, Math.min(policy.maximumBytesPerAsset, remainingBytes));
+          const bytes = await responseBytes(response, Math.min(policy.maximumBytesPerAsset, remainingBytes), options.signal);
+          aborted();
           if (downloadedBytes + bytes.byteLength > policy.maximumBytes) throw new Error("TOTAL_BYTE_LIMIT");
           downloadedBytes += bytes.byteLength;
           const declaredType = String(response.headers?.get?.("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();
@@ -515,9 +566,12 @@
           receipt = { assetId: entry.imageKey, sourceImageKeys, sourceUrl: entry.normalizedUrl, finalUrl, status: "downloaded", relativePath, displayFileName, mediaType: detectedType, byteLength: bytes.byteLength, pixelWidth: size.width, pixelHeight: size.height, contentHash, fetchedAt: now(), attempts: fetched.attempts, errorCode: null, entityReferences: entry.references };
         }
       } catch (error) {
+        // A cancelled run's error is the cancellation, never a failed image.
+        aborted();
         if (error?.name === "AbortError") throw error;
         receipt = failedReceipt(entry, sourceImageKeys, perImage[index].attempts, error?.message);
       }
+      aborted();
       assets[index] = receipt;
       completed += 1;
       wake();
@@ -533,6 +587,7 @@
 
     async function worker() {
       while (completed < entries.length) {
+        aborted();
         const index = queue.shift();
         if (index === undefined) {
           await new Promise((resolve) => { waiters.push(resolve); });
@@ -543,12 +598,17 @@
       wake();
     }
 
+    // A worker waiting for an image to take is woken by the cancellation, so none keeps the run pending.
+    options.signal?.addEventListener("abort", wake, { once: true });
     try {
       await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, () => worker()));
     } finally {
+      options.signal?.removeEventListener("abort", wake);
       wake();
     }
     await paceMutationQueue;
+    // A run cancelled as its last image finished gives no files and no record of a finished run.
+    aborted();
     const files = [...filesByPath.values()].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
     const pacing = typeof fingerprint === "string" && /^[a-f0-9]{64}$/u.test(fingerprint) ? History.runSummary(history) : null;
     // The run's record for the extension's image history, and the receipt's provenance: the history's source, what it

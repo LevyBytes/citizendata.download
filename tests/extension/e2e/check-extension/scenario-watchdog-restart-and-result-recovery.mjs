@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, extensionPage, setDashboard, setRsi } from "./browser-pages-and-account-in-use.mjs";
 import { assertCompleteDocument } from "./complete-document-expectations.mjs";
-import { freshDashboard, openDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, openDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { PACE_KEY } from "./extension-copy-without-pacing.mjs";
 import { longestGap, waitForRequests } from "./harness-parity-and-request-measures.mjs";
 import { WATCHDOG } from "./origins-keys-and-stand-in-image.mjs";
@@ -19,6 +19,7 @@ export async function watchdogRestartAndResultRecovery() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "WatchdogCitizen", counts: { pledges: 80, buybacks: 400, orders: 100, prospects: 150 }, upgradeBuybacksFrom: 40 });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "WatchdogCitizen");
   const savedBefore = (await downloadedDocuments()).length;
   await startBuild(dashboard);
   await waitForRequests(account, 8, 30000, "the run to be under way");

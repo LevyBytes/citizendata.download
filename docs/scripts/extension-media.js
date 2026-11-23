@@ -171,9 +171,17 @@
   }
 
   // Hands the extension the images of an opened package that it does not keep yet. `readFile(asset)` gives the
-  // verified bytes of one image. Returns how many were stored, refused, and already kept.
-  async function keep({ assets, readFile, kept, request }) {
+  // verified bytes of one image. Returns how many were stored, refused, and already kept. With `signal` aborted, it
+  // stops before the next ZIP read or request, or after the request it awaits, with an AbortError whose `kept` is how
+  // many images the extension took in before then; those stay kept.
+  async function keep({ assets, readFile, kept, request, signal = null }) {
     const outcome = { stored: 0, refused: 0, already: 0 };
+    const stopIfCancelled = () => {
+      if (!signal?.aborted) return;
+      const error = new root.DOMException("Image download cancelled.", "AbortError");
+      error.kept = outcome.stored;
+      throw error;
+    };
     const pending = [];
     const seen = new Set();
     for (const asset of Array.isArray(assets) ? assets : []) {
@@ -186,15 +194,20 @@
     let text = 0;
     async function send() {
       if (!batch.length) return;
+      stopIfCancelled();
       const response = await request("KEEP_IMAGES", { files: batch });
       if (!response?.ok) throw new Error(response?.message ?? "The extension did not keep the images.");
       outcome.stored += Array.isArray(response.stored) ? response.stored.length : 0;
       outcome.refused += Array.isArray(response.refused) ? response.refused.length : 0;
       batch = [];
       text = 0;
+      stopIfCancelled();
     }
     for (const asset of pending) {
-      const base64 = toBase64(await readFile(asset));
+      stopIfCancelled();
+      const bytes = await readFile(asset);
+      stopIfCancelled();
+      const base64 = toBase64(bytes);
       if (batch.length && (batch.length >= kept.limits.filesPerRequest || text + base64.length > kept.limits.requestText)) await send();
       batch.push({ assetId: asset.assetId, contentHash: asset.contentHash, mediaType: asset.mediaType, pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, fetchedAt: asset.fetchedAt, base64 });
       text += base64.length;

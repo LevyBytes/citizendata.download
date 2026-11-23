@@ -14,7 +14,8 @@ const forbiddenExtensionPermissions = new Set([
 ]);
 
 export async function checkExtensionManifest() {
-  const manifest = JSON.parse(await readFile(path.join(repositoryRoot, "extension", "manifest.json"), "utf8"));
+  // The Chromium manifest's source. The packager writes it unchanged as the package's manifest.json.
+  const manifest = JSON.parse(await readFile(path.join(repositoryRoot, "manifests", "chrome.json"), "utf8"));
   if (manifest.manifest_version !== 3) fail("The extension must use Manifest V3.");
   const requiredExtensionPermissions = ["alarms", "cookies", "offscreen", "storage", "unlimitedStorage"];
   if (JSON.stringify(manifest.permissions ?? []) !== JSON.stringify(requiredExtensionPermissions)) {

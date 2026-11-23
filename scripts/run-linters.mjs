@@ -7,6 +7,8 @@
 //   the folder the environment variable DEVROOT names, laid out as eslint/node_modules/eslint/bin/eslint.js,
 //     deno/<version>/deno, biome/<version>/biome, the highest version taken;
 //   its name on the PATH.
+// The Deno found must be at least DENO_MINIMUM, the version deno.jsonc is checked with; its version is printed
+// before it runs, and an older one fails the run without running.
 //
 // Usage: node scripts/run-linters.mjs [path ...]     (no path: everything each configuration covers)
 import { spawnSync } from "node:child_process";
@@ -16,10 +18,11 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const paths = process.argv.slice(2);
+const DENO_MINIMUM = "2.9.8";
 
 const linters = [
   { name: "ESLint", variable: "ESLINT_BIN", program: "eslint", shared: () => underDevelopmentRoot("eslint", "node_modules", "eslint", "bin", "eslint.js"), parameters: paths.length > 0 ? paths : ["."] },
-  { name: "Deno", variable: "DENO_BIN", program: "deno", shared: () => newestVersionOf("deno"), parameters: ["lint", ...paths] },
+  { name: "Deno", variable: "DENO_BIN", program: "deno", shared: () => newestVersionOf("deno"), parameters: ["lint", ...paths], minimum: DENO_MINIMUM },
   // Biome's warnings fail the run like its errors: a finding is acted on or its rule is switched off with a reason.
   { name: "Biome", variable: "BIOME_BIN", program: "biome", shared: () => newestVersionOf("biome"), parameters: ["lint", "--error-on-warnings", ...paths] }
 ];
@@ -60,13 +63,31 @@ function start(file, parameters) {
   return spawnSync([file, ...parameters].map((part) => `"${part}"`).join(" "), { ...options, shell: true });
 }
 
+// The version a program reports for --version, as its first x.y.z, or null.
+function reportedVersion(file) {
+  const run = spawnSync(file, ["--version"], { cwd: repositoryRoot, encoding: "utf8" });
+  return /(\d+)\.(\d+)\.(\d+)/u.exec(run.stdout ?? "")?.[0] ?? null;
+}
+
+// Whether x.y.z `version` is `minimum` or later, part by part.
+function atLeast(version, minimum) {
+  const [have, need] = [version, minimum].map((text) => text.split(".").map(Number));
+  const differing = have.findIndex((part, index) => part !== need[index]);
+  return differing === -1 || have[differing] > need[differing];
+}
+
 const failed = [];
 for (const linter of linters) {
   const file = process.env[linter.variable] ? programFile(process.env[linter.variable]) : linter.shared() ?? programFile(linter.program);
   console.log(`\n== ${linter.name}`);
+  const version = file !== null && linter.minimum ? reportedVersion(file) : null;
+  if (version) console.log(`${linter.name} ${version} (${file})`);
   if (file === null) {
     console.error(`${linter.name} was not found. Set ${linter.variable} to the path of its program, or put it on the PATH.`);
     failed.push(`${linter.name} (not found)`);
+  } else if (linter.minimum && (version === null || !atLeast(version, linter.minimum))) {
+    console.error(`${linter.name} ${version ?? "of unknown version"} is older than ${linter.minimum}, the version its configuration is checked with.`);
+    failed.push(`${linter.name} (older than ${linter.minimum})`);
   } else if (start(file, linter.parameters).status !== 0) {
     failed.push(linter.name);
   }

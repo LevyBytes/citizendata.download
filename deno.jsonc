@@ -1,7 +1,7 @@
 // Deno is used here for its linter only (`npm run lint`). Nothing in this repository runs under Deno.
 {
   "lint": {
-    "include": ["docs/scripts/", "extension/", "shared/", "scripts/", "tests/", "eslint.config.mjs"],
+    "include": ["docs/scripts/", "extension/", "platform/", "shared/", "scripts/", "tests/", "eslint.config.mjs"],
     // The copies `npm run sync:schemas` writes are checked where they are written from.
     "exclude": [
       "extension/schema/",

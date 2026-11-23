@@ -16,6 +16,7 @@ import { unexpectedRequests } from "./check-extension/answers-to-browser-request
 import { chrome, extensionId } from "./check-extension/browser-pages-and-account-in-use.mjs";
 import { launchChromeWithTheExtension } from "./check-extension/chrome-launch-with-the-extension.mjs";
 import { executable, options, out, scratch } from "./check-extension/options-and-run-folders.mjs";
+import { accountRemoval } from "./check-extension/scenario-account-removal.mjs";
 import { buildHistoryKept } from "./check-extension/scenario-build-history-kept.mjs";
 import { buildHistorySetting } from "./check-extension/scenario-build-history-setting.mjs";
 import { fullBackup } from "./check-extension/scenario-full-backup.mjs";
@@ -69,6 +70,7 @@ try {
   await scenario("popup-clear-all-data", popupClearAllData);
   await scenario("popup-recovery-import", popupRecoveryImport);
   await scenario("opened-file-kept", openedFileKept);
+  await scenario("account-removal", accountRemoval);
   if (options.large) {
     await scenario("large-account", largeAccount);
   } else {

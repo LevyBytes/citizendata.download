@@ -46,7 +46,8 @@ export function chromeApi(world, instance, guard) {
     cookies: {
       get: guard(async (details) => {
         harness.cookieReads += 1;
-        return details.name === "Rsi-Token" && harness.signedIn ? { name: "Rsi-Token", value: RSI_TOKEN } : null;
+        // Each synthetic account has its own session token, as a sign-in to RSI gives.
+        return details.name === "Rsi-Token" && harness.signedIn ? { name: "Rsi-Token", value: `${RSI_TOKEN}-${String(harness.rsi?.state?.handle ?? "").toLowerCase()}` } : null;
       })
     },
     offscreen: {

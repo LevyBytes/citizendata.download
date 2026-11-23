@@ -1,12 +1,20 @@
+// Packages one extension target. Usage: node scripts/package-extension.mjs [--target chromium] [--out <folder>]
+// Chromium is the only target that can be packaged: it verifies the repository, runs the unit tests, composes
+// extension/ + platform/chromium/ + manifests/chrome.json (scripts/extension-composition.mjs), and writes the unpacked
+// extension to <out>/chromium, its ZIP and SHA256SUMS.txt. <out> is dist/ unless named. A Firefox target is refused
+// with FIREFOX_PLATFORM_NOT_IMPLEMENTED before anything runs or is written.
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
+import { CompositionError, composeTarget, targetDefinition, writeComposedDirectory } from "./extension-composition.mjs";
+
+export { assertPackageFilePolicy } from "./extension-composition.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const extensionRoot = path.join(repositoryRoot, "extension");
-const outputRoot = path.join(repositoryRoot, "dist");
 
 function crcTable() {
   return Array.from({ length: 256 }, (_, value) => {
@@ -22,38 +30,6 @@ export function crc32(bytes) {
   let crc = 0xffffffff;
   for (const byte of bytes) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ byte) & 0xff];
   return (crc ^ 0xffffffff) >>> 0;
-}
-
-export async function collectFiles(directory, relativeRoot = "") {
-  const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const absolute = path.join(directory, entry.name);
-    const relative = path.posix.join(relativeRoot, entry.name);
-    const stat = await lstat(absolute);
-    if (stat.isSymbolicLink()) throw new Error(`Extension packages may not contain symbolic links: ${relative}`);
-    if (entry.isDirectory()) files.push(...await collectFiles(absolute, relative));
-    else if (entry.isFile()) files.push({ name: relative, bytes: await readFile(absolute) });
-  }
-  return files.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-}
-
-const forbiddenPackagePath = /(?:^|\/)(?:\.|private-data(?:\/|$)|captures(?:\/|$)|(?:account-data[^/]*|rsi-account[^/]*|citizendata-[^/]*|hangarlink[^/]*)\.(?:json|zip)$)|\.(?:crx|log|map|pem|tmp)$/iu;
-
-export function assertPackageFilePolicy(files) {
-  const names = new Set();
-  for (const file of files) {
-    if (typeof file?.name !== "string" || file.name.length === 0 || file.name.includes("\\") || file.name.startsWith("/") || file.name.split("/").includes("..")) {
-      throw new Error(`Unsafe extension package path: ${String(file?.name)}`);
-    }
-    const normalized = file.name.toLowerCase();
-    if (names.has(normalized)) throw new Error(`Duplicate extension package path: ${file.name}`);
-    if (forbiddenPackagePath.test(file.name)) throw new Error(`Private or development-only file is not allowed in the extension package: ${file.name}`);
-    names.add(normalized);
-  }
-  for (const required of ["manifest.json", "service-worker.js", "LICENSE", "THIRD_PARTY_NOTICES.md"]) {
-    if (!names.has(required.toLowerCase())) throw new Error(`Required extension package file is missing: ${required}`);
-  }
-  return files;
 }
 
 export function buildStoredZip(files) {
@@ -120,6 +96,48 @@ export function buildStoredZip(files) {
   return Buffer.concat([...localRecords, centralDirectory, end]);
 }
 
+// The entries of a ZIP that buildStoredZip wrote, read back through its central directory.
+export function readStoredZip(zip) {
+  const end = zip.length - 22;
+  if (zip.readUInt32LE(end) !== 0x06054b50) throw new Error("The ZIP has no end-of-central-directory record where a stored ZIP of this packager puts it.");
+  const count = zip.readUInt16LE(end + 10);
+  let offset = zip.readUInt32LE(end + 16);
+  const entries = [];
+  for (let index = 0; index < count; index += 1) {
+    if (zip.readUInt32LE(offset) !== 0x02014b50) throw new Error(`ZIP central directory entry ${index} is malformed.`);
+    const size = zip.readUInt32LE(offset + 24);
+    const nameLength = zip.readUInt16LE(offset + 28);
+    const localOffset = zip.readUInt32LE(offset + 42);
+    const name = zip.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
+    const dataStart = localOffset + 30 + zip.readUInt16LE(localOffset + 26) + zip.readUInt16LE(localOffset + 28);
+    entries.push({ name, bytes: zip.subarray(dataStart, dataStart + size) });
+    offset += 46 + nameLength;
+  }
+  return entries;
+}
+
+// Every file below a written package folder, as package paths with their bytes.
+export function readPackageDirectory(directory, relative = "") {
+  const files = [];
+  for (const entry of readdirSync(path.join(directory, ...relative.split("/").filter(Boolean)), { withFileTypes: true })) {
+    const name = relative ? `${relative}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...readPackageDirectory(directory, name));
+    else files.push({ name, bytes: readFileSync(path.join(directory, ...name.split("/"))) });
+  }
+  return files.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+}
+
+// Where the unpacked folder and the ZIP differ, by path and SHA-256, as sentences. None when they hold the same files.
+export function packageDifferences(directoryFiles, zipEntries) {
+  const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const unpacked = new Map(directoryFiles.map((file) => [file.name, digest(file.bytes)]));
+  const zipped = new Map(zipEntries.map((entry) => [entry.name, digest(entry.bytes)]));
+  const differences = [];
+  for (const [name, hash] of unpacked) if (zipped.get(name) !== hash) differences.push(zipped.has(name) ? `${name} differs` : `${name} is missing from the ZIP`);
+  for (const name of zipped.keys()) if (!unpacked.has(name)) differences.push(`${name} is missing from the unpacked folder`);
+  return differences;
+}
+
 export function validateManifestVersion(version) {
   if (!/^(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){0,3}$/u.test(version)) throw new Error(`Invalid Chrome manifest version: ${version}`);
   const parts = version.split(".").map(Number);
@@ -127,36 +145,31 @@ export function validateManifestVersion(version) {
   return version;
 }
 
-export function includeLegalFiles(files, legalFiles) {
-  const names = new Set(files.map((file) => file.name.toLowerCase()));
-  for (const file of legalFiles) {
-    if (names.has(file.name.toLowerCase())) throw new Error(`Extension source already contains a ${file.name} entry.`);
-    names.add(file.name.toLowerCase());
-  }
-  return [...files, ...legalFiles.map((file) => ({ name: file.name, bytes: Buffer.from(file.bytes) }))];
-}
-
 async function main() {
+  const { values } = parseArgs({ options: { target: { type: "string", default: "chromium" }, out: { type: "string" } }, strict: true });
+  const outputRoot = path.resolve(values.out ?? path.join(repositoryRoot, "dist"));
+  try {
+    targetDefinition(values.target);
+  } catch (error) {
+    if (!(error instanceof CompositionError)) throw error;
+    console.error(error.message);
+    process.exit(2);
+  }
+
   for (const script of ["scripts/verify.mjs", "scripts/run-tests.mjs"]) {
     const result = spawnSync(process.execPath, [script], { cwd: repositoryRoot, stdio: "inherit" });
     if (result.error) throw result.error;
     if (result.status !== 0) process.exit(result.status ?? 1);
   }
 
-  const manifest = JSON.parse(await readFile(path.join(extensionRoot, "manifest.json"), "utf8"));
-  const version = String(manifest.version ?? "");
+  const { files, version } = composeTarget(repositoryRoot, values.target);
   validateManifestVersion(version);
-
-  await rm(outputRoot, { recursive: true, force: true });
-  await mkdir(outputRoot, { recursive: true });
-  await cp(extensionRoot, path.join(outputRoot, "extension"), { recursive: true, force: true });
-
-  const legalFiles = await Promise.all(["LICENSE", "THIRD_PARTY_NOTICES.md"].map(async (name) => ({
-    name,
-    bytes: await readFile(path.join(repositoryRoot, name))
-  })));
-  for (const file of legalFiles) await writeFile(path.join(outputRoot, "extension", file.name), file.bytes);
-  const files = assertPackageFilePolicy(includeLegalFiles(await collectFiles(extensionRoot), legalFiles));
+  const unpackedRoot = path.join(outputRoot, values.target);
+  // dist/ is this script's own output and is written afresh. A folder named with --out must be new or empty.
+  if (values.out === undefined) await rm(outputRoot, { recursive: true, force: true });
+  else if (existsSync(outputRoot) && readdirSync(outputRoot).length > 0) throw new Error(`--out must name a new or empty folder: ${outputRoot}`);
+  await mkdir(unpackedRoot, { recursive: true });
+  writeComposedDirectory(files, unpackedRoot);
   const zip = buildStoredZip(files);
   const fileName = `citizendata-extension-${version}.zip`;
   const zipPath = path.join(outputRoot, fileName);
@@ -164,11 +177,13 @@ async function main() {
   const digest = createHash("sha256").update(zip).digest("hex");
   await writeFile(path.join(outputRoot, "SHA256SUMS.txt"), `${digest}  ${fileName}\n`, "utf8");
 
-  console.log(`PASS extension package: ${path.relative(repositoryRoot, zipPath)}`);
-  console.log(`PASS package files: ${files.length}`);
+  const differences = packageDifferences(readPackageDirectory(unpackedRoot), readStoredZip(zip));
+  if (differences.length > 0) throw new Error(`The unpacked ${values.target} folder and the ZIP differ: ${differences.join("; ")}`);
+  console.log(`PASS unpacked ${values.target} extension: ${path.relative(repositoryRoot, unpackedRoot) || unpackedRoot}`);
+  console.log(`PASS extension package: ${path.relative(repositoryRoot, zipPath) || zipPath}`);
+  console.log(`PASS package files: ${files.length}, the same paths and SHA-256 in the folder and the ZIP`);
   console.log(`PASS SHA-256: ${digest}`);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : "";
 if (import.meta.url === invokedPath) await main();
-

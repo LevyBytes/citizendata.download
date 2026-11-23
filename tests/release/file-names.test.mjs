@@ -4,7 +4,7 @@ import { nameFailure } from "../../scripts/check-file-names.mjs";
 
 test("a name that says what the file is passes, with the numbers that are part of that", () => {
   for (const name of ["runner-pause-and-resume.test.mjs", "synthetic-rsi.js", "check-source-limits.mjs", "sha256-of-a-saved-backup.test.mjs", "layout-at-380px.mjs",
-    "watchdog-after-30-seconds.mjs", "files-over-100-lines.test.mjs", "release-0.42.1.test.mjs"]) {
+    "watchdog-after-30-seconds.mjs", "files-over-100-lines.test.mjs", "release-0.42.2.test.mjs"]) {
     assert.equal(nameFailure(name, true), null, name);
   }
   for (const name of ["web", "hero-motion", "e2e"]) assert.equal(nameFailure(name, false), null, name);

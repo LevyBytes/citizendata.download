@@ -23,7 +23,7 @@ export async function checkLatestBuildOnLoad() {
       if(request.type==='GET_LATEST_BUILD'){window.__latest.asked+=1;window.__latest.payloads.push(request.payload??null);payload=${answer};}
       send('RESPONSE',request.requestId,payload);
     });
-    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.1',capabilities:{buildJson:true}});
+    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.2',capabilities:{buildJson:true}});
     return true;
   })()`);
   const shown = "({handle:document.getElementById('accountHandle').textContent,eyebrow:document.getElementById('snapshotEyebrow').textContent,file:document.getElementById('railExported').textContent,toast:document.getElementById('statusToast')"

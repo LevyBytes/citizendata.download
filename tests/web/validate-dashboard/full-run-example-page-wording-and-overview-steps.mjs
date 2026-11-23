@@ -41,7 +41,7 @@ assert(await evaluate(`(() => {
     supportSpectrum:'https://robertsspaceindustries.com/spectrum/messages/member/DirectorGunner',
     supportEnlist:'https://enlistcitizen.com/',
     supportWiki:'https://starcitizen.tools/',
-    supportTest:'http://discord.gg/test'
+    supportTest:'https://discord.gg/test'
   };
   // The thanks sit behind a down arrow that is closed until the visitor opens it.
   const thanks = document.querySelector('#projectSupport details.support-thanks');

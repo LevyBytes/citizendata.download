@@ -23,7 +23,7 @@ export async function checkSkipReconnectAndContinueRequests({ controls, sent }) 
   await evaluate("window.__controls.emit(window.__controls.shape('paused',{controlSessionBound:false,requiresRebind:true}))");
   await waitFor("!document.getElementById('rebindCollection').hidden");
   const unbound = await evaluate(controls);
-  assert(unbound.rebind && unbound.rebindText === "Reconnect paused run" && !unbound.pause && !unbound.resume && !unbound.cancel, `A run owned by another session offered more than reconnection: ${JSON.stringify(unbound)}`);
+  assert(unbound.rebind && unbound.rebindText === "Reconnect run" && !unbound.pause && !unbound.resume && !unbound.cancel, `A run owned by another session offered more than reconnection: ${JSON.stringify(unbound)}`);
   await evaluate("document.getElementById('rebindCollection').click()");
   await waitFor(`${sent("REQUEST_REBIND")}===1 && !document.getElementById('resumeCollection').hidden`);
   await evaluate("document.getElementById('cancelCollection').click()");

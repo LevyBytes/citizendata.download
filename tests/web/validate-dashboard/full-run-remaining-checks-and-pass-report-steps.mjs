@@ -1,5 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { checkAccountSwitchWithExtension } from "./account-switch-with-extension-check.mjs";
+import { checkAccountRemovalUnderSwitchAccount } from "./account-removal-under-switch-account-check.mjs";
+import { checkAccountSwitchWithoutExtension } from "./account-switch-without-extension-check.mjs";
 import { assert } from "./assert-build-chooser-reload-and-inventory-state.mjs";
 import { checkAuditRepairs } from "./audit-repairs-check.mjs";
 import { checkBuildHandOver } from "./build-hand-over-waiting-file-and-recovery-backup-check.mjs";
@@ -13,6 +16,8 @@ import { checkExtensionRequests } from "./extension-requests-check.mjs";
 import { checkHangarLinkExport } from "./hangar-link-export-check.mjs";
 import { checkHangarLinkImport } from "./hangar-link-import-check.mjs";
 import { checkImageDownload } from "./image-download-cancelled-check.mjs";
+import { checkImageDownloadCancelledInARefusalWait } from "./image-download-cancelled-in-a-refusal-wait-check.mjs";
+import { checkImageRunFinalizingAndCompletionPoint } from "./image-run-finalizing-and-completion-point-check.mjs";
 import { checkInventorySorting } from "./inventory-sorting-check.mjs";
 import { checkLatestBuildOnLoad } from "./latest-build-on-load-check.mjs";
 import { checkLoadedExports } from "./loaded-exports-check.mjs";
@@ -21,6 +26,7 @@ import { checkBuildChooserWording, checkRecoveryBackupOpens } from "./recovery-b
 import { checkRemovedRecords } from "./removed-records-check.mjs";
 import { captureScreenshots, downloadDirectory, exportReceipts, repositoryRoot, testDirectory } from "./run-options-and-work-folders.mjs";
 import { checkSubscriptionFixtures } from "./subscription-tier-and-fixtures-checks.mjs";
+import { checkSwitchAccountBelowTheAvatar } from "./switch-account-below-the-avatar-check.mjs";
 
 await checkLoadedExampleHasNoDummyHistory();
 await checkSubscriptionFixtures();
@@ -36,11 +42,17 @@ await checkSemanticStructures();
 await checkInventoryValueColumn();
 await checkBuildStatusHeader();
 await checkLatestBuildOnLoad();
+await checkAccountSwitchWithoutExtension();
+await checkAccountSwitchWithExtension();
+await checkAccountRemovalUnderSwitchAccount();
+await checkSwitchAccountBelowTheAvatar();
 await checkBuildChooserWording();
 await checkBuildHandOver();
 await checkRecoveryBackupOpens();
 await checkExtensionRequests();
 await checkImageDownload();
+await checkImageDownloadCancelledInARefusalWait();
+await checkImageRunFinalizingAndCompletionPoint();
 await checkCcuLeadImage();
 await checkHangarLinkImport();
 if (captureScreenshots) await writeFile(

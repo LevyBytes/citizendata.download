@@ -69,7 +69,8 @@ function inertDocument(fragmentType, html) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || message?.kind !== "CITIZENDATA_PARSE_RSI_MARKUP") return false;
   try {
-    const parser = PARSERS[message.fragmentType];
+    // Only a parser this file names: an inherited name such as `constructor` or `toString` is not one.
+    const parser = typeof message.fragmentType === "string" && Object.hasOwn(PARSERS, message.fragmentType) ? PARSERS[message.fragmentType] : null;
     if (typeof parser !== "function") throw new Error("RSI_FRAGMENT_TYPE_NOT_ALLOWED");
     const context = message.context && typeof message.context === "object" ? message.context : {};
     const document = inertDocument(message.fragmentType, message.html);

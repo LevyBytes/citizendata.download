@@ -1486,41 +1486,6 @@
         }
       }
     },
-    "address": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "lines",
-        "city",
-        "region",
-        "postalCode",
-        "country"
-      ],
-      "properties": {
-        "name": {
-          "$ref": "#/$defs/nullableString"
-        },
-        "lines": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "city": {
-          "$ref": "#/$defs/nullableString"
-        },
-        "region": {
-          "$ref": "#/$defs/nullableString"
-        },
-        "postalCode": {
-          "$ref": "#/$defs/nullableString"
-        },
-        "country": {
-          "$ref": "#/$defs/nullableString"
-        }
-      }
-    },
     "orderPayment": {
       "type": "object",
       "additionalProperties": false,
@@ -1603,24 +1568,12 @@
           }
         },
         "billingAddress": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/address"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Always null: the extension records no postal address.",
+          "type": "null"
         },
         "shippingAddress": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/address"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Always null: the extension records no postal address.",
+          "type": "null"
         },
         "itemsTotal": {
           "$ref": "#/$defs/money"

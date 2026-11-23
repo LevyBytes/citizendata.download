@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createSyntheticRsi, dashboard, extensionPage, setRsi } from "./browser-pages-and-account-in-use.mjs";
 import { assertCompleteDocument } from "./complete-document-expectations.mjs";
-import { freshDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { reach, refuseRsiWhen } from "./held-rsi-requests.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
 import { assertStep } from "./scenario-runner.mjs";
@@ -27,6 +27,7 @@ export async function ledgersRetryAfter() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: "LedgerCitizen", counts: { pledges: 6, buybacks: 4, orders: 2, storeCredit: 12, uec: 6, rec: 4 } });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, "LedgerCitizen");
   const limit = refuseRsiWhen((request) => LEDGER_PATHS.has(new URL(request.url).pathname), { status: 429, retryAfterSeconds: RETRY_AFTER_SECONDS, forMs: RETRY_AFTER_SECONDS * 1000 });
   try {
     await startBuild(dashboard);

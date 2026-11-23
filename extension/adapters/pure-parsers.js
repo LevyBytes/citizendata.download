@@ -9,7 +9,7 @@
 
   if (!N) throw new Error("CitizenDataNormalization must load before pure-parsers.js.");
 
-  const PARSER_VERSION = "0.42.1";
+  const PARSER_VERSION = "0.42.2";
   const INVENTORY_CATEGORIES = Object.freeze(["gamePackage", "standaloneShip", "shipUpgrade", "reward", "hangarItem", "armor", "weapon", "other", "unknown"]);
   const BALANCE_UNITS = Object.freeze({ storeCredit: "USD", uec: "UEC", rec: "REC" });
 
@@ -558,19 +558,6 @@
     return result("financial.subscriptions", Object.freeze(value), value.length, context, metadata);
   }
 
-  function address(input, label) {
-    if (input === null || input === undefined) return null;
-    const source = N.plain(input, label);
-    return Object.freeze({
-      name: N.nullableText(source.name, `${label}.name`),
-      lines: Object.freeze((source.lines ?? []).map((line, index) => N.rawText(line, `${label}.lines[${index}]`))),
-      city: N.nullableText(source.city, `${label}.city`),
-      region: N.nullableText(source.region, `${label}.region`),
-      postalCode: N.nullableText(source.postalCode, `${label}.postalCode`),
-      country: N.nullableText(source.country, `${label}.country`)
-    });
-  }
-
   async function orderItem(input, label) {
     const source = N.plain(input, label);
     return Object.freeze({
@@ -603,8 +590,9 @@
         fulfillmentState: N.nullableText(source.fulfillmentState, `orders[${index}].fulfillmentState`),
         physical: source.physical === undefined ? items.some(item => item.physical) : N.boolean(source.physical, `orders[${index}].physical`),
         items: Object.freeze(items),
-        billingAddress: address(source.billingAddress, `orders[${index}].billingAddress`),
-        shippingAddress: address(source.shippingAddress, `orders[${index}].shippingAddress`),
+        // No postal address is recorded, whatever the page shows.
+        billingAddress: null,
+        shippingAddress: null,
         itemsTotal: N.money(source.itemsTotal, `orders[${index}].itemsTotal`, { nullable: false }),
         additionalDiscount: N.money(source.additionalDiscount, `orders[${index}].additionalDiscount`, { nullable: false }),
         creditsUsed: N.money(source.creditsUsed, `orders[${index}].creditsUsed`, { nullable: false }),

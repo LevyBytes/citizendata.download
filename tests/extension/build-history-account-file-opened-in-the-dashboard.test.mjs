@@ -35,14 +35,17 @@ test("an account file opened in the dashboard is kept when the extension holds n
   assert.deepEqual(plain(await tab.request("GET_LATEST_BUILD")).result, second);
   assert.equal(harness.repository.inspect().snapshots.size, 1);
 
-  // The next build is an update of the build that was handed over: it keeps the file's local account identifier,
-  // reads less than a first build, and opens no buy-back page, because the file already holds every item's detail.
+  // The extension did not read the handed-over build from RSI, so the next build stands on nothing it holds: it keeps
+  // the file's local account identifier and reads every section, buy-back pages included, as a first build does.
+  // The build after that stands on one the extension read, and is an update again.
   const buybackPages = (requests) => requests.filter((request) => JSON.stringify(request).includes("/pledge/buyback/")).length;
-  assert.ok(buybackPages(source.harness.rsi.requests.slice(0, firstBuildRequests)) > 0);
   const before = harness.rsi.requests.length;
   const third = await build(harness, tab);
-  const update = harness.rsi.requests.slice(before);
+  const full = harness.rsi.requests.slice(before);
   assert.equal(third.account.localAccountId, first.account.localAccountId);
-  assert.ok(update.length < firstBuildRequests, `${update.length} requests after a hand-over, ${firstBuildRequests} for a first build`);
-  assert.equal(buybackPages(update), 0);
+  assert.ok(full.length >= firstBuildRequests && buybackPages(full) > 0, `${full.length} requests after a hand-over, ${firstBuildRequests} for a first build`);
+  const afterFull = harness.rsi.requests.length;
+  await build(harness, tab);
+  const update = harness.rsi.requests.slice(afterFull);
+  assert.ok(update.length < firstBuildRequests && buybackPages(update) === 0, `${update.length} requests in the update after it`);
 });

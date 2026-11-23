@@ -23,13 +23,13 @@ test("a build from the hosted dashboard collects every section at its pacing and
   await assertCompleteDocument(document, harness.rsi);
   assert.equal(tab.events.filter((event) => event.result).length, 1, "the result is delivered once");
   assert.equal(document.account.handle, "SyntheticCitizen");
-  assert.equal(document.generator.version, "0.42.1");
+  assert.equal(document.generator.version, "0.42.2");
 
   // The run is recorded with the authorization it ran under.
   assert.equal(document.sync.runs.length, 1);
   assert.equal(document.sync.runs[0].status, "complete");
   assert.match(document.sync.runs[0].authorization.planHash, /^[0-9a-f]{64}$/u);
-  assert.equal(document.sync.runs[0].authorization.extensionVersion, "0.42.1");
+  assert.equal(document.sync.runs[0].authorization.extensionVersion, "0.42.2");
 
   // About one step a second for the whole run once the slow start has passed, and never a long pause. Every run starts
   // at half the pace and reaches it about 80 seconds in, which adds at most 30 seconds (§6.6 A). The account's

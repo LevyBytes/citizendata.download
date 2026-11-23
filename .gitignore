@@ -4,8 +4,36 @@ node_modules/
 *.tmp
 *.pem
 *.crx
-.DS_Store
+
+# Files operating systems and desktops leave in folders, ignored in every folder of the repository.
+# Windows: thumbnail caches, folder settings, shortcuts, the recycle bin, download zone marks copied by WSL.
 Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+*.stackdump
+*:Zone.Identifier
+# macOS: Finder settings, resource forks, Spotlight, Trash, Time Machine and volume files.
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+# Linux: desktop folder settings, trash folders, FUSE and NFS leftovers, editor backup copies.
+.directory
+.Trash-*
+.fuse_hidden*
+.nfs*
+*~
 
 # Screenshots and scratch folders that test runs write next to the tests.
 work-temp-*

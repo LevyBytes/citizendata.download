@@ -7,9 +7,9 @@ export async function checkExtensionNotice() {
   await openBuildChooser();
   const missing = await evaluate(buildChooserState);
   assert(missing.notice && missing.title === "Star Citizen Data Downloader extension not detected" && missing.link
-    && missing.href === "https://github.com/LevyBytes/citizendata.download/tree/main/extension"
+    && missing.href === "https://chromewebstore.google.com/detail/citizen-data-downloader/ehklbfcpnadaeodflibpihhgimmmhjpd"
     && missing.target === "_blank" && missing.rel === "noopener noreferrer" && missing.linkTitle === "Get the Star Citizen Data Downloader extension."
-    && missing.linkDetail === "Google Chrome Extension Marketplace approval pending, submitted 11/22/2026. Use the GitHub-hosted extension in developer mode for now."
+    && missing.linkDetail === "Install from the Chrome Web Store."
     && !missing.account && missing.images && missing.imagesDisabled && missing.state === "Before you can build" && missing.line === "Data needs the Star Citizen Data Downloader extension. Images need an open account "
       + "document." && missing.logHidden && missing.controlsHidden,
   `Build chooser without an extension did not replace the account choice with the install notice and link: ${JSON.stringify(missing)}`);
@@ -39,9 +39,9 @@ export async function checkExtensionNotice() {
   const outdated = await evaluate(buildChooserState);
   assert(
     outdated.notice && outdated.title === "Star Citizen Data Downloader extension needs an update" && outdated.link
-      && outdated.href === "https://github.com/LevyBytes/citizendata.download/tree/main/extension"
+      && outdated.href === "https://chromewebstore.google.com/detail/citizen-data-downloader/ehklbfcpnadaeodflibpihhgimmmhjpd"
       && outdated.linkTitle === "Update the Star Citizen Data Downloader extension."
-      && outdated.linkDetail === "Google Chrome Extension Marketplace approval pending, submitted 11/22/2026. Use the GitHub-hosted extension in developer mode for now."
+      && outdated.linkDetail === "Update from the Chrome Web Store."
       && !outdated.account,
     `A protocol mismatch still offered an account build or omitted the update link: ${JSON.stringify(outdated)}`
   );

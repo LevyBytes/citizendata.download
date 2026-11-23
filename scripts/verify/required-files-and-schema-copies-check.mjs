@@ -13,8 +13,12 @@ export const requiredPaths = [
   "docs/.nojekyll",
   "docs/CNAME",
   "docs/index.html",
-  "extension/manifest.json",
-  "extension/service-worker.js",
+  "manifests/chrome.json",
+  "manifests/firefox.json",
+  "platform/chromium/service-worker.js",
+  "platform/chromium/offscreen/parser.html",
+  "platform/chromium/offscreen/parser.js",
+  "platform/firefox/README.md",
   "schema/account-export.schema.json",
   "schema/offline-package.schema.json"
 ];

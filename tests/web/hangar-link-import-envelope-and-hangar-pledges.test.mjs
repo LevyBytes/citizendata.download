@@ -9,7 +9,7 @@ test("only the Hangar Link envelope is recognised", () => {
   assert.equal(Import.isHangarLinkFile([record()]), false);
   assert.equal(Import.isHangarLinkFile(null), false);
   // A CitizenData account file also has a list called pledges; it is not a Hangar Link file.
-  assert.equal(Import.isHangarLinkFile({ schemaVersion: 1, generator: { name: "CitizenData", version: "0.42.1" }, pledges: [] }), false);
+  assert.equal(Import.isHangarLinkFile({ schemaVersion: 1, generator: { name: "CitizenData", version: "0.42.2" }, pledges: [] }), false);
 });
 
 test("the opened file is a valid account document that says it is an incomplete build", async () => {
@@ -19,9 +19,9 @@ test("the opened file is a valid account document that says it is an incomplete 
   await Documents.acceptAccountDocument(stamped, schema);
   globalThis.CitizenDataDashboardModel.validateAccountDocument(stamped);
 
-  assert.deepEqual(document.generator, { name: "Hangar Link import", version: "0.42.1" });
+  assert.deepEqual(document.generator, { name: "Hangar Link import", version: "0.42.2" });
   assert.equal(Import.isHangarLinkImport(document), true);
-  assert.equal(Import.isHangarLinkImport({ generator: { name: "CitizenData", version: "0.42.1" } }), false);
+  assert.equal(Import.isHangarLinkImport({ generator: { name: "CitizenData", version: "0.42.2" } }), false);
   assert.deepEqual(document.account, { localAccountId: OPTIONS.localAccountId, ueeCitizenRecord: null, handle: "ExampleCitizen" });
 
   // The two lists are partial. Every other section was not run, the Hangar Log included, and holds nothing.

@@ -5,6 +5,8 @@
     "includes": [
       "docs/**",
       "extension/**",
+      "platform/**",
+      "manifests/**",
       "shared/**",
       "schema/**",
       "scripts/**",
@@ -41,7 +43,7 @@
     {
       // The extension, the dashboard and the sources they share are loaded as classic scripts, where the directive
       // is what makes them strict.
-      "includes": ["extension/**/*.js", "docs/scripts/**/*.js", "shared/**/*.js"],
+      "includes": ["extension/**/*.js", "platform/**/*.js", "docs/scripts/**/*.js", "shared/**/*.js"],
       "linter": { "rules": { "suspicious": { "noRedundantUseStrict": "off" } } }
     },
     {

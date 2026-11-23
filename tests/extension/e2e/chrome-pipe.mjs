@@ -10,7 +10,14 @@ import { ChromeSession } from "./chrome-session.mjs";
 export class ChromePipe extends ChromePipeConnection {
   // `renderingFlags` are the launch profile's (tests/support/chrome-test-launch.mjs). A launch whose browser exits before
   // answering rejects with that exit code.
-  static async launch({ executable, profile, headless = true, renderingFlags = ["--disable-gpu"], extraArguments = [] }) {
+  static async launch(options) {
+    const pipe = ChromePipe.spawnBrowser(options);
+    await pipe.send("Target.setDiscoverTargets", { discover: true });
+    return pipe;
+  }
+
+  // The browser started, before any command: for a start that tests/support/chrome-test-launch.mjs may retry.
+  static spawnBrowser({ executable, profile, headless = true, renderingFlags = ["--disable-gpu"], extraArguments = [] }) {
     const browserArguments = [
       "--remote-debugging-pipe",
       "--enable-unsafe-extension-debugging",
@@ -26,9 +33,7 @@ export class ChromePipe extends ChromePipeConnection {
       "about:blank"
     ];
     const child = spawn(executable, browserArguments, { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], windowsHide: true });
-    const pipe = new ChromePipe(child);
-    await pipe.send("Target.setDiscoverTargets", { discover: true });
-    return pipe;
+    return new ChromePipe(child);
   }
 
   async attach(targetId) {

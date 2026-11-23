@@ -63,3 +63,12 @@ test("all bundled demo native presets export without assuming full canonical sch
     assert.deepEqual(SafeJson.parseBoundedJson(Exports.createExport(document, selection).text), native(document, selection));
   }
 });
+
+test("an order holding a postal address is not exported", () => {
+  for (const key of ["billingAddress", "shippingAddress"]) {
+    const document = fixture();
+    document.financial.orders[0][key] = { country: "US" };
+    assert.throws(() => Exports.createExport(document, { preset: "billing" }), new RegExp(`${key} must be null`, "u"));
+  }
+  assert.equal(native(fixture(), { preset: "billing" }).financial.orders[0].billingAddress, null);
+});

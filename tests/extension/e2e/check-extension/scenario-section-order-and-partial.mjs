@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { createSyntheticRsi, dashboard, extensionPage, setRsi } from "./browser-pages-and-account-in-use.mjs";
-import { freshDashboard, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
+import { freshDashboard, selectCurrentRsiAccount, startBuild, waitForSavedDialog } from "./dashboard-pages-and-builds.mjs";
 import { downloads } from "./options-and-run-folders.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
 import { pause, POLL_MS } from "./polling-intervals.mjs";
@@ -49,6 +49,7 @@ export async function sectionOrderAndPartial() {
   await freshDashboard();
   const account = createSyntheticRsi({ handle: HANDLE, counts: { pledges: 8, buybacks: 6, orders: 3, storeCredit: 4, uec: 2, rec: 2, prospects: 3 } });
   setRsi(account);
+  await selectCurrentRsiAccount(dashboard, HANDLE);
   await startBuild(dashboard);
   await waitForSavedDialog(dashboard, 120000);
   assertCanonicalOrder(sectionOrderOf(account.requests, HANDLE), "The fresh build");

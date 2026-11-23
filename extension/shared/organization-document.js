@@ -83,7 +83,7 @@
     return document;
   }
 
-  async function merge({ accountDocument, previous = null, resultDocument = null, selectedSids = [], exportedAt = new Date().toISOString(), generatorVersion = "0.42.1", terminalStatus = "complete" }) {
+  async function merge({ accountDocument, previous = null, resultDocument = null, selectedSids = [], exportedAt = new Date().toISOString(), generatorVersion = "0.42.2", terminalStatus = "complete" }) {
     const api = requireApi("Account document tooling", root.CitizenDataAccountDocument);
     const account = accountBinding(accountDocument);
     if (previous) {
@@ -134,7 +134,7 @@
   // The Organization JSON for the rosters an account build carries inside it, each with the state and time of its own
   // last collection. The extension carries every collected roster forward in its latest build, so this needs no
   // earlier Organization JSON. Null when the build carries no roster.
-  async function fromAccountDocument({ accountDocument, generatorVersion = "0.42.1" }) {
+  async function fromAccountDocument({ accountDocument, generatorVersion = "0.42.2" }) {
     const api = requireApi("Account document tooling", root.CitizenDataAccountDocument);
     const account = accountBinding(accountDocument);
     const carried = Array.isArray(accountDocument.organizations?.members) ? accountDocument.organizations.members : [];

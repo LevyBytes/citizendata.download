@@ -1,6 +1,6 @@
 # Release process
 
-CitizenData uses an owner-controlled release process because the extension can handle private account and financial data.
+CitizenData uses an owner-controlled release process.
 
 No script in this repository publishes a GitHub Release, submits to the Chrome Web Store, deploys GitHub Pages, changes DNS, signs a CRX, or pushes Git.
 
@@ -8,7 +8,7 @@ No script in this repository publishes a GitHub Release, submits to the Chrome W
 
 ### Development
 
-Load `extension/` unpacked from a trusted checkout through `chrome://extensions`.
+Run `npm run package:chromium` in a trusted checkout and load the `dist/chromium/` folder it writes unpacked through `chrome://extensions`. `extension/` alone is not loadable: the packager composes it with `platform/chromium/` and `manifests/chrome.json`.
 
 Unpacked loading is for development and owner-controlled testing only.
 
@@ -30,13 +30,17 @@ Chrome on Windows and macOS does not treat a GitHub ZIP or self-hosted CRX as a 
 
 Publish an immutable GitHub Release only after the same reviewed ZIP has been accepted for the selected Web Store release.
 
+### Firefox
+
+There is no Firefox channel. `manifests/firefox.json` and `platform/firefox/` are a scaffold that is not usable or published; the packager refuses `--target firefox` with `FIREFOX_PLATFORM_NOT_IMPLEMENTED` and produces no Firefox artifact. Nothing is submitted to addons.mozilla.org.
+
 ## Versioning
 
-The first release is `0.42.1`. `manifest.json`, its `version_name`, and `package.json` carry the same number, and a test holds them together.
+The current release is `0.42.2`. `manifests/chrome.json` (packaged as `manifest.json`), its `version_name`, `manifests/firefox.json`, and `package.json` carry the same number, and a test holds them together.
 
 `manifest.version` uses Chrome's one-to-four integer components and must increase for every Web Store upload. Never reuse an uploaded version number.
 
-Schema compatibility and extension storage are separate contracts. The extension's IndexedDB database is at version 4; opening an older database adds the missing stores and keeps what is there. A change to either needs its own tests.
+Schema compatibility and extension storage are separate contracts. The extension's IndexedDB database is at version 4; opening an older database adds the missing stores and keeps what is there. The accounts added with Add new account or a complete verified Account JSON are kept apart from it, in `chrome.storage.local` under `citizendata.accounts.v1`, and Clear All removes that key. A change to either needs its own tests.
 
 ## Required gates
 
@@ -45,7 +49,7 @@ Schema compatibility and extension storage are separate contracts. The extension
 3. Run `npm test` and `npm run verify` from a clean source tree, then the browser checks: `npm run test:dashboard` and `npm run test:extension`. Both run Chrome headless against synthetic data and contact no outside host.
 4. Review every manifest permission and host-permission change against the previous release.
 5. Review the privacy policy, Limited Use disclosure, dashboard safety wording, and support/security contacts.
-6. Run `npm run package:extension` to create the deterministic ZIP and SHA-256 record.
+6. Run `npm run package:chromium` to compose `dist/chromium/` and create the deterministic ZIP and SHA-256 record; it checks that the folder and the ZIP hold the same files.
 7. Inspect the ZIP and prove `manifest.json` is at its root, only reviewed files are present, no private data is present, and no remote executable code is present.
 8. Load that exact staged package in a clean browser profile and build a backup of a real account from the hosted dashboard and from a local copy. The automated checks use a synthetic RSI; this step is the only one that meets the real site.
 9. Create a draft GitHub Release and attach the exact ZIP, hash, release notes, permission diff, schema compatibility statement, and known limitations without publishing it.
@@ -81,7 +85,7 @@ Search and sharing metadata in `docs/index.html` uses `https://citizendata.downl
 
 The factual WebApplication data intentionally contains no fabricated offer, review, or rating and does not claim eligibility for Google's software-app rich result. Keep title, description, canonical, Open Graph, X tags, and WebSite identity consistent. When the share image's artwork changes, keep its file name, which carries no version number, and have the platforms fetch it again with their own tools, such as Meta's Sharing Debugger and LinkedIn's Post Inspector. Account JSON must never change public metadata.
 
-Chrome Web Store approval was submitted on November 22, 2026. While approval is pending, the dashboard's install card uses `EXTENSION_INSTALL_URL` in `docs/scripts/dashboard.js` to link to the GitHub `extension` folder for developer-mode installation. When Google approves the extension, remove the temporary approval sentence and replace that URL with the exact Chrome Web Store listing.
+Google approved the Chrome Web Store listing on November 22, 2026. The dashboard's `EXTENSION_INSTALL_URL` in `docs/scripts/dashboard.js` uses the [canonical Citizen Data Downloader listing](https://chromewebstore.google.com/detail/citizen-data-downloader/ehklbfcpnadaeodflibpihhgimmmhjpd). Developer-mode installation from `dist/chromium` remains a secondary development and source-review path.
 
 ## Automation
 

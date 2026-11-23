@@ -50,9 +50,11 @@ export async function checkSemanticStructures() {
   // Keyboard scrolling: with the scroll area shorter than its rows, Tab from the first row's button reaches the last
   // row's button, and the area scrolls so the focused button is in view.
   await evaluate("document.querySelector('.table-shell').style.maxHeight = '120px'; document.querySelector('.table-shell').scrollTop = 0; document.querySelector('.table-shell .record-button').focus(); true");
-  const last = await evaluate("[...document.querySelectorAll('.table-shell button')].length");
+  const last = await evaluate("[...document.querySelectorAll('#inventoryRows button')].length");
   for (let index = 1; index < last; index += 1) await press("Tab", "Tab", 9);
-  const scrolled = await evaluate(`(() => { const shell = document.querySelector('.table-shell'); const buttons = [...shell.querySelectorAll('button')]; const area = shell.getBoundingClientRect(); const box = document.activeElement.getBoundingClientRect();
+  // The rows' buttons alone: the column sort buttons in the table's header come before the first row's.
+  const scrolled = await evaluate(`(() => { const shell = document.querySelector('.table-shell'); const buttons = [...shell.querySelectorAll('#inventoryRows button')];
+    const area = shell.getBoundingClientRect(); const box = document.activeElement.getBoundingClientRect();
     return { top: shell.scrollTop, room: shell.scrollHeight - shell.clientHeight, onLast: document.activeElement === buttons.at(-1), inView: box.top >= area.top - 1 && box.bottom <= area.bottom + 1 }; })()`);
   await evaluate("document.querySelector('.table-shell').style.maxHeight = ''; true");
   assert(scrolled.room > 0 && scrolled.top > 0 && scrolled.onLast && scrolled.inView, `Tab did not reach and scroll to the inventory's last row: ${JSON.stringify(scrolled)}`);

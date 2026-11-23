@@ -280,7 +280,7 @@
     }
     if (context.connecting === true) return make(5, { badge: "CONNECTING", operation: roster ? "Preparing Organization Data" : "Verifying your signed in RSI account", summary: roster ? "Star Citizen Data Downloader is preparing the selected organization roster job." : "Star Citizen Data Downloader is establishing the read only backup run.", tone: "warning", active: true });
     if (context.bridgeConnected !== true) return make(6, { jobKind: null, badge: "DISCONNECTED", operation: "Extension connection unavailable", summary: "The dashboard cannot currently communicate with Star Citizen Data Downloader." });
-    if (status?.requiresRebind === true) return make(8, { badge: "RECONNECT REQUIRED", operation: section.operation, summary: "The durable run is paused until this dashboard session is explicitly reconnected.", tone: "warning", active: true, controls: { ...NO_CONTROLS, rebind: true } });
+    if (status?.requiresRebind === true) return make(8, { badge: "RECONNECT REQUIRED", operation: section.operation, summary: "Another dashboard tab controls this backup. Reconnect to control it here.", tone: "warning", active: true, controls: { ...NO_CONTROLS, rebind: true } });
 
     const jobStatus = job?.status ?? null;
     const running = { ...NO_CONTROLS, pause: true, cancel: true, skip: job?.currentSection === "buybackUpgradePrices" };

@@ -15,7 +15,7 @@ export const Removals = globalThis.CitizenDataRemovalTracking;
 export const schema = JSON.parse(await readFile(new URL("../../schema/account-export.schema.json", import.meta.url), "utf8"));
 
 export const IMPORTED_AT = "2026-11-19T12:00:00.000Z";
-export const OPTIONS = Object.freeze({ importedAt: IMPORTED_AT, localAccountId: "3f0e8a52-6c1d-4b7a-9e2f-5d4c3b2a1f00", generatorVersion: "0.42.1" });
+export const OPTIONS = Object.freeze({ importedAt: IMPORTED_AT, localAccountId: "3f0e8a52-6c1d-4b7a-9e2f-5d4c3b2a1f00", generatorVersion: "0.42.2" });
 export const SHIPS = Object.freeze({ slugs: ["aurora-mr", "gladius", "mpuv-cargo"], titles: { "aurora mk i mr": "aurora-mr" }, aliases: {} });
 
 // One record as Hangar Link writes it. Every field is present in its own files.

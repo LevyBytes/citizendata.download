@@ -24,7 +24,7 @@ test("the settings fingerprint and pace summary survive the package's opening an
   const host = imageHost({ time, images: imagesFor(2) });
   const materializeIn = async (entries) => context.CitizenDataMediaMaterializer.materialize(vm.runInContext(`(${JSON.stringify(entries)})`, context), packagePolicy, { fetcher: host.fetcher, sleep: time.sleep, nowMs: time.nowMs, now: time.now,
     random: () => 0.5 });
-  const build = (materialized) => context.CitizenDataMediaPackage.buildArchive({ accountDocument: account, materialized, policy: packagePolicy, generatedAt: time.now(), startedAt: time.now(), endedAt: time.now(), version: "0.42.1" });
+  const build = (materialized) => context.CitizenDataMediaPackage.buildArchive({ accountDocument: account, materialized, policy: packagePolicy, generatedAt: time.now(), startedAt: time.now(), endedAt: time.now(), version: "0.42.2" });
   const first = await materializeIn([entry(0)]);
   const built = await build(first);
   const opened = await context.CitizenDataMediaPackageReader.open(new Blob([built.archive]));

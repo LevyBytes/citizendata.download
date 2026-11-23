@@ -1,6 +1,7 @@
 import { chrome, dashboard, setDashboard } from "./browser-pages-and-account-in-use.mjs";
 import { offersAccount, openChooser, waitForChooser } from "./build-chooser.mjs";
 import { dashboardUrl } from "./dashboard-copy-without-image-spacing.mjs";
+import { TOKEN } from "./origins-keys-and-stand-in-image.mjs";
 import { click } from "./page-clicks-and-extension-pages.mjs";
 import { assertStep } from "./scenario-runner.mjs";
 
@@ -24,6 +25,21 @@ export async function startBuild(page) {
   const state = await openChooser(page);
   assertStep(offersAccount(state), `The Build chooser did not offer the account backup: ${JSON.stringify(state)}`);
   await click(page, "buildAccountAction");
+}
+
+// A scenario that changes the signed-in synthetic RSI identity must make the same explicit account choice a user
+// makes. Account summaries intentionally persist between scenarios even when Build History is off.
+export async function selectCurrentRsiAccount(page, handle) {
+  // Signing in to RSI as another account gives another session token.
+  const value = `${TOKEN}-${handle.toLowerCase()}`;
+  await chrome.send("Storage.setCookies", { cookies: [{ name: "Rsi-Token", value, domain: "robertsspaceindustries.com", path: "/", secure: true, httpOnly: true }] });
+  await click(page, "switchAccountButton");
+  await click(page, "addAccountCommand");
+  await page.waitFor(
+    `document.getElementById('accountHandle').textContent === ${JSON.stringify(handle)} && document.body.dataset.accountState === 'identity-only'`,
+    8000,
+    `${handle} to be added and selected`
+  );
 }
 
 export async function waitForSavedDialog(page, timeoutMs) {

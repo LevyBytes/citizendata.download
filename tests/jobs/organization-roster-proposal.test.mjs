@@ -19,7 +19,7 @@ test("organization roster proposal derives all request authority from a bounded 
   assert.deepEqual(result.value.plan.maximumRecordsBySection, { "organizations.members.TEST": 50000, "organizations.members.MMHC": 50000 });
   assert.equal(result.value.plan.minimumInterRequestDelayMs, 10000);
   assert.equal(result.value.route, "/api/orgs/getOrgMembers");
-  assert.deepEqual(result.value.parserVersions, { "organizations.members.TEST": "0.42.1", "organizations.members.MMHC": "0.42.1" });
+  assert.deepEqual(result.value.parserVersions, { "organizations.members.TEST": "0.42.2", "organizations.members.MMHC": "0.42.2" });
 });
 
 test("organization roster proposal rejects caller route, cap, selector, and malformed SID authority", () => {

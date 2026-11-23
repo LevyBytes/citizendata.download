@@ -2,12 +2,16 @@
   "manifest_version": 3,
   "name": "Citizen Data Downloader",
   "short_name": "Star Citizen Data Downloader",
-  "version": "0.42.1",
-  "version_name": "0.42.1",
+  "version": "0.42.2",
   "description": "Back up your Star Citizen hangar, buybacks, billing, referrals and org members to a file on your device. No upload, no tracking.",
-  "minimum_chrome_version": "120",
   "homepage_url": "https://citizendata.download/",
   "incognito": "not_allowed",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "citizendata@citizendata.download",
+      "strict_min_version": "153.0"
+    }
+  },
   "icons": {
     "16": "icons/citizendata-16.png",
     "32": "icons/citizendata-32.png",
@@ -22,13 +26,9 @@
       "32": "icons/citizendata-32.png"
     }
   },
-  "background": {
-    "service_worker": "service-worker.js"
-  },
   "permissions": [
     "alarms",
     "cookies",
-    "offscreen",
     "storage",
     "unlimitedStorage"
   ],

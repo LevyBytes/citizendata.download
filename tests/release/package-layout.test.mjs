@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertPackageFilePolicy, buildStoredZip, collectFiles, crc32, includeLegalFiles, validateManifestVersion } from "../../scripts/package-extension.mjs";
+import { assertPackageFilePolicy, buildStoredZip, crc32, validateManifestVersion } from "../../scripts/package-extension.mjs";
+import { composeTarget } from "../../scripts/extension-composition.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -29,32 +29,20 @@ test("Chrome manifest versions enforce component bounds and a non-zero value", (
   for (const invalid of ["0", "0.0.0.0", "1.65536", "01.2", "1.2.3.4.5"]) assert.throws(() => validateManifestVersion(invalid), /Invalid Chrome manifest version/u);
 });
 
-test("extension release files include the repository legal notices exactly once", async () => {
-  const legalFiles = await Promise.all(["LICENSE", "THIRD_PARTY_NOTICES.md"].map(async (name) => ({
-    name,
-    bytes: await readFile(path.join(repositoryRoot, name))
-  })));
-  const files = includeLegalFiles([{ name: "manifest.json", bytes: Buffer.from("{}\n", "utf8") }], legalFiles);
-  assert.deepEqual(files.map((file) => file.name), ["manifest.json", "LICENSE", "THIRD_PARTY_NOTICES.md"]);
-  assert.deepEqual(files[1].bytes, legalFiles[0].bytes);
-  assert.deepEqual(files[2].bytes, legalFiles[1].bytes);
-  assert.throws(() => includeLegalFiles(files, legalFiles), /already contains a LICENSE/u);
-});
-
-test("extension runtime imports resolve inside a private-data-free package inventory", async () => {
-  const extensionRoot = path.join(repositoryRoot, "extension");
-  const legalFiles = await Promise.all(["LICENSE", "THIRD_PARTY_NOTICES.md"].map(async (name) => ({
-    name,
-    bytes: await readFile(path.join(repositoryRoot, name))
-  })));
-  const files = assertPackageFilePolicy(includeLegalFiles(await collectFiles(extensionRoot), legalFiles));
+test("extension runtime imports resolve inside a private-data-free package inventory", () => {
+  const { files } = composeTarget(repositoryRoot, "chromium");
   const names = new Set(files.map((file) => file.name));
-  const worker = await readFile(path.join(extensionRoot, "service-worker.js"), "utf8");
+  const worker = files.find((file) => file.name === "service-worker.js").bytes.toString("utf8");
   const importBlock = worker.match(/importScripts\(([\s\S]*?)\);/u)?.[1] ?? "";
   const imports = [...importBlock.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
   assert.ok(imports.length > 0, "service worker must declare package-local runtime imports");
   for (const imported of imports) assert.equal(names.has(imported), true, `missing service-worker import: ${imported}`);
   assert.throws(() => assertPackageFilePolicy([...files, { name: "private-data/account.json", bytes: Buffer.alloc(0) }]), /not allowed/u);
   assert.throws(() => assertPackageFilePolicy([...files, { name: "manifest.json", bytes: Buffer.alloc(0) }]), /Duplicate/u);
+  for (const refused of ["popup/notes.log", "adapters/rsi-api.js.map", "key.pem", "build.crx", "jobs/runner.tmp", ".hidden", "captures/page.html", "citizendata-account.json"]) {
+    assert.throws(() => assertPackageFilePolicy([...files, { name: refused, bytes: Buffer.alloc(0) }]), /not allowed/u, refused);
+  }
+  for (const unsafe of ["../escape.js", "/root.js", "adapters\\back.js", ""]) {
+    assert.throws(() => assertPackageFilePolicy([...files, { name: unsafe, bytes: Buffer.alloc(0) }]), /Unsafe/u, unsafe);
+  }
 });
-

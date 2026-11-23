@@ -21,7 +21,7 @@ export async function checkOpenedFileIsHandedOverAndAnswersAreTold() {
         handle:handed?.account?.handle??null,hash:handed?.integrity?.contentHash??null});payload=${organizationsAnswer};}
       send('RESPONSE',request.requestId,payload);
     });
-    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.1',capabilities:{buildJson:true}});
+    send('BRIDGE_READY',crypto.randomUUID(),{extensionVersion:'0.42.2',capabilities:{buildJson:true}});
     return true;
   })()`);
   const openFile = async (fileName) => {
@@ -63,6 +63,7 @@ export async function checkOpenedFileIsHandedOverAndAnswersAreTold() {
     ["{ok:true,kept:true,replaced:true}", "The extension now keeps this file as your latest build, in place of the older build it held."],
     ["{ok:true,kept:false,reason:'SAME_BUILD'}", "The extension already keeps this build."],
     ["{ok:true,kept:false,reason:'NEWER_BUILD_HELD'}", "The extension keeps a newer build of this account, so it did not take this file in."],
+    ["{ok:true,kept:false,reason:'ACCOUNT_SUMMARY_KEPT'}", "Account added to Switch Account. Build history is off, so the file was not kept."],
     ["{ok:false,code:'BUILD_HISTORY_OFF',message:'x'}", "The extension did not take this file in, because Build history is off in the extension popup."],
     ["{ok:false,code:'BUILD_IN_PROGRESS',message:'x'}", "The extension did not take this file in, because a build is in progress. Open the file again when that build has finished."],
     ["{ok:false,code:'INCOMPLETE_BUILD',message:'x'}", "The extension did not take this file in, because it is not a complete build."],

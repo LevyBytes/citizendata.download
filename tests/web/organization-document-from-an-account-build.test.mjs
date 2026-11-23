@@ -12,19 +12,19 @@ test("the rosters an account build carries become one organization document with
     { runId: "roster-run", selectedSections: ["organizations.members.TEST"] },
     { runId: "roster-run", selectedSections: ["organizations.members.TEST"] }
   ];
-  const built = await Organizations.fromAccountDocument({ accountDocument: document, generatorVersion: "0.42.1" });
+  const built = await Organizations.fromAccountDocument({ accountDocument: document, generatorVersion: "0.42.2" });
   await Organizations.accept(built);
   assert.deepEqual(JSON.parse(JSON.stringify(built.rosterIndex)), [
     { organizationSid: "TEST", memberStart: 0, memberCount: 2, status: "complete", updatedAt: endedAt },
     { organizationSid: "MMHC", memberStart: 2, memberCount: 0, status: "notDownloaded", updatedAt: null }
   ]);
-  assert.deepEqual([built.documentType, built.generator.version, built.exportedAt, built.account.handle], ["CitizenDataOrganizations", "0.42.1", document.exportedAt, "Pilot"]);
+  assert.deepEqual([built.documentType, built.generator.version, built.exportedAt, built.account.handle], ["CitizenDataOrganizations", "0.42.2", document.exportedAt, "Pilot"]);
   assert.equal(built.members.map((entry) => entry.recordKey).join(), "a,b");
   // Only the runs that collected rosters, each once.
   assert.equal(built.sync.runs.map((run) => run.runId).join(), "roster-run");
   // The same rosters as the document the dashboard merges from the same build.
   const withoutRuns = { ...document, sync: { ...document.sync, runs: [] } };
-  const merged = await Organizations.merge({ accountDocument: withoutRuns, resultDocument: withoutRuns, selectedSids: ["TEST"], exportedAt: endedAt, generatorVersion: "0.42.1" });
+  const merged = await Organizations.merge({ accountDocument: withoutRuns, resultDocument: withoutRuns, selectedSids: ["TEST"], exportedAt: endedAt, generatorVersion: "0.42.2" });
   assert.deepEqual(JSON.parse(JSON.stringify(built.members)), JSON.parse(JSON.stringify(merged.members)));
   assert.deepEqual(JSON.parse(JSON.stringify(built.rosterIndex)), JSON.parse(JSON.stringify(merged.rosterIndex)));
 });

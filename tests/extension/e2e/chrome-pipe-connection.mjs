@@ -1,5 +1,8 @@
 // The connection to Chrome over its debugging pipe: commands out, replies and events in, each message a JSON text
 // ended by a zero byte.
+import { STARTUP_LOG_CHARACTERS } from "../../support/chromegpustartevidence.mjs";
+import { diagnoseBrowser } from "./chromepipediagnosis.mjs";
+
 export class ChromePipeConnection {
   constructor(child) {
     this.child = child;
@@ -9,8 +12,14 @@ export class ChromePipeConnection {
     this.targets = new Map();
     this.stderr = "";
     this.closed = false;
+    // The exit code, or null when the program could not be started at all.
+    this.exited = new Promise((resolve) => {
+      child.once("exit", (exitCode) => resolve(exitCode));
+      child.once("error", () => resolve(null));
+    });
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk).slice(-8000); });
+    // The end of the browser's standard error, as much as a failed start keeps (tests/support/chromegpustartevidence.mjs).
+    child.stderr.on("data", (chunk) => { this.stderr = (this.stderr + chunk).slice(-STARTUP_LOG_CHARACTERS); });
     let buffered = Buffer.alloc(0);
     child.stdio[4].on("data", (chunk) => {
       buffered = Buffer.concat([buffered, chunk]);
@@ -62,6 +71,16 @@ export class ChromePipeConnection {
   on(listener) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  // What the browser can still tell about a command it left unanswered (chromepipediagnosis.mjs).
+  diagnose() {
+    return diagnoseBrowser(this);
+  }
+
+  kill() {
+    if (!this.closed) this.child.kill();
+    return this.exited;
   }
 
   async close() {

@@ -50,7 +50,7 @@
     const sectionOutcomes = Object.fromEntries(REQUIRED_OUTCOMES.map(section => [section, notRun()]));
     return {
       schemaVersion: 1,
-      generator: { name: generator?.name ?? "CitizenData", version: generator?.version ?? "0.42.1" },
+      generator: { name: generator?.name ?? "CitizenData", version: generator?.version ?? "0.42.2" },
       exportedAt,
       account: {
         localAccountId: account.localAccountId,

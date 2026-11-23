@@ -1,3 +1,4 @@
+import { checkAccountRemovalUnderSwitchAccount } from "./account-removal-under-switch-account-check.mjs";
 import { assert } from "./assert-build-chooser-reload-and-inventory-state.mjs";
 import { checkAuditRepairs } from "./audit-repairs-check.mjs";
 import { checkBuildHandOver } from "./build-hand-over-waiting-file-and-recovery-backup-check.mjs";
@@ -9,11 +10,14 @@ import { checkExtensionNotice } from "./extension-notice-check.mjs";
 import { checkExtensionRequests } from "./extension-requests-check.mjs";
 import { checkHangarLinkImport } from "./hangar-link-import-check.mjs";
 import { checkImageDownload } from "./image-download-cancelled-check.mjs";
+import { checkImageDownloadCancelledInARefusalWait } from "./image-download-cancelled-in-a-refusal-wait-check.mjs";
+import { checkImageRunFinalizingAndCompletionPoint } from "./image-run-finalizing-and-completion-point-check.mjs";
 import { checkInventorySorting } from "./inventory-sorting-check.mjs";
 import { checkLatestBuildOnLoad } from "./latest-build-on-load-check.mjs";
 import { checkPageStructure } from "./page-structure-check.mjs";
 import { checkBuildChooserWording, checkRecoveryBackupOpens } from "./recovery-backup-and-build-chooser-wording-checks.mjs";
 import { checkRemovedRecords } from "./removed-records-check.mjs";
+import { checkSwitchAccountBelowTheAvatar } from "./switch-account-below-the-avatar-check.mjs";
 
 // The focused run for --repairs-only.
 await checkExtensionNotice();
@@ -31,8 +35,12 @@ await checkBuildHandOver();
 await checkRecoveryBackupOpens();
 await checkExtensionRequests();
 await checkImageDownload();
+await checkImageDownloadCancelledInARefusalWait();
+await checkImageRunFinalizingAndCompletionPoint();
 await checkCcuLeadImage();
 await checkHangarLinkImport();
+await checkSwitchAccountBelowTheAvatar();
+await checkAccountRemovalUnderSwitchAccount();
 assert(exceptions.length===0,`Browser exceptions: ${exceptions.join(' | ')}`);
 assert(remoteRequests.length===0,`Unexpected remote requests: ${remoteRequests.join(', ')}`);
 console.log('PASS focused repairs: install and update notices in the Build chooser, local-copy approval notice, protocol mismatch, deferred badge artwork, inspector status line, 100-record inventory paging with whole-dataset search and filters, '

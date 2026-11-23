@@ -1,3 +1,4 @@
+import { chooseAccount } from "./accountswitchmenustate.mjs";
 import { assert, openBuildChooser, reloadDashboard } from "./assert-build-chooser-reload-and-inventory-state.mjs";
 import { loadFixture } from "./captures-viewport-and-fixture-loading.mjs";
 import { evaluate, waitFor } from "./chrome-process-and-devtools-commands.mjs";
@@ -50,9 +51,14 @@ export async function checkImageZipWithLaterBuildsAndOtherAccounts({ withImages,
     later.requests.length === 1 && later.requests[0].endsWith('/c0.png') && later.downloads === 1 && later.health.startsWith(`${planned + 1} packaged images loaded`),
     `The image download after a later build did not fetch that build's new image alone: ${JSON.stringify(later)}`
   );
-  // Another account's file is still refused.
-  await reloadDashboard();
+  // Another account opened beside it shows no Images ZIP and refuses this one, which stays open for its own account.
+  const ownZip = await evaluate("document.getElementById('imageFileStatus').textContent");
   await loadFixture('image-download-other-account-fixture.json', `${withImages}documentCopy.account.handle='SomeoneElse';documentCopy.profile.handle='SomeoneElse';documentCopy.account.localAccountId='00000000-0000-4000-8000-0000000000cc';`);
+  const other = await evaluate("document.getElementById('imageFileStatus').textContent");
   const refused = await openZip();
-  assert(refused.title === "Package rejected" && refused.message === "This Images ZIP belongs to a different Account JSON." && refused.fileStatus === "No Images ZIP loaded", `An Images ZIP of another account was not refused: ${JSON.stringify(refused)}`);
+  assert(other === "No Images ZIP loaded" && refused.title === "Package rejected" && refused.message === "This Images ZIP belongs to a different Account JSON." && refused.fileStatus === "No Images ZIP loaded",
+    `An Images ZIP of another account was shown or not refused: ${JSON.stringify({ other, refused })}`);
+  await chooseAccount("ImageCitizen");
+  const back = await evaluate("({file:document.getElementById('imageFileStatus').textContent,loaded:!document.getElementById('mediaZipLoadedState').hidden})");
+  assert(back.file === ownZip && ownZip.endsWith(".zip") && back.loaded, `The account's own Images ZIP was not shown again with it: ${JSON.stringify({ ownZip, back })}`);
 }

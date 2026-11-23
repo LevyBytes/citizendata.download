@@ -212,7 +212,7 @@
         textFields(order, ["orderId", "placedAtRaw", "storefront", "status", "paymentState", "fulfillmentState"], at);
         moneyFields(order, ["itemsTotal", "additionalDiscount", "creditsUsed", "shippingAndHandling", "tax", "total"], at);
         payments(order, at);
-        for (const key of ["billingAddress", "shippingAddress"]) if (own(order, key) && order[key] !== null) object(order[key], `${at}.${key}`);
+        for (const key of ["billingAddress", "shippingAddress"]) if (own(order, key) && order[key] !== null) throw new Error(`${at}.${key} must be null.`);
         if (order.items !== undefined) records(order.items, `${at}.items`, (item, itemAt) => {
           textFields(item, ["name"], itemAt);
           if (item.quantity !== undefined && (!Number.isSafeInteger(item.quantity) || item.quantity < 1)) throw new Error(`${itemAt}.quantity must be a positive safe integer.`);

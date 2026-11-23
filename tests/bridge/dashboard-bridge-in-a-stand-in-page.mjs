@@ -27,7 +27,7 @@ export function harness(options = {}) {
     invalidated: false,
     getManifest() {
       if (this.invalidated) throw new Error("Extension context invalidated.");
-      return { version: "0.42.1" };
+      return { version: "0.42.2" };
     },
     sendMessage(message) {
       if (options.sendThrows) throw new TypeError("Cannot read properties of undefined (reading 'sendMessage')");
